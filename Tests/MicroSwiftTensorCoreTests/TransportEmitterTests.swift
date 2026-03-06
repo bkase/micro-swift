@@ -116,12 +116,13 @@ struct TransportEmitterTests {
       maxRowCapacity: 5
     )
 
+    let packedRows = result.hostPackedRows()
     #expect(result.rowCount == 1)
-    #expect(result.packedRows[0] != 0)
-    #expect(result.packedRows[1] == 0)
-    #expect(result.packedRows[2] == 0)
-    #expect(result.packedRows[3] == 0)
-    #expect(result.packedRows[4] == 0)
+    #expect(packedRows[0] != 0)
+    #expect(packedRows[1] == 0)
+    #expect(packedRows[2] == 0)
+    #expect(packedRows[3] == 0)
+    #expect(packedRows[4] == 0)
   }
 
   @Test

@@ -42,7 +42,7 @@ struct ClassSetRuntimeTests {
 
     #expect(runtime.numClassSets == 0)
     #expect(runtime.numByteClasses == 0)
-    #expect(runtime.mask.isEmpty)
+    #expect(runtime.hostMaskBytes().isEmpty)
     #expect(!runtime.contains(setID: 0, classID: 0))
   }
 

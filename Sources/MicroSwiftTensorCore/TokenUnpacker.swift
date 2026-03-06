@@ -5,15 +5,16 @@ public enum TokenUnpacker {
     result: PageLexResult,
     baseOffset: Int64
   ) -> [LogicalToken] {
+    let hostPackedRows = result.hostPackedRows()
     precondition(result.rowCount >= 0, "rowCount must be non-negative")
     precondition(
-      Int(result.rowCount) <= result.packedRows.count, "rowCount must not exceed packedRows.count")
+      Int(result.rowCount) <= hostPackedRows.count, "rowCount must not exceed packedRows.count")
 
     var tokens: [LogicalToken] = []
     tokens.reserveCapacity(Int(result.rowCount))
 
     for rowIndex in 0..<Int(result.rowCount) {
-      let packed = result.packedRows[rowIndex]
+      let packed = hostPackedRows[rowIndex]
       let localStart = Int64(PackedToken.unpackLocalStart(packed))
       let length = Int64(PackedToken.unpackLength(packed))
       let startByte = baseOffset + localStart

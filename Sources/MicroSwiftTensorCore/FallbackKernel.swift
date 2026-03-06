@@ -65,10 +65,18 @@ private func runFallbackPage(
   let boundedValidLen = max(0, min(Int(validLen), pageWidth))
   let fallbackMaxWidth = Int(fallback.maxWidth)
   let numStatesUsed = Int(fallback.numStatesUsed)
-  let fallbackRuleCount = fallback.globalRuleIDByFallbackRule.count
+  let stepLo = fallback.hostStepLo()
+  let stepHi = fallback.hostStepHi()
+  let acceptLoByRule = fallback.hostAcceptLoByRule()
+  let acceptHiByRule = fallback.hostAcceptHiByRule()
+  let globalRuleIDByFallbackRule = fallback.hostGlobalRuleIDByFallbackRule()
+  let priorityRankByFallbackRule = fallback.hostPriorityRankByFallbackRule()
+  let tokenKindIDByFallbackRule = fallback.hostTokenKindIDByFallbackRule()
+  let modeByFallbackRule = fallback.hostModeByFallbackRule()
+  let fallbackRuleCount = globalRuleIDByFallbackRule.count
 
   let stepStride = max(1, numStatesUsed)
-  let maxClassCount = fallback.stepLo.count / stepStride
+  let maxClassCount = stepLo.count / stepStride
 
   var fallbackLen = Array(repeating: UInt16(0), count: pageWidth)
   var fallbackPriorityRank = Array(repeating: UInt16(0), count: pageWidth)
@@ -118,24 +126,24 @@ private func runFallbackPage(
       var loBits = activeLo
       while loBits != 0 {
         let bit = loBits.trailingZeroBitCount
-        let state = bit
-        if state < numStatesUsed {
-          let flatIndex = (classID * stepStride) + state
-          nextLo |= fallback.stepLo[flatIndex]
-          nextHi |= fallback.stepHi[flatIndex]
-        }
+          let state = bit
+          if state < numStatesUsed {
+            let flatIndex = (classID * stepStride) + state
+            nextLo |= stepLo[flatIndex]
+            nextHi |= stepHi[flatIndex]
+          }
         loBits &= (loBits - 1)
       }
 
       var hiBits = activeHi
       while hiBits != 0 {
         let bit = hiBits.trailingZeroBitCount
-        let state = 64 + bit
-        if state < numStatesUsed {
-          let flatIndex = (classID * stepStride) + state
-          nextLo |= fallback.stepLo[flatIndex]
-          nextHi |= fallback.stepHi[flatIndex]
-        }
+          let state = 64 + bit
+          if state < numStatesUsed {
+            let flatIndex = (classID * stepStride) + state
+            nextLo |= stepLo[flatIndex]
+            nextHi |= stepHi[flatIndex]
+          }
         hiBits &= (hiBits - 1)
       }
 
@@ -148,14 +156,14 @@ private func runFallbackPage(
 
       let candidateLen = UInt16(k + 1)
       for ruleIndex in 0..<fallbackRuleCount {
-        if (activeLo & fallback.acceptLoByRule[ruleIndex]) == 0,
-          (activeHi & fallback.acceptHiByRule[ruleIndex]) == 0
+        if (activeLo & acceptLoByRule[ruleIndex]) == 0,
+          (activeHi & acceptHiByRule[ruleIndex]) == 0
         {
           continue
         }
 
-        let candidatePriority = fallback.priorityRankByFallbackRule[ruleIndex]
-        let candidateRuleID = fallback.globalRuleIDByFallbackRule[ruleIndex]
+        let candidatePriority = priorityRankByFallbackRule[ruleIndex]
+        let candidateRuleID = globalRuleIDByFallbackRule[ruleIndex]
 
         if better(
           len: candidateLen,
@@ -168,8 +176,8 @@ private func runFallbackPage(
           bestLen = candidateLen
           bestPriorityRank = candidatePriority
           bestRuleID = candidateRuleID
-          bestTokenKindID = fallback.tokenKindIDByFallbackRule[ruleIndex]
-          bestMode = fallback.modeByFallbackRule[ruleIndex]
+          bestTokenKindID = tokenKindIDByFallbackRule[ruleIndex]
+          bestMode = modeByFallbackRule[ruleIndex]
         }
       }
     }

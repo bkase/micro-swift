@@ -202,19 +202,21 @@ public struct MLXRuntimeClient: Sendable {
 
   public static func live() -> Self {
     Self {
-      let a = MLXArray([Float(1), Float(2)])
-      let b = MLXArray([Float(3), Float(4)])
-      let c = a + b
-      eval(c)
-      let values = c.asArray(Float.self)
-      guard values == [4.0, 6.0] else {
-        throw MLXSmokeError.unexpectedResult(values)
+      try Device.withDefaultDevice(.cpu) {
+        let a = MLXArray([Float(1), Float(2)])
+        let b = MLXArray([Float(3), Float(4)])
+        let c = a + b
+        eval(c)
+        let values = c.asArray(Float.self)
+        guard values == [4.0, 6.0] else {
+          throw MLXSmokeError.unexpectedResult(values)
+        }
+        return MLXSmokeResult(
+          status: "ok",
+          kernel: "trivial-add",
+          version: "mlx-swift"
+        )
       }
-      return MLXSmokeResult(
-        status: "ok",
-        kernel: "trivial-add",
-        version: "mlx-swift"
-      )
     }
   }
 

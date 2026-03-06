@@ -14,7 +14,7 @@ struct ArtifactLoaderTests {
 
     #expect(runtime.specName == artifact.specName)
     #expect(runtime.ruleCount == artifact.rules.count)
-    #expect(runtime.byteToClassLUT.count == 256)
+    #expect(runtime.hostByteToClassLUT().count == 256)
     #expect(runtime.tokenKinds == artifact.tokenKinds)
     #expect(runtime.rules == artifact.rules)
     #expect(runtime.keywordRemaps == artifact.keywordRemaps)

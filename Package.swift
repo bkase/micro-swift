@@ -33,6 +33,7 @@ let package = Package(
       dependencies: [
         "MicroSwiftLexerGen",
         "MicroSwiftFrontend",
+        .product(name: "MLX", package: "mlx-swift"),
       ]
     ),
     .target(

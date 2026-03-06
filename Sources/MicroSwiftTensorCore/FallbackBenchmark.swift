@@ -94,9 +94,10 @@ public func runBenchmark(
   var fallbackRunnerByBucket: [Int: FallbackKernelRunner] = [:]
   var graphCompilations = 0
   var observability = FallbackObservability()
+  let byteToClassLUT = artifact.hostByteToClassLUT()
 
   func executeSingleRun(recordMetrics: Bool) -> (tokenCount: Int, errorSpanCount: Int) {
-    let classIDs = benchmarkBytes.map { UInt16(artifact.byteToClassLUT[Int($0)]) }
+    let classIDs = benchmarkBytes.map { byteToClassLUT[Int($0)] }
 
     let fallbackResult: FallbackPageResult
     if let fallback = artifact.fallback {
@@ -250,9 +251,10 @@ private func makeErrorPathBytes(
 
   var startEligibleByte: UInt8?
   var startIneligibleByte: UInt8?
+  let byteToClassLUT = artifact.hostByteToClassLUT()
 
   for byte in UInt8.min...UInt8.max {
-    let classID = UInt16(artifact.byteToClassLUT[Int(byte)])
+    let classID = byteToClassLUT[Int(byte)]
     if isStartEligible(classID: classID, fallback: artifact.fallback) {
       if startEligibleByte == nil {
         startEligibleByte = byte

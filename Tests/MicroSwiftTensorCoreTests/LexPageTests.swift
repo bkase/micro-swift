@@ -18,9 +18,10 @@ struct LexPageTests {
       options: LexOptions(runtimeProfile: .v1Fallback)
     )
 
+    let packedRows = result.hostPackedRows()
     #expect(result.rowCount == 1)
-    #expect(result.packedRows.count == 2)
-    let row = try #require(result.packedRows.first)
+    #expect(packedRows.count == 2)
+    let row = try #require(packedRows.first)
     #expect(PackedToken.unpackLocalStart(row) == 0)
     #expect(row.len == 2)
     #expect(PackedToken.unpackTokenKindID(row) == 9)
@@ -39,8 +40,9 @@ struct LexPageTests {
       options: LexOptions(runtimeProfile: .v0)
     )
 
+    let packedRows = result.hostPackedRows()
     #expect(result.rowCount == 0)
-    #expect(result.packedRows.allSatisfy { $0 == 0 })
+    #expect(packedRows.allSatisfy { $0 == 0 })
   }
 
   @Test
@@ -54,12 +56,14 @@ struct LexPageTests {
       options: LexOptions(runtimeProfile: .v1Fallback)
     )
 
+    let page0PackedRows = results[0].hostPackedRows()
+    let page1PackedRows = results[1].hostPackedRows()
     #expect(results.count == 2)
     #expect(results[0].rowCount == 1)
-    #expect(results[0].packedRows.count == 4)
+    #expect(page0PackedRows.count == 4)
     #expect(results[1].rowCount == 1)
-    #expect(results[1].packedRows.count == 4)
-    #expect(results[1].packedRows[1...] == Array(repeating: UInt64(0), count: 3)[...])
+    #expect(page1PackedRows.count == 4)
+    #expect(page1PackedRows[1...] == Array(repeating: UInt64(0), count: 3)[...])
   }
 
   @Test
@@ -99,9 +103,10 @@ struct LexPageTests {
     )
 
     let page = try #require(first.first)
+    let packedRows = page.hostPackedRows()
     #expect(page.rowCount == 1)
-    #expect(page.packedRows.count == 8)
-    #expect(page.packedRows[1...] == Array(repeating: UInt64(0), count: 7)[...])
+    #expect(packedRows.count == 8)
+    #expect(packedRows[1...] == Array(repeating: UInt64(0), count: 7)[...])
     #expect(first == second)
   }
 
@@ -119,7 +124,7 @@ struct LexPageTests {
     )
 
     #expect(result.rowCount == 1)
-    let row = try #require(result.packedRows.first)
+    let row = try #require(result.hostPackedRows().first)
     #expect(PackedToken.unpackTokenKindID(row) == 300)
     #expect(PackedToken.unpackLength(row) == 2)
   }

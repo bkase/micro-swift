@@ -1,3 +1,4 @@
+import MLX
 import MicroSwiftLexerGen
 
 public enum ArtifactRuntimeError: Error, Sendable, Equatable {
@@ -10,11 +11,12 @@ public enum ArtifactRuntimeError: Error, Sendable, Equatable {
   case fallbackWidthInvalid(ruleID: UInt16, minWidth: UInt16, maxWidth: UInt16)
 }
 
-public struct ArtifactRuntime: Sendable {
+public struct ArtifactRuntime: @unchecked Sendable {
   public let specName: String
   public let ruleCount: Int
   public let runtimeHints: RuntimeHints
-  public let byteToClassLUT: [UInt8]
+  public let byteToClassLUT: MLXArray
+  private let hostByteToClassLUTStorage: [UInt16]
   public let tokenKinds: [TokenKindDecl]
   public let rules: [LoweredRule]
   public let classSets: [ClassSetDecl]
@@ -39,7 +41,8 @@ public struct ArtifactRuntime: Sendable {
     specName: String,
     ruleCount: Int,
     runtimeHints: RuntimeHints,
-    byteToClassLUT: [UInt8],
+    byteToClassLUT: MLXArray,
+    hostByteToClassLUTStorage: [UInt16]? = nil,
     tokenKinds: [TokenKindDecl],
     rules: [LoweredRule],
     classSets: [ClassSetDecl],
@@ -51,6 +54,8 @@ public struct ArtifactRuntime: Sendable {
     self.ruleCount = ruleCount
     self.runtimeHints = runtimeHints
     self.byteToClassLUT = byteToClassLUT
+    self.hostByteToClassLUTStorage =
+      hostByteToClassLUTStorage ?? withMLXCPU { byteToClassLUT.asArray(UInt16.self) }
     self.tokenKinds = tokenKinds
     self.rules = rules
     self.classSets = classSets
@@ -60,6 +65,10 @@ public struct ArtifactRuntime: Sendable {
     self.fallback = fallback
   }
 
+  public func hostByteToClassLUT() -> [UInt16] {
+    hostByteToClassLUTStorage
+  }
+
   public static func fromArtifact(_ artifact: LexerArtifact) throws -> ArtifactRuntime {
     guard artifact.byteToClass.count == 256 else {
       throw ArtifactRuntimeError.invalidByteToClassLength(actual: artifact.byteToClass.count)
@@ -67,11 +76,13 @@ public struct ArtifactRuntime: Sendable {
 
     let fallback = try buildFallbackRuntime(from: artifact)
 
+    let hostByteToClassLUT = artifact.byteToClass.map(UInt16.init)
     return ArtifactRuntime(
       specName: artifact.specName,
       ruleCount: artifact.rules.count,
       runtimeHints: artifact.runtimeHints,
-      byteToClassLUT: artifact.byteToClass,
+      byteToClassLUT: withMLXCPU { MLXArray(hostByteToClassLUT, [256]) },
+      hostByteToClassLUTStorage: hostByteToClassLUT,
       tokenKinds: artifact.tokenKinds,
       rules: artifact.rules,
       classSets: artifact.classSets,

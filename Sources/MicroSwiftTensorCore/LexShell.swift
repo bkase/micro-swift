@@ -52,11 +52,12 @@ public struct LexShell: Sendable {
   }
 
   private func pad(result: PageLexResult, to width: Int) -> PageLexResult {
-    guard result.packedRows.count < width else {
+    let hostPackedRows = result.hostPackedRows()
+    guard hostPackedRows.count < width else {
       return result
     }
     let padded =
-      result.packedRows + Array(repeating: UInt64(0), count: width - result.packedRows.count)
+      hostPackedRows + Array(repeating: UInt64(0), count: width - hostPackedRows.count)
     return PageLexResult(
       packedRows: padded,
       rowCount: result.rowCount,

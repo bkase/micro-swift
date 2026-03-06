@@ -1,5 +1,8 @@
-public struct PageLexResult: Sendable, Equatable {
-  public let packedRows: [UInt64]
+import MLX
+
+public struct PageLexResult: @unchecked Sendable, Equatable {
+  public let packedRows: MLXArray
+  private let hostPackedRowsStorage: [UInt64]
   public let rowCount: Int32
   public let errorSpans: [ErrorSpan]
   public let overflowDiagnostic: OverflowDiagnostic?
@@ -10,10 +13,22 @@ public struct PageLexResult: Sendable, Equatable {
     errorSpans: [ErrorSpan],
     overflowDiagnostic: OverflowDiagnostic?
   ) {
-    self.packedRows = packedRows
+    self.packedRows = withMLXCPU { MLXArray(packedRows) }
+    self.hostPackedRowsStorage = packedRows
     self.rowCount = rowCount
     self.errorSpans = errorSpans
     self.overflowDiagnostic = overflowDiagnostic
+  }
+
+  public func hostPackedRows() -> [UInt64] {
+    hostPackedRowsStorage
+  }
+
+  public static func == (lhs: PageLexResult, rhs: PageLexResult) -> Bool {
+    lhs.hostPackedRows() == rhs.hostPackedRows()
+      && lhs.rowCount == rhs.rowCount
+      && lhs.errorSpans == rhs.errorSpans
+      && lhs.overflowDiagnostic == rhs.overflowDiagnostic
   }
 }
 

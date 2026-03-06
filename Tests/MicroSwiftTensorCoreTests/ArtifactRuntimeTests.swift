@@ -27,6 +27,14 @@ import Testing
 
     let runtime = try ArtifactRuntime.fromArtifact(artifact)
     let fallback = try #require(runtime.fallback)
+    let acceptLoByRule = fallback.hostAcceptLoByRule()
+    let acceptHiByRule = fallback.hostAcceptHiByRule()
+    let globalRuleIDByFallbackRule = fallback.hostGlobalRuleIDByFallbackRule()
+    let priorityRankByFallbackRule = fallback.hostPriorityRankByFallbackRule()
+    let tokenKindIDByFallbackRule = fallback.hostTokenKindIDByFallbackRule()
+    let modeByFallbackRule = fallback.hostModeByFallbackRule()
+    let stepLo = fallback.hostStepLo()
+    let stepHi = fallback.hostStepHi()
 
     #expect(fallback.numStatesUsed == 3)
     #expect(fallback.maxWidth == 6)
@@ -35,19 +43,19 @@ import Testing
     #expect(fallback.startClassMaskLo == 0b1111)
     #expect(fallback.startClassMaskHi == 0)
 
-    #expect(fallback.acceptLoByRule == [1 << 2])
-    #expect(fallback.acceptHiByRule == [0])
-    #expect(fallback.globalRuleIDByFallbackRule == [7])
-    #expect(fallback.priorityRankByFallbackRule == [3])
-    #expect(fallback.tokenKindIDByFallbackRule == [11])
-    #expect(fallback.modeByFallbackRule == [0])
+    #expect(acceptLoByRule == [1 << 2])
+    #expect(acceptHiByRule == [0])
+    #expect(globalRuleIDByFallbackRule == [7])
+    #expect(priorityRankByFallbackRule == [3])
+    #expect(tokenKindIDByFallbackRule == [11])
+    #expect(modeByFallbackRule == [0])
 
     let numStates = Int(fallback.numStatesUsed)
-    #expect(fallback.stepLo[(0 * numStates) + 1] == (1 << 2))
-    #expect(fallback.stepLo[(0 * numStates) + 2] == (1 << 2))
-    #expect(fallback.stepLo[(1 * numStates) + 2] == (1 << 2))
-    #expect(fallback.stepLo[(1 * numStates) + 1] == 1)
-    #expect(fallback.stepHi.allSatisfy { $0 == 0 })
+    #expect(stepLo[(0 * numStates) + 1] == (1 << 2))
+    #expect(stepLo[(0 * numStates) + 2] == (1 << 2))
+    #expect(stepLo[(1 * numStates) + 2] == (1 << 2))
+    #expect(stepLo[(1 * numStates) + 1] == 1)
+    #expect(stepHi.allSatisfy { $0 == 0 })
   }
 
   @Test func combinesStartMasksAcrossFallbackRules() throws {
@@ -88,6 +96,12 @@ import Testing
 
     let runtime = try ArtifactRuntime.fromArtifact(artifact)
     let fallback = try #require(runtime.fallback)
+    let acceptLoByRule = fallback.hostAcceptLoByRule()
+    let acceptHiByRule = fallback.hostAcceptHiByRule()
+    let globalRuleIDByFallbackRule = fallback.hostGlobalRuleIDByFallbackRule()
+    let priorityRankByFallbackRule = fallback.hostPriorityRankByFallbackRule()
+    let tokenKindIDByFallbackRule = fallback.hostTokenKindIDByFallbackRule()
+    let modeByFallbackRule = fallback.hostModeByFallbackRule()
 
     #expect(fallback.numStatesUsed == 6)
     #expect(fallback.maxWidth == 6)
@@ -95,12 +109,12 @@ import Testing
     #expect(fallback.startMaskHi == 0)
     #expect(fallback.startClassMaskLo == 0b1111)
 
-    #expect(fallback.acceptLoByRule == [(1 << 2), (1 << 5)])
-    #expect(fallback.acceptHiByRule == [0, 0])
-    #expect(fallback.globalRuleIDByFallbackRule == [7, 9])
-    #expect(fallback.priorityRankByFallbackRule == [3, 1])
-    #expect(fallback.tokenKindIDByFallbackRule == [11, 5])
-    #expect(fallback.modeByFallbackRule == [0, 1])
+    #expect(acceptLoByRule == [(1 << 2), (1 << 5)])
+    #expect(acceptHiByRule == [0, 0])
+    #expect(globalRuleIDByFallbackRule == [7, 9])
+    #expect(priorityRankByFallbackRule == [3, 1])
+    #expect(tokenKindIDByFallbackRule == [11, 5])
+    #expect(modeByFallbackRule == [0, 1])
   }
 
   @Test func preservesTransitionsThatTargetFallbackStateZero() throws {
@@ -133,13 +147,15 @@ import Testing
 
     let runtime = try ArtifactRuntime.fromArtifact(artifact)
     let fallback = try #require(runtime.fallback)
+    let acceptLoByRule = fallback.hostAcceptLoByRule()
+    let stepLo = fallback.hostStepLo()
 
     #expect(fallback.numStatesUsed == 3)
     #expect(fallback.startMaskLo == 1)
-    #expect(fallback.acceptLoByRule == [1])
+    #expect(acceptLoByRule == [1])
 
     let numStates = Int(fallback.numStatesUsed)
-    #expect(fallback.stepLo[(1 * numStates) + 1] == 1)
+    #expect(stepLo[(1 * numStates) + 1] == 1)
 
     let runner = FallbackKernelRunner(fallback: fallback)
     let bytes = Array("abab".utf8)

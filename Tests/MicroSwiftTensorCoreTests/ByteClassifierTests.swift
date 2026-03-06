@@ -6,7 +6,7 @@ import Testing
 struct ByteClassifierTests {
   @Test
   func classifyMapsBytesThroughLUT() {
-    var lut = Array(repeating: UInt8(0), count: 256)
+    var lut = Array(repeating: UInt16(0), count: 256)
     lut[Int(UInt8(ascii: "a"))] = 10
     lut[Int(UInt8(ascii: "b"))] = 20
     lut[Int(UInt8(ascii: "c"))] = 30

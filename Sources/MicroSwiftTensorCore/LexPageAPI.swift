@@ -23,7 +23,10 @@ public enum TensorLexer {
     }
 
     // Phase A: Byte classification
-    let classIDs = ByteClassifier.classify(bytes: bytes, byteToClassLUT: artifact.byteToClassLUT)
+    let classIDs = ByteClassifier.classify(
+      bytes: bytes,
+      byteToClassLUT: artifact.hostByteToClassLUT()
+    )
     let validMask = ByteClassifier.validityMask(pageSize: bytes.count, validLen: validLen)
 
     // Phase B: Per-rule candidate generation (using RuleBuckets)
@@ -203,7 +206,10 @@ func executeFastFamilies(
 ) -> [CandidateWinner] {
   _ = classIDs
   let boundedValidLen = max(0, min(validLen, bytes.count))
-  let narrowedClassIDs = ByteClassifier.classify(bytes: bytes, byteToClassLUT: artifact.byteToClassLUT)
+  let narrowedClassIDs = ByteClassifier.classify(
+    bytes: bytes,
+    byteToClassLUT: artifact.hostByteToClassLUT()
+  )
   let validMask = ByteClassifier.validityMask(pageSize: bytes.count, validLen: Int32(boundedValidLen))
   let winners = WinnerReduction.reduce(
     candidates: TensorLexer.makeFastCandidates(
