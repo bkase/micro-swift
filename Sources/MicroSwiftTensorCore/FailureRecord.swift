@@ -8,6 +8,9 @@ public struct LexFailureRecord: Sendable {
   public let selectedTokenCount: Int32
   public let errorRunCount: Int32
   public let overflowStatus: String?
+  public let overflowMessage: String?
+  public let overflowPageByteCount: Int32?
+  public let overflowMaxBucketSize: Int32?
 
   public init(
     traceID: String,
@@ -18,7 +21,10 @@ public struct LexFailureRecord: Sendable {
     ruleBucketCounts: [Int],
     selectedTokenCount: Int32,
     errorRunCount: Int32,
-    overflowStatus: String?
+    overflowStatus: String?,
+    overflowMessage: String?,
+    overflowPageByteCount: Int32?,
+    overflowMaxBucketSize: Int32?
   ) {
     self.traceID = traceID
     self.fileID = fileID
@@ -29,5 +35,8 @@ public struct LexFailureRecord: Sendable {
     self.selectedTokenCount = selectedTokenCount
     self.errorRunCount = errorRunCount
     self.overflowStatus = overflowStatus
+    self.overflowMessage = overflowMessage
+    self.overflowPageByteCount = overflowPageByteCount
+    self.overflowMaxBucketSize = overflowMaxBucketSize
   }
 }

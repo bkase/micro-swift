@@ -20,6 +20,22 @@ public struct SourcePage: Hashable, Sendable {
   public let byteCount: Int32
   public let lineBreakCount: Int32
   public let oversize: Bool
+
+  public init(
+    pageID: Int32,
+    start: ByteOffset,
+    end: ByteOffset,
+    byteCount: Int32,
+    lineBreakCount: Int32,
+    oversize: Bool
+  ) {
+    self.pageID = pageID
+    self.start = start
+    self.end = end
+    self.byteCount = byteCount
+    self.lineBreakCount = lineBreakCount
+    self.oversize = oversize
+  }
 }
 
 // MARK: - Page planner

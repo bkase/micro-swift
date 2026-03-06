@@ -20,12 +20,10 @@ public struct LexingShell: Sendable {
     pageResults.reserveCapacity(preparedPages.count)
 
     for page in preparedPages {
-      guard page.bucket != nil else {
-        let diagnostic = OverflowDiagnostic(
-          message: "lex-page-overflow: line exceeds maximum supported page bucket",
-          pageByteCount: page.validLen,
-          maxBucketSize: pagingShell.maxBucketSize
-        )
+      if let diagnostic = OverflowHandler.checkOverflow(
+        page: page,
+        maxBucketSize: pagingShell.maxBucketSize
+      ) {
         overflowPages.append(diagnostic)
         pageResults.append(
           PageLexResult(
