@@ -91,17 +91,18 @@ public enum LexBenchmark {
     for _ in 0..<warmupIterations {
       _ = shell.lexSource(source: source, artifact: artifact, options: LexOptions())
     }
-    for _ in 1..<measureIterations {
-      _ = shell.lexSource(source: source, artifact: artifact, options: LexOptions())
-    }
 
+    var totalBytes = Int64(0)
+    var totalTokens = 0
+    var totalErrorSpans = 0
     let start = DispatchTime.now().uptimeNanoseconds
-    let measured = shell.lexSource(source: source, artifact: artifact, options: LexOptions())
+    for _ in 0..<measureIterations {
+      let result = shell.lexSource(source: source, artifact: artifact, options: LexOptions())
+      totalBytes += Int64(source.bytes.count)
+      totalTokens += result.tokenTape.tokens.count
+      totalErrorSpans += result.tokenTape.errorSpans.count
+    }
     let durationNanos = DispatchTime.now().uptimeNanoseconds - start
-
-    let totalBytes = Int64(source.bytes.count)
-    let totalTokens = measured.tokenTape.tokens.count
-    let errorSpanCount = measured.tokenTape.errorSpans.count
 
     return LexBenchmarkResult(
       mode: "warm",
@@ -110,7 +111,7 @@ public enum LexBenchmark {
       durationNanos: durationNanos,
       bytesPerSecond: rate(count: Double(totalBytes), durationNanos: durationNanos),
       tokensPerSecond: rate(count: Double(totalTokens), durationNanos: durationNanos),
-      errorSpansPerSecond: rate(count: Double(errorSpanCount), durationNanos: durationNanos),
+      errorSpansPerSecond: rate(count: Double(totalErrorSpans), durationNanos: durationNanos),
       graphCompilationCount: 0,
       pageBucketDistribution: distribution
     )

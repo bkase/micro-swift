@@ -82,6 +82,40 @@ struct PagingShellTests {
   }
 
   @Test
+  func maxBucketSizeRejectsSixtyFourKBytes() {
+    let source = SourceBuffer(
+      fileID: FileID(rawValue: 1),
+      path: "maxBoundary.swift",
+      bytes: Data(repeating: 0x61, count: 65_536)
+    )
+    let shell = PagingShell()
+
+    let pages = shell.planAndPreparePages(source: source)
+
+    #expect(pages.count == 1)
+    #expect(pages[0].bucket == nil)
+    #expect(pages[0].validLen == 65_536)
+    #expect(pages[0].byteSlice.count == 65_536)
+  }
+
+  @Test
+  func maxBucketSizeAcceptsSixtyFourKMinusOneBytes() {
+    let source = SourceBuffer(
+      fileID: FileID(rawValue: 1),
+      path: "maxBoundary.swift",
+      bytes: Data(repeating: 0x61, count: 65_535)
+    )
+    let shell = PagingShell()
+
+    let pages = shell.planAndPreparePages(source: source)
+
+    #expect(pages.count == 1)
+    #expect(pages[0].bucket?.byteCapacity == 65_535)
+    #expect(pages[0].validLen == 65_535)
+    #expect(pages[0].byteSlice.count == 65_535)
+  }
+
+  @Test
   func pageBytesArePaddedToBucketCapacity() {
     let source = SourceBuffer(
       fileID: FileID(rawValue: 1),

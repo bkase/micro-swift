@@ -43,6 +43,30 @@ struct LexBenchmarkTests {
   }
 
   @Test
+  func warmBenchmarkAccumulatesAllMeasureIterations() throws {
+    let runtime = try makeMicroSwiftRuntime()
+    let source = makeSource(repeating: "let x = 42\n", count: 10)
+
+    let result = LexBenchmark.benchmarkWarm(
+      source: source,
+      artifact: runtime,
+      warmupIterations: 1,
+      measureIterations: 3
+    )
+
+    let once = LexBenchmark.benchmarkCold(
+      source: source,
+      artifact: runtime,
+      iterations: 1
+    )
+
+    #expect(result.totalBytes == once.totalBytes * 3)
+    #expect(result.totalTokens == once.totalTokens * 3)
+    #expect(result.durationNanos > 0)
+    #expect(result.tokensPerSecond > 0)
+  }
+
+  @Test
   func reportGeneratesValidJSON() throws {
     let result = LexBenchmarkResult(
       mode: "warm",

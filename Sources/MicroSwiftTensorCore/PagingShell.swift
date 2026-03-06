@@ -8,7 +8,7 @@ public struct PagingShell: Sendable {
 
   public init(
     pagePolicy: PagePolicy = PagePolicy(targetBytes: 32768),
-    maxBucketSize: Int32 = 65536,
+    maxBucketSize: Int32 = PageBucket.maxSupportedByteCapacity,
     buckets: [PageBucket] = PageBucket.standardBuckets
   ) {
     precondition(maxBucketSize > 0, "PagingShell.maxBucketSize must be > 0")
