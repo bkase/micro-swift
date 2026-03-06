@@ -72,13 +72,16 @@ struct MicroSwiftCLITests {
     ]
 
     let output = TestOutputCapture()
-    try await withTestDependencies(output, extraDeps: {
-      $0.fileSystem = FileSystemClient.test(fileMap)
-    }, operation: {
-      let command = try MicroSwift.parseAsRoot(["seed", "dump", "--json"])
-      var asyncCommand = try #require(command as? any AsyncParsableCommand)
-      try await asyncCommand.run()
-    })
+    try await withTestDependencies(
+      output,
+      extraDeps: {
+        $0.fileSystem = FileSystemClient.test(fileMap)
+      },
+      operation: {
+        let command = try MicroSwift.parseAsRoot(["seed", "dump", "--json"])
+        var asyncCommand = try #require(command as? any AsyncParsableCommand)
+        try await asyncCommand.run()
+      })
 
     assertSnapshot(of: output.text(), as: .json)
   }
@@ -96,13 +99,16 @@ struct MicroSwiftCLITests {
     ]
 
     let output = TestOutputCapture()
-    try await withTestDependencies(output, extraDeps: {
-      $0.fileSystem = FileSystemClient.test(fileMap)
-    }, operation: {
-      let command = try MicroSwift.parseAsRoot(["seed", "dump"])
-      var asyncCommand = try #require(command as? any AsyncParsableCommand)
-      try await asyncCommand.run()
-    })
+    try await withTestDependencies(
+      output,
+      extraDeps: {
+        $0.fileSystem = FileSystemClient.test(fileMap)
+      },
+      operation: {
+        let command = try MicroSwift.parseAsRoot(["seed", "dump"])
+        var asyncCommand = try #require(command as? any AsyncParsableCommand)
+        try await asyncCommand.run()
+      })
 
     assertSnapshot(of: output.text(), as: .lines)
   }
@@ -125,6 +131,31 @@ struct MicroSwiftCLITests {
       var asyncCommand = try #require(command as? any AsyncParsableCommand)
       try await asyncCommand.run()
     }
+
+    assertSnapshot(of: output.text(), as: .lines)
+  }
+
+  @Test func lexergenCheckTextIsStable() async throws {
+    let dumpOutput = TestOutputCapture()
+    try await withTestDependencies(dumpOutput) {
+      let command = try MicroSwift.parseAsRoot(["lexergen", "dump"])
+      var asyncCommand = try #require(command as? any AsyncParsableCommand)
+      try await asyncCommand.run()
+    }
+
+    let path = "/tmp/micro-swift-tests/Artifacts/MicroSwift.v0.lexer.json"
+    let fileMap = [path: Data(dumpOutput.text().utf8)]
+    let output = TestOutputCapture()
+    try await withTestDependencies(
+      output,
+      extraDeps: {
+        $0.fileSystem = FileSystemClient.test(fileMap)
+      },
+      operation: {
+        let command = try MicroSwift.parseAsRoot(["lexergen", "check", "--path", path])
+        var asyncCommand = try #require(command as? any AsyncParsableCommand)
+        try await asyncCommand.run()
+      })
 
     assertSnapshot(of: output.text(), as: .lines)
   }

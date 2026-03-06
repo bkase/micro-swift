@@ -9,5 +9,6 @@ SUBCOMMANDS:
   doctor                  Print runtime/tooling diagnosis
   seed                    Seed utilities
   mlx-smoke               Run the MLX smoke check
+  lexergen                Generate and check lexer artifacts
 
   See 'micro-swift help <subcommand>' for detailed help.

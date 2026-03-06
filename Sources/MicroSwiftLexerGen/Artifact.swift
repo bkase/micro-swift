@@ -179,15 +179,17 @@ public enum ArtifactSerializer {
     generatorVersion: String = "dev"
   ) -> LexerArtifact {
     let tokenKinds = buildTokenKinds(classified: classified)
-    let rules = buildLoweredRules(classified: classified, classSets: classSets, byteClasses: byteClasses)
+    let rules = buildLoweredRules(
+      classified: classified, classSets: classSets, byteClasses: byteClasses)
     let keywordRemaps = buildKeywordRemaps(classified: classified)
 
-    let maxLiteralLength = rules.compactMap { rule -> UInt16? in
-      if case .literal(let bytes) = rule.plan {
-        return UInt16(bytes.count)
-      }
-      return nil
-    }.max() ?? 0
+    let maxLiteralLength =
+      rules.compactMap { rule -> UInt16? in
+        if case .literal(let bytes) = rule.plan {
+          return UInt16(bytes.count)
+        }
+        return nil
+      }.max() ?? 0
 
     let maxBoundedRuleWidth = rules.compactMap(\.maxWidth).max() ?? 0
     let runtimeHints = RuntimeHints(
@@ -312,7 +314,8 @@ private func buildLoweredRules(
 }
 
 private func buildKeywordRemaps(classified: ClassifiedSpec) -> [KeywordRemapTable] {
-  let rulesByName = Dictionary(uniqueKeysWithValues: classified.rules.map { ($0.rule.name, $0.rule) })
+  let rulesByName = Dictionary(
+    uniqueKeysWithValues: classified.rules.map { ($0.rule.name, $0.rule) })
 
   return classified.keywordBlocks.compactMap { block in
     guard let baseRule = rulesByName[block.baseKindName] else { return nil }
@@ -322,7 +325,8 @@ private func buildKeywordRemaps(classified: ClassifiedSpec) -> [KeywordRemapTabl
         lhs.lexemeBytes.lexicographicallyPrecedes(rhs.lexemeBytes)
       }
       .map { entry in
-        KeywordRemapEntry(lexeme: entry.lexemeBytes, tokenKindID: UInt16(entry.tokenKindID.rawValue))
+        KeywordRemapEntry(
+          lexeme: entry.lexemeBytes, tokenKindID: UInt16(entry.tokenKindID.rawValue))
       }
 
     let maxKeywordLength = UInt8(entries.map { $0.lexeme.count }.max() ?? 0)

@@ -579,7 +579,9 @@ struct ArtifactSerializerTests {
     )
     let fallbackRule = try #require(artifact.rules.first(where: { $0.family == .fallback }))
 
-    if case .fallback(let stateCount, let classCount, let rowStride, _, _, let transitions) = fallbackRule.plan {
+    if case .fallback(let stateCount, let classCount, let rowStride, _, _, let transitions) =
+      fallbackRule.plan
+    {
       #expect(rowStride == classCount)
       #expect(transitions.count == Int(stateCount * UInt32(rowStride)))
       #expect(transitions.allSatisfy { $0 < stateCount })
@@ -595,8 +597,10 @@ struct ArtifactSerializerTests {
     )
   }
 
-  private func buildArtifact(from spec: LexerSpec, options: CompileOptions) throws -> LexerArtifact {
-    let validated = try NormalizedSpec.validate(DeclaredSpec.normalize(spec.declare()), options: options)
+  private func buildArtifact(from spec: LexerSpec, options: CompileOptions) throws -> LexerArtifact
+  {
+    let validated = try NormalizedSpec.validate(
+      DeclaredSpec.normalize(spec.declare()), options: options)
     let byteClasses = validated.buildByteClasses()
     let classSets = validated.buildClassSets(using: byteClasses)
     let classified = try validated.classifyRules(

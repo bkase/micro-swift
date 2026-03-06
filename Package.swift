@@ -32,7 +32,7 @@ let package = Package(
     .target(
       name: "MicroSwiftFrontend",
       dependencies: [
-        .product(name: "MLX", package: "mlx-swift"),
+        .product(name: "MLX", package: "mlx-swift")
       ]
     ),
     .target(name: "MicroSwiftWasm"),
@@ -44,6 +44,7 @@ let package = Package(
         .product(name: "Dependencies", package: "swift-dependencies"),
         .product(name: "CustomDump", package: "swift-custom-dump"),
         .target(name: "MicroSwiftSpec"),
+        .target(name: "MicroSwiftLexerGen"),
         .product(name: "MLX", package: "mlx-swift"),
       ]
     ),
