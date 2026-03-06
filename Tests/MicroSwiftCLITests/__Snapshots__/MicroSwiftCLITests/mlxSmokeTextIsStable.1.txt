@@ -1,3 +1,9 @@
 mlx-smoke: ok
-kernel: trivial-add
-runtime: deterministic-mock
+runtime-profile: fallback-benchmark-warm
+backend: metal
+device: metal-test-device
+pipeline: fallbackKernel
+fallback-positions-entered: 17
+fallback-dispatches: 2
+artifact-hash: deadbeefcafebabe
+fixture: mlx-smoke-fallback-alt-ab-cd-v1

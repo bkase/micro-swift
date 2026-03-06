@@ -52,7 +52,7 @@ let package = Package(
         .product(name: "CustomDump", package: "swift-custom-dump"),
         .target(name: "MicroSwiftSpec"),
         .target(name: "MicroSwiftLexerGen"),
-        .product(name: "MLX", package: "mlx-swift"),
+        .target(name: "MicroSwiftTensorCore"),
       ]
     ),
     .testTarget(

@@ -1,1 +1,1 @@
-"{\n  \"kernel\" : \"trivial-add\",\n  \"status\" : \"ok\",\n  \"version\" : \"deterministic-mock\"\n}\n"
+"{\n  \"artifactHash\" : \"deadbeefcafebabe\",\n  \"backendIdentifier\" : \"metal\",\n  \"deviceIdentifier\" : \"metal-test-device\",\n  \"fallbackKernelExecutionCount\" : 2,\n  \"fallbackPositionsEntered\" : 17,\n  \"fallbackPositionsSkippedByStartMask\" : 4,\n  \"fixtureIdentifier\" : \"mlx-smoke-fallback-alt-ab-cd-v1\",\n  \"kernelPipelineIdentifier\" : \"fallbackKernel\",\n  \"runtimeProfile\" : \"fallback-benchmark-warm\",\n  \"status\" : \"ok\"\n}\n"

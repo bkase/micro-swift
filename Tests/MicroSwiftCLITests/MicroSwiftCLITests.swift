@@ -22,7 +22,16 @@ private func withTestDependencies(
     $0.uuid = UUIDClient.test(value: "00000000-0000-0000-0000-000000000000")
     $0.mlxRuntime = MLXRuntimeClient.test(
       result: MLXRuntimeClient.MLXSmokeResult(
-        status: "ok", kernel: "trivial-add", version: "deterministic-mock")
+        status: "ok",
+        runtimeProfile: "fallback-benchmark-warm",
+        backendIdentifier: "metal",
+        deviceIdentifier: "metal-test-device",
+        kernelPipelineIdentifier: "fallbackKernel",
+        fallbackPositionsEntered: 17,
+        fallbackPositionsSkippedByStartMask: 4,
+        fallbackKernelExecutionCount: 2,
+        artifactHash: "deadbeefcafebabe",
+        fixtureIdentifier: "mlx-smoke-fallback-alt-ab-cd-v1")
     )
     extraDeps(&$0)
   } operation: {
