@@ -15,7 +15,7 @@ public struct LexingShell: Sendable {
     options: LexOptions
   ) -> LexSourceResult {
     let preparedPages = pagingShell.planAndPreparePages(source: source)
-    var pageResults = [PageLexResult]()
+    var pageResults: [(result: PageLexResult, baseOffset: Int64)] = []
     var overflowPages = [OverflowDiagnostic]()
     pageResults.reserveCapacity(preparedPages.count)
 
@@ -25,35 +25,46 @@ public struct LexingShell: Sendable {
         maxBucketSize: pagingShell.maxBucketSize
       ) {
         overflowPages.append(diagnostic)
-        pageResults.append(
-          PageLexResult(
+        pageResults.append((
+          result: PageLexResult(
             packedRows: [],
             rowCount: 0,
             errorSpans: [],
             overflowDiagnostic: diagnostic
-          ))
+          ),
+          baseOffset: page.baseOffset
+        ))
         continue
       }
 
-      pageResults.append(
-        TensorLexer.lexPage(
+      pageResults.append((
+        result: TensorLexer.lexPage(
           bytes: page.byteSlice,
           validLen: page.validLen,
           baseOffset: page.baseOffset,
           artifact: artifact,
           options: options
-        ))
+        ),
+        baseOffset: page.baseOffset
+      ))
     }
 
-    return LexSourceResult(pageResults: pageResults, overflowPages: overflowPages)
+    let tokenTape = TokenTape.assemble(pageResults: pageResults, overflows: overflowPages)
+    return LexSourceResult(tokenTape: tokenTape, pageResults: pageResults, overflowPages: overflowPages)
   }
 }
 
 public struct LexSourceResult: Sendable {
-  public let pageResults: [PageLexResult]
+  public let tokenTape: TokenTape
+  public let pageResults: [(result: PageLexResult, baseOffset: Int64)]
   public let overflowPages: [OverflowDiagnostic]
 
-  public init(pageResults: [PageLexResult], overflowPages: [OverflowDiagnostic]) {
+  public init(
+    tokenTape: TokenTape,
+    pageResults: [(result: PageLexResult, baseOffset: Int64)],
+    overflowPages: [OverflowDiagnostic]
+  ) {
+    self.tokenTape = tokenTape
     self.pageResults = pageResults
     self.overflowPages = overflowPages
   }
