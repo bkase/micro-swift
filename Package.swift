@@ -29,7 +29,12 @@ let package = Package(
     ),
     .target(name: "MicroSwiftLexerGen"),
     .target(name: "MicroSwiftTensorCore"),
-    .target(name: "MicroSwiftFrontend"),
+    .target(
+      name: "MicroSwiftFrontend",
+      dependencies: [
+        .product(name: "MLX", package: "mlx-swift"),
+      ]
+    ),
     .target(name: "MicroSwiftWasm"),
     .target(name: "MicroSwiftBench"),
     .executableTarget(
@@ -58,7 +63,7 @@ let package = Package(
     ),
     .testTarget(
       name: "MicroSwiftFrontendTests",
-      dependencies: ["MicroSwiftFrontend"],
+      dependencies: ["MicroSwiftFrontend", .product(name: "MLX", package: "mlx-swift")],
       path: "Tests/MicroSwiftFrontendTests"
     ),
     .testTarget(
