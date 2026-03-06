@@ -60,6 +60,28 @@ struct FallbackKernelRunnerTests {
     }
   }
 
+  @Test
+  func recordsBackendDispatchInObservability() throws {
+    let artifact = makeBoundedFallbackArtifact(FallbackFixtures.singleRuleFallback())
+    let runtime = try ArtifactRuntime.fromArtifact(artifact)
+    let fallback = try #require(runtime.fallback)
+    let runner = FallbackKernelRunner(fallback: fallback)
+    let classIDs = Array("if".utf8).map { UInt16(artifact.byteToClass[Int($0)]) }
+
+    var observability = FallbackObservability()
+    _ = runner.evaluatePage(
+      classIDs: classIDs,
+      validLen: Int32(classIDs.count),
+      observability: &observability
+    )
+
+    #expect(observability.fallbackKernelBackendDispatches == 1)
+    #expect(
+      observability.fallbackPositionsEntered + observability.fallbackPositionsSkippedByStartMask
+        == classIDs.count
+    )
+  }
+
   private func assertMatchesScalar(
     result: FallbackPageResult,
     bytes: [UInt8],
