@@ -62,18 +62,18 @@ case "${cmd}" in
     ;;
   build)
     require_command swift
-    run_or_dry swift build
+    run_or_dry swift build -Xswiftc -warnings-as-errors
     ;;
   test)
     require_command swift
-    run_or_dry swift test
+    run_or_dry swift test -Xswiftc -warnings-as-errors
     ;;
   mlx-smoke)
     require_command swift
     if command -v xcodebuild >/dev/null 2>&1; then
       run_or_dry xcodebuild -scheme micro-swift -configuration Debug -destination "platform=macOS" -derivedDataPath "$ROOT_DIR/.build" build
     else
-      run_or_dry swift build --product micro-swift
+      run_or_dry swift build --product micro-swift -Xswiftc -warnings-as-errors
     fi
 
     binary="$(resolve_mlx_binary)"

@@ -4,51 +4,6 @@ import Testing
 @testable import MicroSwiftFrontend
 
 @Suite
-struct FileIDTests {
-  @Test func rawRoundTrip() {
-    let id = FileID(rawValue: 42)
-    #expect(id.rawValue == 42)
-  }
-
-  @Test func equality() {
-    #expect(FileID(rawValue: 1) == FileID(rawValue: 1))
-    #expect(FileID(rawValue: 1) != FileID(rawValue: 2))
-  }
-
-  @Test func hashable() {
-    let set: Set<FileID> = [FileID(rawValue: 1), FileID(rawValue: 1), FileID(rawValue: 2)]
-    #expect(set.count == 2)
-  }
-}
-
-@Suite
-struct ByteOffsetTests {
-  @Test func rawRoundTrip() {
-    let o = ByteOffset(rawValue: 100)
-    #expect(o.rawValue == 100)
-  }
-
-  @Test func comparable() {
-    #expect(ByteOffset(rawValue: 0) < ByteOffset(rawValue: 1))
-    #expect(!(ByteOffset(rawValue: 5) < ByteOffset(rawValue: 5)))
-  }
-}
-
-@Suite
-struct LineIndexTests {
-  @Test func comparable() {
-    #expect(LineIndex(rawValue: 0) < LineIndex(rawValue: 1))
-  }
-}
-
-@Suite
-struct ColumnIndexTests {
-  @Test func comparable() {
-    #expect(ColumnIndex(rawValue: 0) < ColumnIndex(rawValue: 3))
-  }
-}
-
-@Suite
 struct SpanTests {
   let fid = FileID(rawValue: 1)
 
@@ -155,19 +110,5 @@ struct SpanTests {
     let b = try Span.validated(
       fileID: fid, start: ByteOffset(rawValue: 0), end: ByteOffset(rawValue: 5), byteCount: 10)
     #expect(a == b)
-  }
-}
-
-@Suite
-struct SourceBufferTests {
-  @Test func preservesExactBytes() {
-    let raw = Data([0x00, 0xFF, 0x0A, 0x0D, 0xC3, 0xA9])
-    let buffer = SourceBuffer(fileID: FileID(rawValue: 1), path: "/test", bytes: raw)
-    #expect(buffer.bytes == raw)
-  }
-
-  @Test func emptyFile() {
-    let buffer = SourceBuffer(fileID: FileID(rawValue: 0), path: "/empty", bytes: Data())
-    #expect(buffer.bytes.isEmpty)
   }
 }

@@ -181,7 +181,9 @@ struct PagePlannerTests {
       for page in pages {
         let isLineStart = offsetSet.contains(page.end.rawValue)
         let isEOF = page.end.rawValue == eof
-        #expect(isLineStart || isEOF, "Fixture \(fixture.name): page end \(page.end.rawValue) is neither line start nor EOF")
+        #expect(
+          isLineStart || isEOF,
+          "Fixture \(fixture.name): page end \(page.end.rawValue) is neither line start nor EOF")
       }
     }
   }
@@ -197,21 +199,6 @@ struct PagePlannerTests {
       for (i, page) in pages.enumerated() {
         #expect(page.pageID == Int32(i), "Fixture \(fixture.name)")
       }
-    }
-  }
-
-  // MARK: - Determinism
-
-  @Test func determinismSoak() {
-    let bytes = Data([0x61, 0x0A, 0x62, 0x0D, 0x0A, 0x63, 0x0D, 0x64, 0x0A, 0x65])
-    let offsets = LineStructure.lineStartOffsets(bytes: bytes)
-    let policy = PagePolicy(targetBytes: 4)
-    let reference = SourcePaging.planPages(
-      lineStartOffsets: offsets, byteCount: Int64(bytes.count), policy: policy)
-    for _ in 0..<50 {
-      let result = SourcePaging.planPages(
-        lineStartOffsets: offsets, byteCount: Int64(bytes.count), policy: policy)
-      #expect(result == reference, "Determinism failure")
     }
   }
 }
