@@ -69,14 +69,16 @@ struct LexerGenCheck: AsyncParsableCommand {
 }
 
 private func buildMicroSwiftV0Artifact() throws -> LexerArtifact {
-  let options = CompileOptions(maxLocalWindowBytes: 8, enableFallback: true, maxFallbackStatesPerRule: 256)
+  let options = CompileOptions(
+    maxLocalWindowBytes: 8, enableFallback: true, maxFallbackStatesPerRule: 256)
   let declared = microSwiftV0.declare()
   let normalized = DeclaredSpec.normalize(declared)
   let validated = try NormalizedSpec.validate(normalized, options: options)
   let byteClasses = validated.buildByteClasses()
   let classSets = validated.buildClassSets(using: byteClasses)
-  let classified = try validated.classifyRules(byteClasses: byteClasses, classSets: classSets, options: options)
-  return ArtifactSerializer.build(
+  let classified = try validated.classifyRules(
+    byteClasses: byteClasses, classSets: classSets, options: options)
+  return try ArtifactSerializer.build(
     classified: classified,
     byteClasses: byteClasses,
     classSets: classSets,

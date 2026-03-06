@@ -20,6 +20,7 @@ public enum SpecDiagCode: String, Sendable, Codable, Equatable {
   case duplicateKeywordKind = "LEX003"
   case duplicateKeywordLexeme = "LEX004"
   case keywordNotMatchedByBaseRule = "LEX005"
+  case finiteRuleWidthOutOfRange = "LEX006"
 }
 
 public enum Severity: String, Sendable, Codable, Equatable {

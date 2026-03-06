@@ -177,9 +177,14 @@ public enum ArtifactSerializer {
     byteClasses: ByteClasses,
     classSets: ClassSets,
     generatorVersion: String = "dev"
-  ) -> LexerArtifact {
+  ) throws -> LexerArtifact {
+    let diagnostics = validateFiniteRuleWidths(classified: classified)
+    if !diagnostics.isEmpty {
+      throw ValidationError(diagnostics: sortDiagnostics(diagnostics))
+    }
+
     let tokenKinds = buildTokenKinds(classified: classified)
-    let rules = buildLoweredRules(
+    let rules = try buildLoweredRules(
       classified: classified, classSets: classSets, byteClasses: byteClasses)
     let keywordRemaps = buildKeywordRemaps(classified: classified)
 
@@ -265,8 +270,8 @@ private func buildLoweredRules(
   classified: ClassifiedSpec,
   classSets: ClassSets,
   byteClasses: ByteClasses
-) -> [LoweredRule] {
-  classified.rules.enumerated().map { index, rule in
+) throws -> [LoweredRule] {
+  try classified.rules.enumerated().map { index, rule in
     let firstClassSetID =
       classSets.classSetID(for: rule.rule.props.firstByteSet, in: byteClasses)?.rawValue ?? 0
 
@@ -303,6 +308,41 @@ private func buildLoweredRules(
       )
     }
 
+    guard let minWidth = UInt16(exactly: rule.rule.props.minWidth) else {
+      throw ValidationError(
+        diagnostics: [
+          SpecDiagnostic(
+            code: .finiteRuleWidthOutOfRange,
+            severity: .error,
+            primarySpan: rule.rule.sourceSpan,
+            secondarySpan: nil,
+            message:
+              "Rule '\(rule.rule.name)' has minWidth \(rule.rule.props.minWidth), which exceeds UInt16.max."
+          )
+        ]
+      )
+    }
+    let maxWidth: UInt16?
+    if let finiteMaxWidth = rule.rule.props.maxWidth {
+      guard let narrowedMaxWidth = UInt16(exactly: finiteMaxWidth) else {
+        throw ValidationError(
+          diagnostics: [
+            SpecDiagnostic(
+              code: .finiteRuleWidthOutOfRange,
+              severity: .error,
+              primarySpan: rule.rule.sourceSpan,
+              secondarySpan: nil,
+              message:
+                "Rule '\(rule.rule.name)' has maxWidth \(finiteMaxWidth), which exceeds UInt16.max."
+            )
+          ]
+        )
+      }
+      maxWidth = narrowedMaxWidth
+    } else {
+      maxWidth = nil
+    }
+
     return LoweredRule(
       ruleID: UInt16(rule.rule.ruleID.rawValue),
       name: rule.rule.name,
@@ -310,8 +350,8 @@ private func buildLoweredRules(
       mode: rule.rule.mode,
       family: rule.plan.family,
       priorityRank: UInt16(index),
-      minWidth: UInt16(rule.rule.props.minWidth),
-      maxWidth: rule.rule.props.maxWidth.map(UInt16.init),
+      minWidth: minWidth,
+      maxWidth: maxWidth,
       firstClassSetID: firstClassSetID,
       plan: loweredPlan
     )
@@ -384,4 +424,56 @@ private func semanticHashPayload(
 private func sha256Hex(_ input: Data) -> String {
   let digest = SHA256.hash(data: input)
   return digest.map { String(format: "%02x", $0) }.joined()
+}
+
+private func validateFiniteRuleWidths(classified: ClassifiedSpec) -> [SpecDiagnostic] {
+  var diagnostics: [SpecDiagnostic] = []
+  let maxWidth = Int(UInt16.max)
+
+  for classifiedRule in classified.rules {
+    let rule = classifiedRule.rule
+
+    if rule.props.minWidth > maxWidth {
+      diagnostics.append(
+        SpecDiagnostic(
+          code: .finiteRuleWidthOutOfRange,
+          severity: .error,
+          primarySpan: rule.sourceSpan,
+          secondarySpan: nil,
+          message:
+            "Rule '\(rule.name)' has minWidth \(rule.props.minWidth), which exceeds UInt16.max."
+        )
+      )
+    }
+
+    if let finiteMaxWidth = rule.props.maxWidth, finiteMaxWidth > maxWidth {
+      diagnostics.append(
+        SpecDiagnostic(
+          code: .finiteRuleWidthOutOfRange,
+          severity: .error,
+          primarySpan: rule.sourceSpan,
+          secondarySpan: nil,
+          message:
+            "Rule '\(rule.name)' has maxWidth \(finiteMaxWidth), which exceeds UInt16.max."
+        )
+      )
+    }
+  }
+
+  return diagnostics
+}
+
+private func sortDiagnostics(_ diagnostics: [SpecDiagnostic]) -> [SpecDiagnostic] {
+  diagnostics.sorted { lhs, rhs in
+    if lhs.primarySpan.fileID != rhs.primarySpan.fileID {
+      return lhs.primarySpan.fileID < rhs.primarySpan.fileID
+    }
+    if lhs.primarySpan.line != rhs.primarySpan.line {
+      return lhs.primarySpan.line < rhs.primarySpan.line
+    }
+    if lhs.primarySpan.column != rhs.primarySpan.column {
+      return lhs.primarySpan.column < rhs.primarySpan.column
+    }
+    return lhs.code.rawValue < rhs.code.rawValue
+  }
 }

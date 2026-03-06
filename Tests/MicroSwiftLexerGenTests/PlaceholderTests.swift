@@ -610,6 +610,24 @@ struct ArtifactSerializerTests {
     }
   }
 
+  @Test func rejectsFiniteRuleWidthBeyondUInt16Range() {
+    let spec = LexerSpec(name: "too-wide") {
+      token("wide", repeated(.byteClass(.asciiIdentContinue), atLeast: 70_000))
+    }
+
+    do {
+      _ = try buildArtifact(
+        from: spec,
+        options: .init(maxLocalWindowBytes: 8, enableFallback: true, maxFallbackStatesPerRule: 256)
+      )
+      Issue.record("Expected artifact build failure")
+    } catch let error as ValidationError {
+      #expect(error.diagnostics.contains { $0.code == .finiteRuleWidthOutOfRange })
+    } catch {
+      Issue.record("Unexpected error: \(error)")
+    }
+  }
+
   private func buildMicroSwiftArtifact() throws -> LexerArtifact {
     try buildArtifact(
       from: microSwiftV0,
@@ -628,7 +646,7 @@ struct ArtifactSerializerTests {
       classSets: classSets,
       options: options
     )
-    return ArtifactSerializer.build(
+    return try ArtifactSerializer.build(
       classified: classified,
       byteClasses: byteClasses,
       classSets: classSets,
