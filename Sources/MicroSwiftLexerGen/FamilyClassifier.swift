@@ -1,4 +1,4 @@
-public enum RuleFamily: String, Sendable, Equatable {
+public enum RuleFamily: String, Sendable, Codable, Equatable {
   case literal
   case run
   case localWindow
@@ -25,7 +25,7 @@ public struct FallbackPlan: Sendable, Equatable {
   public let transitionRowStride: UInt16
   public let startState: UInt32
   public let acceptingStates: [UInt32]
-  public let transitions: [UInt32] // dense row-major: stateCount * transitionRowStride
+  public let transitions: [UInt32]  // dense row-major: stateCount * transitionRowStride
 }
 
 public enum ClassifiedPlan: Sendable, Equatable {

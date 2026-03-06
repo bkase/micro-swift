@@ -508,7 +508,7 @@ struct FamilyClassifierTests {
     #expect(plan.startState == 1)
     #expect(plan.transitionRowStride == plan.classCount)
     #expect(plan.transitions.count == Int(plan.stateCount * UInt32(plan.transitionRowStride)))
-    #expect(plan.transitions.prefix(Int(plan.classCount)).allSatisfy { $0 == 0 }) // dead-state row
+    #expect(plan.transitions.prefix(Int(plan.classCount)).allSatisfy { $0 == 0 })  // dead-state row
     #expect(plan.transitions.allSatisfy { $0 < plan.stateCount })
   }
 
@@ -541,10 +541,74 @@ struct FamilyClassifierTests {
     let validated = try NormalizedSpec.validate(DeclaredSpec.normalize(spec.declare()))
     let byteClasses = validated.buildByteClasses()
     let classSets = validated.buildClassSets(using: byteClasses)
-    let opts = CompileOptions(maxLocalWindowBytes: 1, enableFallback: true, maxFallbackStatesPerRule: 256)
+    let opts = CompileOptions(
+      maxLocalWindowBytes: 1, enableFallback: true, maxFallbackStatesPerRule: 256)
 
-    let a = try validated.classifyRules(byteClasses: byteClasses, classSets: classSets, options: opts)
-    let b = try validated.classifyRules(byteClasses: byteClasses, classSets: classSets, options: opts)
+    let a = try validated.classifyRules(
+      byteClasses: byteClasses, classSets: classSets, options: opts)
+    let b = try validated.classifyRules(
+      byteClasses: byteClasses, classSets: classSets, options: opts)
     #expect(a == b)
+  }
+}
+
+@Suite("Artifact Serializer Tests")
+struct ArtifactSerializerTests {
+  @Test func artifactRoundTrips() throws {
+    let artifact = try buildMicroSwiftArtifact()
+    let encoded = try ArtifactSerializer.encode(artifact)
+    let decoded = try ArtifactSerializer.decode(encoded)
+    #expect(decoded == artifact)
+  }
+
+  @Test func artifactEncodingIsDeterministic() throws {
+    let artifactA = try buildMicroSwiftArtifact()
+    let artifactB = try buildMicroSwiftArtifact()
+    let bytesA = try ArtifactSerializer.encode(artifactA)
+    let bytesB = try ArtifactSerializer.encode(artifactB)
+    #expect(bytesA == bytesB)
+  }
+
+  @Test func fallbackLayoutIsDenseRowMajor() throws {
+    let spec = LexerSpec(name: "fallback-artifact") {
+      token("alt", alt(literal("ab"), literal("cd")))
+    }
+    let artifact = try buildArtifact(
+      from: spec,
+      options: .init(maxLocalWindowBytes: 1, enableFallback: true, maxFallbackStatesPerRule: 256)
+    )
+    let fallbackRule = try #require(artifact.rules.first(where: { $0.family == .fallback }))
+
+    if case .fallback(let stateCount, let classCount, let rowStride, _, _, let transitions) = fallbackRule.plan {
+      #expect(rowStride == classCount)
+      #expect(transitions.count == Int(stateCount * UInt32(rowStride)))
+      #expect(transitions.allSatisfy { $0 < stateCount })
+    } else {
+      Issue.record("Expected fallback rule plan")
+    }
+  }
+
+  private func buildMicroSwiftArtifact() throws -> LexerArtifact {
+    try buildArtifact(
+      from: microSwiftV0,
+      options: .init(maxLocalWindowBytes: 8, enableFallback: true, maxFallbackStatesPerRule: 256)
+    )
+  }
+
+  private func buildArtifact(from spec: LexerSpec, options: CompileOptions) throws -> LexerArtifact {
+    let validated = try NormalizedSpec.validate(DeclaredSpec.normalize(spec.declare()), options: options)
+    let byteClasses = validated.buildByteClasses()
+    let classSets = validated.buildClassSets(using: byteClasses)
+    let classified = try validated.classifyRules(
+      byteClasses: byteClasses,
+      classSets: classSets,
+      options: options
+    )
+    return ArtifactSerializer.build(
+      classified: classified,
+      byteClasses: byteClasses,
+      classSets: classSets,
+      generatorVersion: "test"
+    )
   }
 }

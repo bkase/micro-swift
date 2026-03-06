@@ -20,7 +20,7 @@ extension ValidatedSpec {
 
     var idsByKey: [String: Int] = [
       dead.canonicalKey: 0,
-      start.canonicalKey: 1
+      start.canonicalKey: 1,
     ]
 
     var transitions = Array(repeating: UInt32(0), count: classCount)
@@ -42,7 +42,9 @@ extension ValidatedSpec {
           nextID = states.count
           guard nextID <= options.maxFallbackStatesPerRule else {
             throw FallbackBuildError(
-              message: "Fallback states exceeded maxFallbackStatesPerRule=\(options.maxFallbackStatesPerRule).")
+              message:
+                "Fallback states exceeded maxFallbackStatesPerRule=\(options.maxFallbackStatesPerRule)."
+            )
           }
           states.append(nextRegex)
           idsByKey[nextRegex.canonicalKey] = nextID
