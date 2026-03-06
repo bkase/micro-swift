@@ -474,7 +474,8 @@ struct FamilyClassifierTests {
       options: .init(maxLocalWindowBytes: 8, enableFallback: true, maxFallbackStatesPerRule: 256)
     )
 
-    let byName = Dictionary(uniqueKeysWithValues: classified.rules.map { ($0.rule.name, $0.plan.family) })
+    let byName = Dictionary(
+      uniqueKeysWithValues: classified.rules.map { ($0.rule.name, $0.plan.family) })
 
     #expect(byName["ws"] == .run)
     #expect(byName["lineComment"] == .run)
@@ -500,6 +501,15 @@ struct FamilyClassifierTests {
 
     #expect(classified.rules.count == 1)
     #expect(classified.rules[0].plan.family == .fallback)
+    guard case .fallback(let plan) = classified.rules[0].plan else {
+      Issue.record("Expected fallback plan")
+      return
+    }
+    #expect(plan.startState == 1)
+    #expect(plan.transitionRowStride == plan.classCount)
+    #expect(plan.transitions.count == Int(plan.stateCount * UInt32(plan.transitionRowStride)))
+    #expect(plan.transitions.prefix(Int(plan.classCount)).allSatisfy { $0 == 0 }) // dead-state row
+    #expect(plan.transitions.allSatisfy { $0 < plan.stateCount })
   }
 
   @Test func errorsWhenFallbackDisabledAndRuleNeedsFallback() throws {
@@ -522,5 +532,19 @@ struct FamilyClassifierTests {
     } catch {
       Issue.record("Unexpected error: \(error)")
     }
+  }
+
+  @Test func fallbackPlanIsDeterministicAcrossRuns() throws {
+    let spec = LexerSpec(name: "fallback-deterministic") {
+      token("alt", alt(literal("ab"), literal("cd")))
+    }
+    let validated = try NormalizedSpec.validate(DeclaredSpec.normalize(spec.declare()))
+    let byteClasses = validated.buildByteClasses()
+    let classSets = validated.buildClassSets(using: byteClasses)
+    let opts = CompileOptions(maxLocalWindowBytes: 1, enableFallback: true, maxFallbackStatesPerRule: 256)
+
+    let a = try validated.classifyRules(byteClasses: byteClasses, classSets: classSets, options: opts)
+    let b = try validated.classifyRules(byteClasses: byteClasses, classSets: classSets, options: opts)
+    #expect(a == b)
   }
 }

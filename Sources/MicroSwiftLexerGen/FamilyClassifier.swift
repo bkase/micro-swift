@@ -20,7 +20,12 @@ public struct LocalWindowPlan: Sendable, Equatable {
 }
 
 public struct FallbackPlan: Sendable, Equatable {
-  public let regex: NormalizedRegex
+  public let stateCount: UInt32
+  public let classCount: UInt16
+  public let transitionRowStride: UInt16
+  public let startState: UInt32
+  public let acceptingStates: [UInt32]
+  public let transitions: [UInt32] // dense row-major: stateCount * transitionRowStride
 }
 
 public enum ClassifiedPlan: Sendable, Equatable {
@@ -94,7 +99,8 @@ extension ValidatedSpec {
     }
 
     if options.enableFallback {
-      return .fallback(FallbackPlan(regex: regex))
+      let plan = try buildFallbackPlan(regex: regex, byteClasses: byteClasses, options: options)
+      return .fallback(plan)
     }
 
     throw ClassificationError(message: "Rule requires fallback but fallback is disabled.")
