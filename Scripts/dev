@@ -88,9 +88,7 @@ case "${cmd}" in
     "$0" lint
     "$0" build
     "$0" test
-    if [[ "${SKIP_MLX_SMOKE:-0}" != "1" ]]; then
-      "$0" mlx-smoke
-    fi
+    "$0" mlx-smoke
     ;;
   install-hooks)
     mkdir -p "$ROOT_DIR/.git/hooks"

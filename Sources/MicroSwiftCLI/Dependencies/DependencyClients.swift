@@ -202,8 +202,8 @@ public struct MLXRuntimeClient: Sendable {
 
   public static func live() -> Self {
     Self {
-      let a = MLXArray([1.0, 2.0])
-      let b = MLXArray([3.0, 4.0])
+      let a = MLXArray([Float(1), Float(2)])
+      let b = MLXArray([Float(3), Float(4)])
       let c = a + b
       eval(c)
       let values = c.asArray(Float.self)
