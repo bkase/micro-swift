@@ -27,6 +27,9 @@ public struct ArtifactRuntime: Sendable {
   // Byte class declarations
   public let classes: [ByteClassDecl]
 
+  // Dense class-set membership runtime table
+  public let classSetRuntime: ClassSetRuntime
+
   public init(
     specName: String,
     ruleCount: Int,
@@ -51,5 +54,6 @@ public struct ArtifactRuntime: Sendable {
     self.keywordRemaps = keywordRemaps
     self.classSets = classSets
     self.classes = classes
+    self.classSetRuntime = ClassSetRuntime.build(classSets: classSets, classes: classes)
   }
 }
