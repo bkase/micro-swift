@@ -41,17 +41,40 @@ struct LexPageTests {
   }
 
   @Test
-  func lexShellThrowsOverflowWhenPageCapacityExceeded() throws {
+  func lexShellPagesWhenPageCapacityExceeded() throws {
     let runtime = try makeRuntime(maxLookahead: 4)
     let shell = LexShell()
 
-    #expect(throws: LexShellError.pageOverflow(actual: 5, max: 4)) {
-      _ = try shell.lexFile(
-        bytes: Array("aaaaa".utf8),
-        artifact: runtime,
-        options: LexOptions(runtimeProfile: .v1Fallback)
-      )
-    }
+    let results = try shell.lexFile(
+      bytes: Array("aaaaa".utf8),
+      artifact: runtime,
+      options: LexOptions(runtimeProfile: .v1Fallback)
+    )
+
+    #expect(results.count == 2)
+    #expect(results[0].rowCount == 1)
+    #expect(results[0].packedRows.count == 4)
+    #expect(results[1].rowCount == 1)
+    #expect(results[1].packedRows.count == 4)
+    #expect(results[1].packedRows[1...] == Array(repeating: UInt64(0), count: 3)[...])
+  }
+
+  @Test
+  func lexShellUsesBaseOffsetsAcrossMultiplePages() throws {
+    let runtime = try makeRuntime(maxLookahead: 4)
+    let shell = LexShell()
+
+    let results = try shell.lexFile(
+      bytes: Array("aaaaaaaa".utf8),
+      artifact: runtime,
+      options: LexOptions(runtimeProfile: .v1Fallback)
+    )
+
+    #expect(results.count == 2)
+    #expect(results[0].rowCount == 1)
+    #expect(results[1].rowCount == 1)
+    #expect(unpackStartByte(results[0].packedRows[0]) == 0)
+    #expect(unpackStartByte(results[1].packedRows[0]) == 4)
   }
 
   @Test
@@ -127,4 +150,8 @@ private func makeRuntime(maxLookahead: UInt16) throws -> ArtifactRuntime {
   )
 
   return try ArtifactRuntime.fromArtifact(artifact)
+}
+
+private func unpackStartByte(_ packedRow: UInt64) -> UInt64 {
+  packedRow >> 32
 }

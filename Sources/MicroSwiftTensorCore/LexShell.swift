@@ -12,19 +12,37 @@ public struct LexShell: Sendable {
   ) throws -> [PageLexResult] {
     let maxPageSize = pageCapacity(for: artifact)
 
-    guard bytes.count <= maxPageSize else {
-      throw LexShellError.pageOverflow(actual: bytes.count, max: maxPageSize)
+    if bytes.isEmpty {
+      let pageResult = lexPage(
+        bytes: bytes,
+        validLen: Int32(bytes.count),
+        baseOffset: 0,
+        artifact: artifact,
+        options: options
+      )
+
+      return [pad(result: pageResult, to: maxPageSize)]
     }
 
-    let pageResult = lexPage(
-      bytes: bytes,
-      validLen: Int32(bytes.count),
-      baseOffset: 0,
-      artifact: artifact,
-      options: options
-    )
+    var results: [PageLexResult] = []
+    var offset = 0
 
-    return [pad(result: pageResult, to: maxPageSize)]
+    while offset < bytes.count {
+      let pageLen = min(maxPageSize, bytes.count - offset)
+      let pageBytes = Array(bytes[offset..<(offset + pageLen)])
+      let pageResult = lexPage(
+        bytes: pageBytes,
+        validLen: Int32(pageLen),
+        baseOffset: Int64(offset),
+        artifact: artifact,
+        options: options
+      )
+
+      results.append(pad(result: pageResult, to: maxPageSize))
+      offset += pageLen
+    }
+
+    return results
   }
 
   private func pageCapacity(for artifact: ArtifactRuntime) -> Int {
