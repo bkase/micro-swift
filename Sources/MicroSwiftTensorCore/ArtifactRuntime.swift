@@ -11,26 +11,52 @@ public enum ArtifactRuntimeError: Error, Sendable, Equatable {
 }
 
 public struct ArtifactRuntime: Sendable {
+  public let specName: String
+  public let ruleCount: Int
   public let runtimeHints: RuntimeHints
   public let byteToClassLUT: [UInt8]
+  public let tokenKinds: [TokenKindDecl]
   public let rules: [LoweredRule]
   public let classSets: [ClassSetDecl]
+  public let classes: [ByteClassDecl]
   public let keywordRemaps: [KeywordRemapTable]
+  public let classSetRuntime: ClassSetRuntime
   public let fallback: FallbackRuntime?
 
+  public var maxLiteralLength: UInt16 {
+    runtimeHints.maxLiteralLength
+  }
+
+  public var maxBoundedRuleWidth: UInt16 {
+    runtimeHints.maxBoundedRuleWidth
+  }
+
+  public var maxDeterministicLookaheadBytes: UInt16 {
+    runtimeHints.maxDeterministicLookaheadBytes
+  }
+
   public init(
+    specName: String,
+    ruleCount: Int,
     runtimeHints: RuntimeHints,
     byteToClassLUT: [UInt8],
+    tokenKinds: [TokenKindDecl],
     rules: [LoweredRule],
     classSets: [ClassSetDecl],
+    classes: [ByteClassDecl],
     keywordRemaps: [KeywordRemapTable],
     fallback: FallbackRuntime?
   ) {
+    self.specName = specName
+    self.ruleCount = ruleCount
     self.runtimeHints = runtimeHints
     self.byteToClassLUT = byteToClassLUT
+    self.tokenKinds = tokenKinds
     self.rules = rules
     self.classSets = classSets
+    self.classes = classes
     self.keywordRemaps = keywordRemaps
+    self.classSetRuntime = ClassSetRuntime.build(classSets: classSets, classes: classes)
     self.fallback = fallback
   }
 
@@ -42,10 +68,14 @@ public struct ArtifactRuntime: Sendable {
     let fallback = try buildFallbackRuntime(from: artifact)
 
     return ArtifactRuntime(
+      specName: artifact.specName,
+      ruleCount: artifact.rules.count,
       runtimeHints: artifact.runtimeHints,
       byteToClassLUT: artifact.byteToClass,
+      tokenKinds: artifact.tokenKinds,
       rules: artifact.rules,
       classSets: artifact.classSets,
+      classes: artifact.classes,
       keywordRemaps: artifact.keywordRemaps,
       fallback: fallback
     )

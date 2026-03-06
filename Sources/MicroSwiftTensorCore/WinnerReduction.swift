@@ -1,3 +1,101 @@
+import MicroSwiftLexerGen
+
+public enum WinnerReduction {
+  /// Candidate from a single rule at all positions.
+  public struct RuleCandidate {
+    public let ruleID: UInt16
+    public let tokenKindID: UInt16
+    public let priorityRank: UInt16
+    public let mode: UInt8
+    public let candLen: [UInt16]
+
+    public init(
+      ruleID: UInt16,
+      tokenKindID: UInt16,
+      priorityRank: UInt16,
+      mode: UInt8,
+      candLen: [UInt16]
+    ) {
+      self.ruleID = ruleID
+      self.tokenKindID = tokenKindID
+      self.priorityRank = priorityRank
+      self.mode = mode
+      self.candLen = candLen
+    }
+  }
+
+  /// Reduce multiple rule candidates to one winner per position.
+  /// Uses hierarchical pairwise tree merge with the lexicographic comparator:
+  ///   1. longer length wins
+  ///   2. smaller priorityRank wins
+  ///   3. smaller ruleID wins
+  public static func reduce(candidates: [RuleCandidate], pageSize: Int) -> [WinnerTuple] {
+    precondition(pageSize >= 0, "pageSize must be non-negative")
+
+    if candidates.isEmpty {
+      return Array(repeating: .empty, count: pageSize)
+    }
+
+    var levels = candidates.map { candidate -> [WinnerTuple] in
+      precondition(
+        candidate.candLen.count == pageSize,
+        "RuleCandidate candLen count must equal pageSize"
+      )
+
+      return candidate.candLen.map { len in
+        if len == 0 {
+          return .empty
+        }
+
+        return WinnerTuple(
+          len: len,
+          priorityRank: candidate.priorityRank,
+          ruleID: candidate.ruleID,
+          tokenKindID: candidate.tokenKindID,
+          mode: candidate.mode
+        )
+      }
+    }
+
+    while levels.count > 1 {
+      var nextLevel: [[WinnerTuple]] = []
+      nextLevel.reserveCapacity((levels.count + 1) / 2)
+
+      var index = 0
+      while index < levels.count {
+        let left = levels[index]
+        if index + 1 < levels.count {
+          let right = levels[index + 1]
+          nextLevel.append(pairwiseMerge(left, right))
+        } else {
+          nextLevel.append(left)
+        }
+        index += 2
+      }
+
+      levels = nextLevel
+    }
+
+    return levels[0]
+  }
+
+  /// Pairwise merge two winner arrays element-wise.
+  public static func pairwiseMerge(_ a: [WinnerTuple], _ b: [WinnerTuple]) -> [WinnerTuple] {
+    precondition(a.count == b.count, "Winner arrays must have equal length")
+
+    var merged: [WinnerTuple] = []
+    merged.reserveCapacity(a.count)
+
+    for index in a.indices {
+      let lhs = a[index]
+      let rhs = b[index]
+      merged.append(rhs.isBetterThan(lhs) ? rhs : lhs)
+    }
+
+    return merged
+  }
+}
+
 public struct CandidateWinner: Sendable, Equatable {
   public let position: Int
   public let len: UInt16
@@ -57,33 +155,55 @@ public func reduceBucketWinners(buckets: [[CandidateWinner]]) -> [CandidateWinne
 }
 
 public func integrateWithFallback(
+  fastWinners: [WinnerTuple],
+  fallbackResult: FallbackPageResult,
+  pageWidth: Int
+) -> [WinnerTuple] {
+  guard pageWidth > 0 else { return [] }
+
+  var integrated = normalizedWinners(fastWinners, pageWidth: pageWidth)
+  for position in 0..<pageWidth {
+    let fallback = WinnerTuple(
+      len: value(at: position, in: fallbackResult.fallbackLen),
+      priorityRank: value(at: position, in: fallbackResult.fallbackPriorityRank),
+      ruleID: value(at: position, in: fallbackResult.fallbackRuleID),
+      tokenKindID: value(at: position, in: fallbackResult.fallbackTokenKindID),
+      mode: value(at: position, in: fallbackResult.fallbackMode)
+    )
+
+    if fallback.isBetterThan(integrated[position]) {
+      integrated[position] = fallback
+    }
+  }
+
+  return integrated
+}
+
+public func integrateWithFallback(
   fastWinners: [CandidateWinner],
   fallbackResult: FallbackPageResult,
   pageWidth: Int
 ) -> [CandidateWinner] {
-  guard pageWidth > 0 else { return [] }
+  let integrated = integrateWithFallback(
+    fastWinners: normalizedWinners(fastWinners, pageWidth: pageWidth).map(asWinnerTuple),
+    fallbackResult: fallbackResult,
+    pageWidth: pageWidth
+  )
 
-  var fallbackWinners: [CandidateWinner] = []
-  fallbackWinners.reserveCapacity(pageWidth)
-
-  for position in 0..<pageWidth {
-    let len = value(at: position, in: fallbackResult.fallbackLen)
-    fallbackWinners.append(
-      CandidateWinner(
-        position: position,
-        len: len,
-        priorityRank: value(at: position, in: fallbackResult.fallbackPriorityRank),
-        ruleID: value(at: position, in: fallbackResult.fallbackRuleID),
-        tokenKindID: value(at: position, in: fallbackResult.fallbackTokenKindID),
-        mode: value(at: position, in: fallbackResult.fallbackMode)
-      ))
+  return integrated.enumerated().map { position, winner in
+    candidateWinner(from: winner, position: position)
   }
+}
 
-  return reduceBucketWinners(
-    buckets: [
-      normalizedWinners(fastWinners, pageWidth: pageWidth),
-      fallbackWinners,
-    ])
+private func normalizedWinners(_ winners: [WinnerTuple], pageWidth: Int) -> [WinnerTuple] {
+  guard pageWidth > 0 else { return [] }
+  guard winners.count != pageWidth else { return winners }
+
+  var normalized = Array(repeating: WinnerTuple.empty, count: pageWidth)
+  for (position, winner) in winners.enumerated() where position < pageWidth {
+    normalized[position] = winner
+  }
+  return normalized
 }
 
 private func normalizedWinners(_ winners: [CandidateWinner], pageWidth: Int) -> [CandidateWinner] {
@@ -116,4 +236,29 @@ private func isBetterCandidate(_ lhs: CandidateWinner, than rhs: CandidateWinner
   if lhs.len == 0 { return false }
   if lhs.priorityRank != rhs.priorityRank { return lhs.priorityRank < rhs.priorityRank }
   return lhs.ruleID < rhs.ruleID
+}
+
+private func asWinnerTuple(_ candidate: CandidateWinner) -> WinnerTuple {
+  if candidate.len == 0 {
+    return .empty
+  }
+
+  return WinnerTuple(
+    len: candidate.len,
+    priorityRank: candidate.priorityRank,
+    ruleID: candidate.ruleID,
+    tokenKindID: candidate.tokenKindID,
+    mode: candidate.mode
+  )
+}
+
+func candidateWinner(from winner: WinnerTuple, position: Int) -> CandidateWinner {
+  CandidateWinner(
+    position: position,
+    len: winner.len,
+    priorityRank: winner.len == 0 ? 0 : winner.priorityRank,
+    ruleID: winner.len == 0 ? 0 : winner.ruleID,
+    tokenKindID: winner.len == 0 ? 0 : winner.tokenKindID,
+    mode: winner.len == 0 ? 0 : winner.mode
+  )
 }

@@ -30,7 +30,10 @@ let package = Package(
     .target(name: "MicroSwiftLexerGen"),
     .target(
       name: "MicroSwiftTensorCore",
-      dependencies: ["MicroSwiftLexerGen"]
+      dependencies: [
+        "MicroSwiftLexerGen",
+        "MicroSwiftFrontend",
+      ]
     ),
     .target(
       name: "MicroSwiftFrontend",
@@ -62,7 +65,7 @@ let package = Package(
     ),
     .testTarget(
       name: "MicroSwiftTensorCoreTests",
-      dependencies: ["MicroSwiftTensorCore", "MicroSwiftLexerGen"],
+      dependencies: ["MicroSwiftTensorCore", "MicroSwiftLexerGen", "MicroSwiftFrontend"],
       path: "Tests/MicroSwiftTensorCoreTests"
     ),
     .testTarget(

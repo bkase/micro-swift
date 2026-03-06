@@ -1,0 +1,74 @@
+import MicroSwiftFrontend
+
+public struct LexingShell: Sendable {
+  public let pagingShell: PagingShell
+
+  public init(pagingShell: PagingShell = PagingShell()) {
+    self.pagingShell = pagingShell
+  }
+
+  /// Lex all pages of a source buffer. Returns page results in order.
+  /// For now, calls lexPage stub for each non-overflow page.
+  public func lexSource(
+    source: SourceBuffer,
+    artifact: ArtifactRuntime,
+    options: LexOptions
+  ) -> LexSourceResult {
+    let preparedPages = pagingShell.planAndPreparePages(source: source)
+    var pageResults: [(result: PageLexResult, baseOffset: Int64)] = []
+    var overflowPages = [OverflowDiagnostic]()
+    pageResults.reserveCapacity(preparedPages.count)
+
+    for page in preparedPages {
+      if let diagnostic = OverflowHandler.checkOverflow(
+        page: page,
+        maxBucketSize: pagingShell.maxBucketSize
+      ) {
+        overflowPages.append(diagnostic)
+        pageResults.append(
+          (
+            result: PageLexResult(
+              packedRows: [],
+              rowCount: 0,
+              errorSpans: [],
+              overflowDiagnostic: diagnostic
+            ),
+            baseOffset: page.baseOffset
+          ))
+        continue
+      }
+
+      pageResults.append(
+        (
+          result: TensorLexer.lexPage(
+            bytes: page.byteSlice,
+            validLen: page.validLen,
+            baseOffset: page.baseOffset,
+            artifact: artifact,
+            options: options
+          ),
+          baseOffset: page.baseOffset
+        ))
+    }
+
+    let tokenTape = TokenTape.assemble(pageResults: pageResults, overflows: overflowPages)
+    return LexSourceResult(
+      tokenTape: tokenTape, pageResults: pageResults, overflowPages: overflowPages)
+  }
+}
+
+public struct LexSourceResult: Sendable {
+  public let tokenTape: TokenTape
+  public let pageResults: [(result: PageLexResult, baseOffset: Int64)]
+  public let overflowPages: [OverflowDiagnostic]
+
+  public init(
+    tokenTape: TokenTape,
+    pageResults: [(result: PageLexResult, baseOffset: Int64)],
+    overflowPages: [OverflowDiagnostic]
+  ) {
+    self.tokenTape = tokenTape
+    self.pageResults = pageResults
+    self.overflowPages = overflowPages
+  }
+}

@@ -57,6 +57,11 @@ public struct LexShell: Sendable {
     }
     let padded =
       result.packedRows + Array(repeating: UInt64(0), count: width - result.packedRows.count)
-    return PageLexResult(packedRows: padded, rowCount: result.rowCount)
+    return PageLexResult(
+      packedRows: padded,
+      rowCount: result.rowCount,
+      errorSpans: result.errorSpans,
+      overflowDiagnostic: result.overflowDiagnostic
+    )
   }
 }

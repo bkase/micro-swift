@@ -19,11 +19,11 @@ struct LexPageTests {
     )
 
     #expect(result.rowCount == 1)
-    #expect(result.packedRows.count == 1)
-    let row = unpackRow(result.packedRows[0])
-    #expect(row.startByte == 0)
+    #expect(result.packedRows.count == 2)
+    let row = try #require(result.packedRows.first)
+    #expect(PackedToken.unpackLocalStart(row) == 0)
     #expect(row.len == 2)
-    #expect(row.tokenKindID == 9)
+    #expect(PackedToken.unpackTokenKindID(row) == 9)
   }
 
   @Test
@@ -40,7 +40,7 @@ struct LexPageTests {
     )
 
     #expect(result.rowCount == 0)
-    #expect(result.packedRows.isEmpty)
+    #expect(result.packedRows.allSatisfy { $0 == 0 })
   }
 
   @Test
@@ -76,8 +76,10 @@ struct LexPageTests {
     #expect(results.count == 2)
     #expect(results[0].rowCount == 1)
     #expect(results[1].rowCount == 1)
-    #expect(unpackStartByte(results[0].packedRows[0]) == 0)
-    #expect(unpackStartByte(results[1].packedRows[0]) == 4)
+    let firstPageTokens = TokenUnpacker.unpack(result: results[0], baseOffset: 0)
+    let secondPageTokens = TokenUnpacker.unpack(result: results[1], baseOffset: 4)
+    #expect(firstPageTokens.map(\.startByte) == [0])
+    #expect(secondPageTokens.map(\.startByte) == [4])
   }
 
   @Test
@@ -117,9 +119,9 @@ struct LexPageTests {
     )
 
     #expect(result.rowCount == 1)
-    let row = unpackRow(try #require(result.packedRows.first))
-    #expect(row.tokenKindID == 300)
-    #expect(row.len == 2)
+    let row = try #require(result.packedRows.first)
+    #expect(PackedToken.unpackTokenKindID(row) == 300)
+    #expect(PackedToken.unpackLength(row) == 2)
   }
 }
 
@@ -174,14 +176,8 @@ private func makeRuntime(maxLookahead: UInt16, tokenKindID: UInt16 = 9) throws -
   return try ArtifactRuntime.fromArtifact(artifact)
 }
 
-private func unpackStartByte(_ packedRow: UInt64) -> UInt64 {
-  packedRow >> 32
-}
-
-private func unpackRow(_ packed: UInt64) -> (startByte: UInt32, len: UInt16, tokenKindID: UInt16) {
-  (
-    startByte: UInt32((packed >> 32) & 0xFFFF_FFFF),
-    len: UInt16((packed >> 16) & 0xFFFF),
-    tokenKindID: UInt16(packed & 0xFFFF)
-  )
+private extension UInt64 {
+  var len: UInt16 {
+    PackedToken.unpackLength(self)
+  }
 }
