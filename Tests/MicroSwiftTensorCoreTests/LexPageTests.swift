@@ -20,7 +20,10 @@ struct LexPageTests {
 
     #expect(result.rowCount == 1)
     #expect(result.packedRows.count == 1)
-    #expect(result.packedRows[0] != 0)
+    let row = unpackRow(result.packedRows[0])
+    #expect(row.startByte == 0)
+    #expect(row.len == 2)
+    #expect(row.tokenKindID == 9)
   }
 
   @Test
@@ -99,13 +102,32 @@ struct LexPageTests {
     #expect(page.packedRows[1...] == Array(repeating: UInt64(0), count: 7)[...])
     #expect(first == second)
   }
+
+  @Test
+  func lexPageRetainsFull16BitTokenKindIDInPackedRows() throws {
+    let runtime = try makeRuntime(maxLookahead: 8, tokenKindID: 300)
+    let bytes = Array("aa".utf8)
+
+    let result = lexPage(
+      bytes: bytes,
+      validLen: Int32(bytes.count),
+      baseOffset: 0,
+      artifact: runtime,
+      options: LexOptions(runtimeProfile: .v1Fallback)
+    )
+
+    #expect(result.rowCount == 1)
+    let row = unpackRow(try #require(result.packedRows.first))
+    #expect(row.tokenKindID == 300)
+    #expect(row.len == 2)
+  }
 }
 
-private func makeRuntime(maxLookahead: UInt16) throws -> ArtifactRuntime {
+private func makeRuntime(maxLookahead: UInt16, tokenKindID: UInt16 = 9) throws -> ArtifactRuntime {
   let rule = LoweredRule(
     ruleID: 1,
     name: "a-fallback",
-    tokenKindID: 9,
+    tokenKindID: tokenKindID,
     mode: .emit,
     family: .fallback,
     priorityRank: 0,
@@ -140,7 +162,7 @@ private func makeRuntime(maxLookahead: UInt16) throws -> ArtifactRuntime {
       maxDeterministicLookaheadBytes: maxLookahead
     ),
     tokenKinds: [
-      TokenKindDecl(tokenKindID: 9, name: "tok9", defaultMode: .emit)
+      TokenKindDecl(tokenKindID: tokenKindID, name: "tok\(tokenKindID)", defaultMode: .emit)
     ],
     byteToClass: byteToClass,
     classes: [ByteClassDecl(classID: 0, bytes: [Character("a").asciiValue!])],
@@ -154,4 +176,12 @@ private func makeRuntime(maxLookahead: UInt16) throws -> ArtifactRuntime {
 
 private func unpackStartByte(_ packedRow: UInt64) -> UInt64 {
   packedRow >> 32
+}
+
+private func unpackRow(_ packed: UInt64) -> (startByte: UInt32, len: UInt16, tokenKindID: UInt16) {
+  (
+    startByte: UInt32((packed >> 32) & 0xFFFF_FFFF),
+    len: UInt16((packed >> 16) & 0xFFFF),
+    tokenKindID: UInt16(packed & 0xFFFF)
+  )
 }

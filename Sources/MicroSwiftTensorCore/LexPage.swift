@@ -192,15 +192,19 @@ private func packRow(winner: CandidateWinner, baseOffset: Int64) -> UInt64 {
   let startByte = UInt64(clamping: max(0, Int64(winner.position) + baseOffset))
   let endByte = UInt64(clamping: max(0, Int64(winner.position) + baseOffset + Int64(winner.len)))
 
-  // [63:32]=startByte (low 32 bits), [31:16]=len, [15:8]=mode, [7:0]=token low byte
+  // Compact row layout:
+  // [63:32]=startByte (low 32 bits), [31:16]=len, [15:0]=tokenKindID.
+  // The prior format truncated token kinds to 8 bits in order to carry `mode`,
+  // but there is no in-repo packed-row consumer for `mode` and no spare bit left
+  // once span and the full 16-bit token kind are preserved.
   let startField = (startByte & 0xFFFF_FFFF) << 32
   let lenField = (UInt64(winner.len) & 0xFFFF) << 16
-  let modeField = (UInt64(winner.mode) & 0xFF) << 8
-  let tokenField = UInt64(winner.tokenKindID & 0x00FF)
-  let packed = startField | lenField | modeField | tokenField
+  let tokenField = UInt64(winner.tokenKindID) & 0xFFFF
+  let packed = startField | lenField | tokenField
 
   // Keep `endByte` part of packing decisions even though the current compact format
   // does not store it explicitly.
   _ = endByte
+  _ = winner.mode
   return packed
 }
