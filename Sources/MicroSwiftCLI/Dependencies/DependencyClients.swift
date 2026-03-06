@@ -1,5 +1,6 @@
 import Dependencies
 import Foundation
+import MLX
 
 public struct ProcessResult: Sendable, Equatable {
   public let exitCode: Int32
@@ -37,7 +38,10 @@ public struct FileSystemClient: Sendable {
   public static func live() -> Self {
     return Self(
       currentDirectoryPath: { FileManager.default.currentDirectoryPath },
-      directoryExists: { FileManager.default.fileExists(atPath: $0) },
+      directoryExists: { path in
+        var isDir: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDir) && isDir.boolValue
+      },
       fileExists: { FileManager.default.fileExists(atPath: $0) },
       readFile: { try Data(contentsOf: URL(fileURLWithPath: $0)) },
       writeFile: { path, data in
@@ -65,17 +69,25 @@ public struct FileSystemClient: Sendable {
 
 public struct EnvironmentClient: Sendable {
   public var environment: @Sendable () -> [String: String]
+  public var osVersion: @Sendable () -> String
 
-  public init(environment: @escaping @Sendable () -> [String: String]) {
+  public init(
+    environment: @escaping @Sendable () -> [String: String],
+    osVersion: @escaping @Sendable () -> String
+  ) {
     self.environment = environment
+    self.osVersion = osVersion
   }
 
   public static func live() -> Self {
-    Self(environment: { ProcessInfo.processInfo.environment })
+    Self(
+      environment: { ProcessInfo.processInfo.environment },
+      osVersion: { ProcessInfo.processInfo.operatingSystemVersionString }
+    )
   }
 
-  public static func test(_ values: [String: String] = [:]) -> Self {
-    Self(environment: { values })
+  public static func test(_ values: [String: String] = [:], osVersion: String = "test-os") -> Self {
+    Self(environment: { values }, osVersion: { osVersion })
   }
 }
 
@@ -190,12 +202,24 @@ public struct MLXRuntimeClient: Sendable {
 
   public static func live() -> Self {
     Self {
-      MLXSmokeResult(
+      let a = MLXArray([1.0, 2.0])
+      let b = MLXArray([3.0, 4.0])
+      let c = a + b
+      eval(c)
+      let values = c.asArray(Float.self)
+      guard values == [4.0, 6.0] else {
+        throw MLXSmokeError.unexpectedResult(values)
+      }
+      return MLXSmokeResult(
         status: "ok",
         kernel: "trivial-add",
-        version: "deterministic-mock"
+        version: "mlx-swift"
       )
     }
+  }
+
+  enum MLXSmokeError: Error {
+    case unexpectedResult([Float])
   }
 
   public static func test(

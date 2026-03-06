@@ -7,7 +7,14 @@ public enum CorpusID: String, Codable, Hashable, Sendable {
   case wasm = "wasm"
   case bench = "bench"
 
-  public init(_ raw: String) {
-    self = Self(rawValue: raw) ?? .spec
+  public init(_ raw: String) throws {
+    guard let value = Self(rawValue: raw) else {
+      throw CorpusIDError.unknownCorpus(raw)
+    }
+    self = value
+  }
+
+  public enum CorpusIDError: Error {
+    case unknownCorpus(String)
   }
 }

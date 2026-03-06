@@ -1,0 +1,13 @@
+OVERVIEW: Local-first tooling shell for MicroSwift
+
+USAGE: micro-swift <subcommand>
+
+OPTIONS:
+  -h, --help              Show help information.
+
+SUBCOMMANDS:
+  doctor                  Print runtime/tooling diagnosis
+  seed                    Seed utilities
+  mlx-smoke               Run the MLX smoke check
+
+  See 'micro-swift help <subcommand>' for detailed help.

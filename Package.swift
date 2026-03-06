@@ -1,4 +1,4 @@
-// swift-tools-version: 5.10
+// swift-tools-version: 6.0
 import PackageDescription
 
 let package = Package(
@@ -25,10 +25,7 @@ let package = Package(
   targets: [
     .target(
       name: "MicroSwiftSpec",
-      dependencies: [],
-      swiftSettings: [
-        .unsafeFlags(["-enable-bare-slash-regex"], .when(configuration: .debug))
-      ]
+      dependencies: []
     ),
     .target(name: "MicroSwiftLexerGen"),
     .target(name: "MicroSwiftTensorCore"),
@@ -47,8 +44,7 @@ let package = Package(
     ),
     .testTarget(
       name: "MicroSwiftSpecTests",
-      dependencies: ["MicroSwiftSpec", .product(name: "CustomDump", package: "swift-custom-dump")],
-      resources: []
+      dependencies: ["MicroSwiftSpec", .product(name: "CustomDump", package: "swift-custom-dump")]
     ),
     .testTarget(
       name: "MicroSwiftLexerGenTests",
@@ -83,7 +79,7 @@ let package = Package(
         .product(name: "SnapshotTesting", package: "swift-snapshot-testing"),
         .product(name: "CustomDump", package: "swift-custom-dump"),
       ],
-      resources: [.copy("__Snapshots__")]
+      exclude: ["__Snapshots__"]
     ),
   ]
 )

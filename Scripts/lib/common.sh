@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root() {
-  local path="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  local path="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
   echo "$path"
 }
 

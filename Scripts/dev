@@ -50,7 +50,6 @@ cmd="${1:-}"; shift || true
 
 case "${cmd}" in
   doctor)
-    shift || true
     "$SCRIPT_DIR/doctor.sh" "$@"
     ;;
   format)

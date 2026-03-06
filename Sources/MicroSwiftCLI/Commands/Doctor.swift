@@ -27,7 +27,7 @@ struct Doctor: AsyncParsableCommand {
       status: "ok",
       timestamp: ISO8601DateFormatter().string(from: deps.clock.now()),
       environment: environment,
-      runtime: environment["MS_RUNTIME"] ?? ProcessInfo.processInfo.operatingSystemVersionString
+      runtime: environment["MS_RUNTIME"] ?? deps.env.osVersion()
     )
 
     if json {

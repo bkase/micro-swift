@@ -21,7 +21,8 @@ public struct BenchSeedManifest: Codable, Sendable, Equatable {
     globalSeed = try container.decode(UInt64.self, forKey: .globalSeed)
 
     let decoded = try container.decode([String: UInt64].self, forKey: .corpusSeeds)
-    corpusSeeds = Dictionary(uniqueKeysWithValues: decoded.map { (CorpusID($0.key), $0.value) })
+    corpusSeeds = try Dictionary(
+      uniqueKeysWithValues: decoded.map { (try CorpusID($0.key), $0.value) })
   }
 
   public func encode(to encoder: Encoder) throws {

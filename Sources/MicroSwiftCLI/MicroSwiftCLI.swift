@@ -4,7 +4,7 @@ import Foundation
 
 @main
 public struct MicroSwift: AsyncParsableCommand {
-  public static var configuration = CommandConfiguration(
+  public static let configuration = CommandConfiguration(
     commandName: "micro-swift",
     abstract: "Local-first tooling shell for MicroSwift",
     subcommands: [
