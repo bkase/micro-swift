@@ -1,7 +1,8 @@
 import Foundation
-import Testing
-@testable import MicroSwiftTensorCore
 import MicroSwiftLexerGen
+import Testing
+
+@testable import MicroSwiftTensorCore
 
 @Suite
 struct MembershipKernelTests {
@@ -27,7 +28,8 @@ struct MembershipKernelTests {
     let runtime = ClassSetRuntime.build(classSets: classSets, classes: classes)
 
     let classIDs: [UInt8] = [0, 1, 3, 2, 1]
-    let mask = MembershipKernels.membershipMask(classIDs: classIDs, setID: 0, classSetRuntime: runtime)
+    let mask = MembershipKernels.membershipMask(
+      classIDs: classIDs, setID: 0, classSetRuntime: runtime)
 
     #expect(mask == [false, true, true, false, true])
   }

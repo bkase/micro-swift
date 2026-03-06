@@ -4,7 +4,9 @@ public enum PackedToken {
   private static let tokenKindMask: UInt64 = 0x0000_FFFF_0000_0000
   private static let flagsMask: UInt64 = 0x00FF_0000_0000_0000
 
-  public static func pack(localStart: UInt16, length: UInt16, tokenKindID: UInt16, flags: UInt8) -> UInt64 {
+  public static func pack(localStart: UInt16, length: UInt16, tokenKindID: UInt16, flags: UInt8)
+    -> UInt64
+  {
     UInt64(localStart)
       | (UInt64(length) << 16)
       | (UInt64(tokenKindID) << 32)

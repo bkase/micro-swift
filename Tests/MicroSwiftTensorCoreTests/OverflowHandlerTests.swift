@@ -1,5 +1,6 @@
-import Testing
 import MicroSwiftFrontend
+import Testing
+
 @testable import MicroSwiftTensorCore
 
 @Suite

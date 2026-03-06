@@ -53,7 +53,7 @@ public struct PagingShell: Sendable {
 public struct PreparedPage: Sendable {
   public let sourcePage: SourcePage
   public let bucket: PageBucket?  // nil means overflow
-  public let byteSlice: [UInt8]   // the actual bytes for this page, padded to bucket capacity
+  public let byteSlice: [UInt8]  // the actual bytes for this page, padded to bucket capacity
   public let validLen: Int32
   public let baseOffset: Int64
 

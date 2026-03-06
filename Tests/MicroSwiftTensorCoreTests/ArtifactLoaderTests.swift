@@ -1,7 +1,8 @@
 import Foundation
-import Testing
-@testable import MicroSwiftTensorCore
 import MicroSwiftLexerGen
+import Testing
+
+@testable import MicroSwiftTensorCore
 
 @Suite
 struct ArtifactLoaderTests {
@@ -42,7 +43,8 @@ struct ArtifactLoaderTests {
     #expect(runtime.maxLiteralLength == artifact.runtimeHints.maxLiteralLength)
     #expect(runtime.maxBoundedRuleWidth == artifact.runtimeHints.maxBoundedRuleWidth)
     #expect(
-      runtime.maxDeterministicLookaheadBytes == artifact.runtimeHints.maxDeterministicLookaheadBytes)
+      runtime.maxDeterministicLookaheadBytes == artifact.runtimeHints.maxDeterministicLookaheadBytes
+    )
   }
 
   @Test

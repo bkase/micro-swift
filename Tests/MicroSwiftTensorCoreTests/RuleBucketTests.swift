@@ -1,6 +1,7 @@
-import Testing
-@testable import MicroSwiftTensorCore
 import MicroSwiftLexerGen
+import Testing
+
+@testable import MicroSwiftTensorCore
 
 @Suite
 struct RuleBucketTests {

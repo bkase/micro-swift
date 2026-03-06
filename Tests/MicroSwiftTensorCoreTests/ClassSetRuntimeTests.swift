@@ -1,7 +1,8 @@
-import Testing
-@testable import MicroSwiftTensorCore
-import MicroSwiftLexerGen
 import Foundation
+import MicroSwiftLexerGen
+import Testing
+
+@testable import MicroSwiftTensorCore
 
 @Suite
 struct ClassSetRuntimeTests {
