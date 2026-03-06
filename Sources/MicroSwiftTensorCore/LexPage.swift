@@ -33,8 +33,8 @@ public func lexPage(
   let classIDs = classify(
     bytes: bytes, validLen: boundedValidLen, byteToClassLUT: artifact.byteToClassLUT)
 
-  // Fast-family execution is intentionally stubbed for now.
-  let fastWinners: [CandidateWinner] = []
+  let fastWinners = executeFastFamilies(
+    bytes: bytes, classIDs: classIDs, validLen: boundedValidLen, artifact: artifact)
 
   var integratedWinners = reduceBucketWinners(buckets: [fastWinners])
   if options.runtimeProfile == .v1Fallback, let fallback = artifact.fallback {
@@ -55,6 +55,126 @@ public func lexPage(
     packedRows: packedRows,
     rowCount: Int32(selected.count)
   )
+}
+
+import MicroSwiftLexerGen
+
+private func executeFastFamilies(
+  bytes: [UInt8],
+  classIDs: [UInt16],
+  validLen: Int,
+  artifact: ArtifactRuntime
+) -> [CandidateWinner] {
+  var winners: [CandidateWinner] = []
+
+  for rule in artifact.rules {
+    switch rule.plan {
+    case .literal(let literalBytes):
+      for i in 0..<validLen {
+        let remaining = validLen - i
+        guard remaining >= literalBytes.count else { continue }
+        var matched = true
+        for j in 0..<literalBytes.count {
+          if bytes[i + j] != literalBytes[j] {
+            matched = false
+            break
+          }
+        }
+        if matched {
+          winners.append(CandidateWinner(
+            position: i,
+            len: UInt16(literalBytes.count),
+            priorityRank: rule.priorityRank,
+            ruleID: rule.ruleID,
+            tokenKindID: rule.tokenKindID,
+            mode: modeIDForRule(rule.mode)
+          ))
+        }
+      }
+
+    case .runClassRun(let bodyClassSetID, let minLength):
+      let bodyClasses = classSetMembers(classSetID: bodyClassSetID, artifact: artifact)
+      for i in 0..<validLen {
+        guard bodyClasses.contains(classIDs[i]) else { continue }
+        var end = i + 1
+        while end < validLen, bodyClasses.contains(classIDs[end]) { end += 1 }
+        let runLen = end - i
+        if runLen >= Int(minLength) {
+          winners.append(CandidateWinner(
+            position: i,
+            len: UInt16(runLen),
+            priorityRank: rule.priorityRank,
+            ruleID: rule.ruleID,
+            tokenKindID: rule.tokenKindID,
+            mode: modeIDForRule(rule.mode)
+          ))
+        }
+      }
+
+    case .runHeadTail(let headClassSetID, let tailClassSetID):
+      let headClasses = classSetMembers(classSetID: headClassSetID, artifact: artifact)
+      let tailClasses = classSetMembers(classSetID: tailClassSetID, artifact: artifact)
+      for i in 0..<validLen {
+        guard headClasses.contains(classIDs[i]) else { continue }
+        var end = i + 1
+        while end < validLen, tailClasses.contains(classIDs[end]) { end += 1 }
+        winners.append(CandidateWinner(
+          position: i,
+          len: UInt16(end - i),
+          priorityRank: rule.priorityRank,
+          ruleID: rule.ruleID,
+          tokenKindID: rule.tokenKindID,
+          mode: modeIDForRule(rule.mode)
+        ))
+      }
+
+    case .runPrefixed(let prefix, let bodyClassSetID, _):
+      let bodyClasses = classSetMembers(classSetID: bodyClassSetID, artifact: artifact)
+      for i in 0..<validLen {
+        let remaining = validLen - i
+        guard remaining >= prefix.count else { continue }
+        var prefixMatched = true
+        for j in 0..<prefix.count {
+          if bytes[i + j] != prefix[j] {
+            prefixMatched = false
+            break
+          }
+        }
+        guard prefixMatched else { continue }
+        var end = i + prefix.count
+        while end < validLen, bodyClasses.contains(classIDs[end]) { end += 1 }
+        winners.append(CandidateWinner(
+          position: i,
+          len: UInt16(end - i),
+          priorityRank: rule.priorityRank,
+          ruleID: rule.ruleID,
+          tokenKindID: rule.tokenKindID,
+          mode: modeIDForRule(rule.mode)
+        ))
+      }
+
+    case .fallback, .localWindow:
+      continue
+    }
+  }
+
+  return winners
+}
+
+private func classSetMembers(classSetID: UInt16, artifact: ArtifactRuntime) -> Set<UInt16> {
+  for cs in artifact.classSets {
+    if cs.classSetID.rawValue == classSetID {
+      return Set(cs.classes.map { UInt16($0) })
+    }
+  }
+  return []
+}
+
+private func modeIDForRule(_ mode: RuleMode) -> UInt8 {
+  switch mode {
+  case .emit: return 0
+  case .skip: return 1
+  }
 }
 
 private func classify(bytes: [UInt8], validLen: Int, byteToClassLUT: [UInt8]) -> [UInt16] {

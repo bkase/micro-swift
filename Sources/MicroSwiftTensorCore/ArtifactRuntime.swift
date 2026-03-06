@@ -13,11 +13,24 @@ public enum ArtifactRuntimeError: Error, Sendable, Equatable {
 public struct ArtifactRuntime: Sendable {
   public let runtimeHints: RuntimeHints
   public let byteToClassLUT: [UInt8]
+  public let rules: [LoweredRule]
+  public let classSets: [ClassSetDecl]
+  public let keywordRemaps: [KeywordRemapTable]
   public let fallback: FallbackRuntime?
 
-  public init(runtimeHints: RuntimeHints, byteToClassLUT: [UInt8], fallback: FallbackRuntime?) {
+  public init(
+    runtimeHints: RuntimeHints,
+    byteToClassLUT: [UInt8],
+    rules: [LoweredRule],
+    classSets: [ClassSetDecl],
+    keywordRemaps: [KeywordRemapTable],
+    fallback: FallbackRuntime?
+  ) {
     self.runtimeHints = runtimeHints
     self.byteToClassLUT = byteToClassLUT
+    self.rules = rules
+    self.classSets = classSets
+    self.keywordRemaps = keywordRemaps
     self.fallback = fallback
   }
 
@@ -31,6 +44,9 @@ public struct ArtifactRuntime: Sendable {
     return ArtifactRuntime(
       runtimeHints: artifact.runtimeHints,
       byteToClassLUT: artifact.byteToClass,
+      rules: artifact.rules,
+      classSets: artifact.classSets,
+      keywordRemaps: artifact.keywordRemaps,
       fallback: fallback
     )
   }
