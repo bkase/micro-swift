@@ -28,6 +28,8 @@ public struct BenchmarkResult: Codable, Sendable, Equatable {
   public let fallbackPositionsSkippedByStartMask: Int
   public let fallbackCacheMisses: Int
   public let fallbackCacheHits: Int
+  public let fallbackKernelBackendDispatches: Int
+  public let cacheEvents: [KernelCacheLog]
   public let wallTimeSeconds: Double
 
   public init(
@@ -40,6 +42,8 @@ public struct BenchmarkResult: Codable, Sendable, Equatable {
     fallbackPositionsSkippedByStartMask: Int,
     fallbackCacheMisses: Int,
     fallbackCacheHits: Int,
+    fallbackKernelBackendDispatches: Int,
+    cacheEvents: [KernelCacheLog],
     wallTimeSeconds: Double
   ) {
     self.bytesPerSecond = bytesPerSecond
@@ -51,6 +55,8 @@ public struct BenchmarkResult: Codable, Sendable, Equatable {
     self.fallbackPositionsSkippedByStartMask = fallbackPositionsSkippedByStartMask
     self.fallbackCacheMisses = fallbackCacheMisses
     self.fallbackCacheHits = fallbackCacheHits
+    self.fallbackKernelBackendDispatches = fallbackKernelBackendDispatches
+    self.cacheEvents = cacheEvents
     self.wallTimeSeconds = wallTimeSeconds
   }
 }
@@ -84,44 +90,60 @@ public func runBenchmark(
       fallbackPositionsSkippedByStartMask: 0,
       fallbackCacheMisses: 0,
       fallbackCacheHits: 0,
+      fallbackKernelBackendDispatches: 0,
+      cacheEvents: [],
       wallTimeSeconds: 0
     )
   }
 
   let validLen = benchmarkBytes.count
   let pageBucket = pageBucketSize(for: validLen)
-
-  var fallbackRunnerByBucket: [Int: FallbackKernelRunner] = [:]
-  var graphCompilations = 0
-  var observability = FallbackObservability()
   let byteToClassLUT = artifact.hostByteToClassLUT()
+
+  let logSink = BenchmarkLogSink()
+  let cache = KernelCache(logSink: logSink.record)
+
+  let artifactHash = makeArtifactHash(artifact: artifact)
+
+  var observability = FallbackObservability()
 
   func executeSingleRun(recordMetrics: Bool) -> (tokenCount: Int, errorSpanCount: Int) {
     let classIDs = benchmarkBytes.map { byteToClassLUT[Int($0)] }
 
     let fallbackResult: FallbackPageResult
     if let fallback = artifact.fallback {
-      let runner: FallbackKernelRunner
-      if let cached = fallbackRunnerByBucket[pageBucket] {
-        runner = cached
-        observability.recordCacheHit()
-      } else {
-        runner = FallbackKernelRunner(fallback: fallback)
-        fallbackRunnerByBucket[pageBucket] = runner
-        graphCompilations += 1
-        observability.recordCacheMiss()
+      let cacheKey = KernelCacheKey(
+        deviceID: FallbackMetalExecutorProvider.shared.cacheDeviceID,
+        artifactHash: artifactHash,
+        pageBucket: pageBucket,
+        inputDType: "uint16"
+      )
+      let traceID = "bench-\(config.mode.rawValue)-\(UUID().uuidString)"
+
+      let entry: KernelCacheEntry
+      do {
+        entry = try cache.getOrCreate(key: cacheKey, traceID: traceID) {
+          let compiled = try FallbackMetalExecutorProvider.shared.compileKernel(fallback: fallback)
+          return KernelCacheEntry(
+            fallbackRunner: FallbackKernelRunner(fallback: fallback, compiledKernel: compiled),
+            runtimeMetadata: compiled.metadata,
+            createdAt: Date()
+          )
+        }
+      } catch {
+        preconditionFailure("Kernel cache resource creation failed: \(error)")
       }
 
       if recordMetrics {
         var runObservability = FallbackObservability()
-        fallbackResult = runner.evaluatePage(
+        fallbackResult = entry.fallbackRunner.evaluatePage(
           classIDs: classIDs,
           validLen: Int32(validLen),
           observability: &runObservability
         )
         observability.merge(runObservability)
       } else {
-        fallbackResult = runner.evaluatePage(classIDs: classIDs, validLen: Int32(validLen))
+        fallbackResult = entry.fallbackRunner.evaluatePage(classIDs: classIDs, validLen: Int32(validLen))
       }
     } else {
       fallbackResult = FallbackPageResult(
@@ -170,6 +192,10 @@ public func runBenchmark(
   let wallTimeSeconds = max(Double(elapsedNanos) / 1_000_000_000, 0.000_001)
 
   let totalBytes = Double(validLen * measuredIterations)
+  let cacheEvents = logSink.decodedRecords()
+  let cacheMisses = cacheEvents.filter { $0.event == "fallback-kernel-cache-miss" }.count
+  let cacheHits = cacheEvents.filter { $0.event == "fallback-kernel-cache-hit" }.count
+  let graphCompilations = cacheEvents.filter { $0.event == "fallback-kernel-cache-store" }.count
 
   return BenchmarkResult(
     bytesPerSecond: totalBytes / wallTimeSeconds,
@@ -179,8 +205,10 @@ public func runBenchmark(
     pageBucketDistribution: pageBucketDistribution,
     fallbackPositionsEntered: observability.fallbackPositionsEntered,
     fallbackPositionsSkippedByStartMask: observability.fallbackPositionsSkippedByStartMask,
-    fallbackCacheMisses: observability.fallbackCacheMisses,
-    fallbackCacheHits: observability.fallbackCacheHits,
+    fallbackCacheMisses: cacheMisses,
+    fallbackCacheHits: cacheHits,
+    fallbackKernelBackendDispatches: observability.fallbackKernelBackendDispatches,
+    cacheEvents: cacheEvents,
     wallTimeSeconds: wallTimeSeconds
   )
 }
@@ -197,6 +225,130 @@ public func benchmarkResultJSON(_ result: BenchmarkResult) -> String {
   }
 
   return json
+}
+
+private final class BenchmarkLogSink: @unchecked Sendable {
+  private let lock = NSLock()
+  private var records: [String] = []
+
+  func record(_ message: String) {
+    lock.lock()
+    records.append(message)
+    lock.unlock()
+  }
+
+  func decodedRecords() -> [KernelCacheLog] {
+    lock.lock()
+    let snapshot = records
+    lock.unlock()
+
+    let decoder = JSONDecoder()
+    return snapshot.compactMap { try? decoder.decode(KernelCacheLog.self, from: Data($0.utf8)) }
+  }
+}
+
+private struct StableHash {
+  private var value: UInt64 = 0xcbf29ce484222325
+
+  mutating func combine<T: FixedWidthInteger>(_ number: T) {
+    var littleEndian = number.littleEndian
+    withUnsafeBytes(of: &littleEndian) { bytes in
+      for byte in bytes {
+        value ^= UInt64(byte)
+        value &*= 0x100000001b3
+      }
+    }
+  }
+
+  mutating func combineBytes<S: Sequence>(_ bytes: S) where S.Element == UInt8 {
+    for byte in bytes {
+      value ^= UInt64(byte)
+      value &*= 0x100000001b3
+    }
+  }
+
+  mutating func combineString(_ value: String) {
+    combineBytes(value.utf8)
+    combine(UInt8(0xFF))
+  }
+
+  func hexDigest() -> String {
+    String(format: "%016llx", value)
+  }
+}
+
+private func makeArtifactHash(artifact: ArtifactRuntime) -> String {
+  var hasher = StableHash()
+  hasher.combineString(artifact.specName)
+  hasher.combine(UInt64(artifact.ruleCount))
+  hasher.combine(UInt16(artifact.runtimeHints.maxLiteralLength))
+  hasher.combine(UInt16(artifact.runtimeHints.maxBoundedRuleWidth))
+  hasher.combine(UInt16(artifact.runtimeHints.maxDeterministicLookaheadBytes))
+
+  let byteToClass = artifact.hostByteToClassLUT()
+  hasher.combine(UInt64(byteToClass.count))
+  for classID in byteToClass {
+    hasher.combine(classID)
+  }
+
+  if let fallback = artifact.fallback {
+    hasher.combine(UInt16(fallback.numStatesUsed))
+    hasher.combine(UInt16(fallback.maxWidth))
+    hasher.combine(UInt64(fallback.startMaskLo))
+    hasher.combine(UInt64(fallback.startMaskHi))
+    hasher.combine(UInt64(fallback.startClassMaskLo))
+    hasher.combine(UInt64(fallback.startClassMaskHi))
+
+    let stepLo = fallback.hostStepLo()
+    hasher.combine(UInt64(stepLo.count))
+    for value in stepLo {
+      hasher.combine(value)
+    }
+
+    let stepHi = fallback.hostStepHi()
+    hasher.combine(UInt64(stepHi.count))
+    for value in stepHi {
+      hasher.combine(value)
+    }
+
+    let acceptLoByRule = fallback.hostAcceptLoByRule()
+    hasher.combine(UInt64(acceptLoByRule.count))
+    for value in acceptLoByRule {
+      hasher.combine(value)
+    }
+
+    let acceptHiByRule = fallback.hostAcceptHiByRule()
+    hasher.combine(UInt64(acceptHiByRule.count))
+    for value in acceptHiByRule {
+      hasher.combine(value)
+    }
+
+    let globalRuleIDByFallbackRule = fallback.hostGlobalRuleIDByFallbackRule()
+    hasher.combine(UInt64(globalRuleIDByFallbackRule.count))
+    for value in globalRuleIDByFallbackRule {
+      hasher.combine(value)
+    }
+
+    let priorityRankByFallbackRule = fallback.hostPriorityRankByFallbackRule()
+    hasher.combine(UInt64(priorityRankByFallbackRule.count))
+    for value in priorityRankByFallbackRule {
+      hasher.combine(value)
+    }
+
+    let tokenKindIDByFallbackRule = fallback.hostTokenKindIDByFallbackRule()
+    hasher.combine(UInt64(tokenKindIDByFallbackRule.count))
+    for value in tokenKindIDByFallbackRule {
+      hasher.combine(value)
+    }
+
+    let modeByFallbackRule = fallback.hostModeByFallbackRule()
+    hasher.combine(UInt64(modeByFallbackRule.count))
+    hasher.combineBytes(modeByFallbackRule)
+  } else {
+    hasher.combine(UInt8(0))
+  }
+
+  return hasher.hexDigest()
 }
 
 private func pageBucketSize(for length: Int) -> Int {
@@ -278,10 +430,12 @@ private func makeErrorPathBytes(
 
   var rng = LCRNG(seed: seed ?? 0xC0FFEE)
   var output = Array(repeating: UInt8(0), count: bytes.count)
-  for index in output.indices {
-    let pickEligible = rng.nextBit()
-    output[index] = pickEligible ? eligible : ineligible
+
+  for idx in output.indices {
+    let value = rng.next() & 0x1
+    output[idx] = value == 0 ? ineligible : eligible
   }
+
   return output
 }
 
@@ -292,12 +446,10 @@ private func isStartEligible(classID: UInt16, fallback: FallbackRuntime?) -> Boo
     let mask = UInt64(1) << UInt64(classID)
     return (fallback.startClassMaskLo & mask) != 0
   }
-
   if classID < 128 {
     let mask = UInt64(1) << UInt64(classID - 64)
     return (fallback.startClassMaskHi & mask) != 0
   }
-
   return false
 }
 
@@ -308,8 +460,8 @@ private struct LCRNG {
     self.state = seed
   }
 
-  mutating func nextBit() -> Bool {
-    state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
-    return (state & 1) == 1
+  mutating func next() -> UInt64 {
+    state = state &* 6364136223846793005 &+ 1
+    return state
   }
 }

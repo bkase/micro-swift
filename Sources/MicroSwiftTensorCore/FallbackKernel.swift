@@ -22,13 +22,25 @@ public struct FallbackPageResult: Sendable, Equatable {
 
 public struct FallbackKernelRunner: Sendable {
   public let fallback: FallbackRuntime
+  let compiledKernel: FallbackMetalCompiledKernel?
 
   public init(fallback: FallbackRuntime) {
     self.fallback = fallback
+    self.compiledKernel = nil
+  }
+
+  init(fallback: FallbackRuntime, compiledKernel: FallbackMetalCompiledKernel?) {
+    self.fallback = fallback
+    self.compiledKernel = compiledKernel
   }
 
   public func evaluatePage(classIDs: [UInt16], validLen: Int32) -> FallbackPageResult {
-    runFallbackPage(classIDs: classIDs, validLen: validLen, fallback: fallback)
+    runFallbackPage(
+      classIDs: classIDs,
+      validLen: validLen,
+      fallback: fallback,
+      compiledKernel: compiledKernel
+    )
   }
 
   public func evaluatePage(
@@ -41,6 +53,7 @@ public struct FallbackKernelRunner: Sendable {
         classIDs: classIDs,
         validLen: validLen,
         fallback: fallback,
+        compiledKernel: compiledKernel,
         observability: observabilityPointer
       )
     }
@@ -59,6 +72,7 @@ private func runFallbackPage(
   classIDs: [UInt16],
   validLen: Int32,
   fallback: FallbackRuntime,
+  compiledKernel: FallbackMetalCompiledKernel? = nil,
   observability: UnsafeMutablePointer<FallbackObservability>? = nil
 ) -> FallbackPageResult {
   let pageWidth = classIDs.count
@@ -75,10 +89,17 @@ private func runFallbackPage(
   }
 
   do {
+    let kernel: FallbackMetalCompiledKernel
+    if let compiled = compiledKernel {
+      kernel = compiled
+    } else {
+      kernel = try FallbackMetalExecutorProvider.shared.compileKernel(fallback: fallback)
+    }
+
     let result = try FallbackMetalExecutorProvider.shared.evaluate(
       classIDs: classIDs,
       boundedValidLen: boundedValidLen,
-      fallback: fallback
+      compiledKernel: kernel
     )
     observability?.pointee.recordKernelBackendDispatch()
     return result

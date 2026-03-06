@@ -7,26 +7,33 @@ import Testing
 @Suite
 struct KernelCacheTests {
   @Test
-  func cacheMissThenHit() async throws {
+  func cacheMissThenHit() throws {
     let sink = LogSink()
     let cache = KernelCache(logSink: sink.record)
     let key = makeKey(pageBucket: 128, inputDType: "uint16")
     let runner = FallbackKernelRunner(fallback: makeFallbackRuntime())
+    let metadata = makeRuntimeMetadata(deviceID: key.deviceID)
 
-    let firstLookup = await cache.lookup(key: key, traceID: "trace-miss")
+    let firstLookup = cache.lookup(key: key, traceID: "trace-miss")
     #expect(firstLookup == nil)
 
-    await cache.store(
+    cache.store(
       key: key,
-      entry: KernelCacheEntry(fallbackRunner: runner, createdAt: Date(timeIntervalSince1970: 10))
+      entry: KernelCacheEntry(
+        fallbackRunner: runner,
+        runtimeMetadata: metadata,
+        createdAt: Date(timeIntervalSince1970: 10)
+      ),
+      traceID: "trace-store"
     )
 
-    let secondLookup = await cache.lookup(key: key, traceID: "trace-hit")
+    let secondLookup = cache.lookup(key: key, traceID: "trace-hit")
     let entry = try #require(secondLookup)
     #expect(entry.fallbackRunner.fallback.maxWidth == runner.fallback.maxWidth)
+    #expect(entry.runtimeMetadata == metadata)
 
     let records = sink.snapshot()
-    #expect(records.count == 1)
+    #expect(records.count == 3)
 
     let miss = try decode(records[0])
     #expect(miss.traceID == "trace-miss")
@@ -34,11 +41,23 @@ struct KernelCacheTests {
     #expect(miss.artifactHash == key.artifactHash)
     #expect(miss.pageBucket == key.pageBucket)
     #expect(miss.deviceID == key.deviceID)
+    #expect(miss.inputDType == key.inputDType)
+    #expect(miss.runtimeMetadata == nil)
     #expect(miss.failureReason == nil)
+
+    let store = try decode(records[1])
+    #expect(store.traceID == "trace-store")
+    #expect(store.event == "fallback-kernel-cache-store")
+    #expect(store.runtimeMetadata == metadata)
+
+    let hit = try decode(records[2])
+    #expect(hit.traceID == "trace-hit")
+    #expect(hit.event == "fallback-kernel-cache-hit")
+    #expect(hit.runtimeMetadata == metadata)
   }
 
   @Test
-  func differentKeysReturnDifferentEntries() async throws {
+  func differentKeysReturnDifferentEntries() throws {
     let cache = KernelCache()
     let keyA = makeKey(pageBucket: 64, inputDType: "uint16")
     let keyB = makeKey(pageBucket: 128, inputDType: "float16")
@@ -46,25 +65,35 @@ struct KernelCacheTests {
     let runnerA = FallbackKernelRunner(fallback: makeFallbackRuntime(maxWidth: 3))
     let runnerB = FallbackKernelRunner(fallback: makeFallbackRuntime(maxWidth: 7))
 
-    await cache.store(
+    cache.store(
       key: keyA,
-      entry: KernelCacheEntry(fallbackRunner: runnerA, createdAt: Date(timeIntervalSince1970: 100))
+      entry: KernelCacheEntry(
+        fallbackRunner: runnerA,
+        runtimeMetadata: makeRuntimeMetadata(deviceID: keyA.deviceID),
+        createdAt: Date(timeIntervalSince1970: 100)
+      )
     )
-    await cache.store(
+    cache.store(
       key: keyB,
-      entry: KernelCacheEntry(fallbackRunner: runnerB, createdAt: Date(timeIntervalSince1970: 200))
+      entry: KernelCacheEntry(
+        fallbackRunner: runnerB,
+        runtimeMetadata: makeRuntimeMetadata(deviceID: keyB.deviceID),
+        createdAt: Date(timeIntervalSince1970: 200)
+      )
     )
 
-    let entryA = try #require(await cache.lookup(key: keyA, traceID: "trace-a"))
-    let entryB = try #require(await cache.lookup(key: keyB, traceID: "trace-b"))
+    let entryA = try #require(cache.lookup(key: keyA, traceID: "trace-a"))
+    let entryB = try #require(cache.lookup(key: keyB, traceID: "trace-b"))
 
     #expect(entryA.fallbackRunner.fallback.maxWidth == 3)
     #expect(entryB.fallbackRunner.fallback.maxWidth == 7)
     #expect(entryA.createdAt != entryB.createdAt)
+    #expect(entryA.runtimeMetadata.deviceID == keyA.deviceID)
+    #expect(entryB.runtimeMetadata.deviceID == keyB.deviceID)
   }
 
   @Test
-  func structuredLogOutputFormat() async throws {
+  func structuredLogOutputFormat() throws {
     let sink = LogSink()
     let cache = KernelCache(logSink: sink.record)
     let key = makeKey(pageBucket: 256, inputDType: "uint16")
@@ -73,8 +102,8 @@ struct KernelCacheTests {
       case creationFailed
     }
 
-    await #expect(throws: TestError.creationFailed) {
-      _ = try await cache.getOrCreate(key: key, traceID: "trace-failure") {
+    #expect(throws: TestError.creationFailed) {
+      _ = try cache.getOrCreate(key: key, traceID: "trace-failure") {
         throw TestError.creationFailed
       }
     }
@@ -88,6 +117,8 @@ struct KernelCacheTests {
     #expect(miss.artifactHash == key.artifactHash)
     #expect(miss.pageBucket == key.pageBucket)
     #expect(miss.deviceID == key.deviceID)
+    #expect(miss.inputDType == key.inputDType)
+    #expect(miss.runtimeMetadata == nil)
     #expect(miss.failureReason == nil)
 
     let failure = try decode(records[1])
@@ -96,6 +127,7 @@ struct KernelCacheTests {
     #expect(failure.artifactHash == key.artifactHash)
     #expect(failure.pageBucket == key.pageBucket)
     #expect(failure.deviceID == key.deviceID)
+    #expect(failure.inputDType == key.inputDType)
     #expect(failure.failureReason?.contains("creationFailed") == true)
   }
 }
@@ -148,5 +180,17 @@ private func makeFallbackRuntime(maxWidth: UInt16 = 5) -> FallbackRuntime {
     modeByFallbackRule: [],
     startClassMaskLo: 0,
     startClassMaskHi: 0
+  )
+}
+
+private func makeRuntimeMetadata(deviceID: String) -> KernelCacheRuntimeMetadata {
+  KernelCacheRuntimeMetadata(
+    backend: "metal",
+    deviceID: deviceID,
+    pipelineFunction: "fallbackKernel",
+    constantTableByteCount: 128,
+    fallbackRuleCount: 1,
+    stepStride: 2,
+    maxClassCount: 64
   )
 }

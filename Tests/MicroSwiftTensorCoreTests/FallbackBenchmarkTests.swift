@@ -40,9 +40,16 @@ struct FallbackBenchmarkTests {
       #expect(result.fallbackCacheMisses >= 0)
       #expect(result.fallbackPositionsEntered >= 0)
       #expect(result.fallbackPositionsSkippedByStartMask >= 0)
+      #expect(result.fallbackKernelBackendDispatches >= 0)
+      #expect(!result.cacheEvents.isEmpty)
     }
 
-    #expect(cold.graphCompilations >= 0)
+    #expect(cold.graphCompilations == 1)
+    #expect(cold.fallbackCacheMisses == 1)
+    #expect(cold.fallbackCacheHits == 0)
+
+    #expect(warm.graphCompilations == 1)
+    #expect(warm.fallbackCacheMisses == 1)
     #expect(warm.fallbackCacheHits >= 1)
     #expect(error.errorSpansPerSecond >= 0)
   }
@@ -87,7 +94,14 @@ struct FallbackBenchmarkTests {
     #expect(measuredRuns == iterations)
 
     #expect(result.fallbackCacheMisses == result.graphCompilations)
-    #expect(result.fallbackCacheHits >= iterations - 1)
+    #expect(result.fallbackCacheHits >= iterations)
+    #expect(result.fallbackKernelBackendDispatches == iterations)
+
+    let storeEvents = result.cacheEvents.filter { $0.event == "fallback-kernel-cache-store" }
+    #expect(storeEvents.count == 1)
+    #expect(storeEvents[0].runtimeMetadata?.backend == "metal")
+    #expect(storeEvents[0].runtimeMetadata?.pipelineFunction == "fallbackKernel")
+    #expect((storeEvents[0].runtimeMetadata?.constantTableByteCount ?? 0) > 0)
   }
 
   private func makeRuntimeArtifact() throws -> ArtifactRuntime {

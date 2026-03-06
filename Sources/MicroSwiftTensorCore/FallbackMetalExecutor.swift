@@ -53,6 +53,50 @@ enum FallbackMetalExecutorProvider {
   }()
 }
 
+final class FallbackMetalCompiledKernel: @unchecked Sendable {
+  let fallback: FallbackRuntime
+  let metadata: KernelCacheRuntimeMetadata
+
+  fileprivate let pipelineState: MTLComputePipelineState
+  fileprivate let stepLoBuffer: MTLBuffer
+  fileprivate let stepHiBuffer: MTLBuffer
+  fileprivate let acceptLoBuffer: MTLBuffer
+  fileprivate let acceptHiBuffer: MTLBuffer
+  fileprivate let globalRuleIDBuffer: MTLBuffer
+  fileprivate let priorityRankBuffer: MTLBuffer
+  fileprivate let tokenKindIDBuffer: MTLBuffer
+  fileprivate let modeBuffer: MTLBuffer
+  fileprivate let staticConfig: FallbackKernelConfig
+
+  fileprivate init(
+    fallback: FallbackRuntime,
+    metadata: KernelCacheRuntimeMetadata,
+    pipelineState: MTLComputePipelineState,
+    stepLoBuffer: MTLBuffer,
+    stepHiBuffer: MTLBuffer,
+    acceptLoBuffer: MTLBuffer,
+    acceptHiBuffer: MTLBuffer,
+    globalRuleIDBuffer: MTLBuffer,
+    priorityRankBuffer: MTLBuffer,
+    tokenKindIDBuffer: MTLBuffer,
+    modeBuffer: MTLBuffer,
+    staticConfig: FallbackKernelConfig
+  ) {
+    self.fallback = fallback
+    self.metadata = metadata
+    self.pipelineState = pipelineState
+    self.stepLoBuffer = stepLoBuffer
+    self.stepHiBuffer = stepHiBuffer
+    self.acceptLoBuffer = acceptLoBuffer
+    self.acceptHiBuffer = acceptHiBuffer
+    self.globalRuleIDBuffer = globalRuleIDBuffer
+    self.priorityRankBuffer = priorityRankBuffer
+    self.tokenKindIDBuffer = tokenKindIDBuffer
+    self.modeBuffer = modeBuffer
+    self.staticConfig = staticConfig
+  }
+}
+
 final class FallbackMetalExecutor: @unchecked Sendable {
   private let device: MTLDevice
   private let commandQueue: MTLCommandQueue
@@ -87,10 +131,90 @@ final class FallbackMetalExecutor: @unchecked Sendable {
     self.commandQueue = commandQueue
   }
 
+  var cacheDeviceID: String {
+    "metal-\(device.registryID)"
+  }
+
+  func compileKernel(fallback: FallbackRuntime) throws -> FallbackMetalCompiledKernel {
+    let stepLo = fallback.hostStepLo()
+    let stepHi = fallback.hostStepHi()
+    let acceptLoByRule = fallback.hostAcceptLoByRule()
+    let acceptHiByRule = fallback.hostAcceptHiByRule()
+    let globalRuleIDByFallbackRule = fallback.hostGlobalRuleIDByFallbackRule()
+    let priorityRankByFallbackRule = fallback.hostPriorityRankByFallbackRule()
+    let tokenKindIDByFallbackRule = fallback.hostTokenKindIDByFallbackRule()
+    let modeByFallbackRule = fallback.hostModeByFallbackRule()
+
+    let stepStride = UInt32(max(1, Int(fallback.numStatesUsed)))
+    let maxClassCount = UInt32(stepLo.count / Int(stepStride))
+
+    let stepLoBuffer = try makeBuffer(stepLo, name: "stepLo")
+    let stepHiBuffer = try makeBuffer(stepHi, name: "stepHi")
+    let acceptLoBuffer = try makeBuffer(acceptLoByRule, name: "acceptLoByRule")
+    let acceptHiBuffer = try makeBuffer(acceptHiByRule, name: "acceptHiByRule")
+    let globalRuleIDBuffer = try makeBuffer(
+      globalRuleIDByFallbackRule, name: "globalRuleIDByFallbackRule")
+    let priorityRankBuffer = try makeBuffer(
+      priorityRankByFallbackRule, name: "priorityRankByFallbackRule")
+    let tokenKindIDBuffer = try makeBuffer(
+      tokenKindIDByFallbackRule, name: "tokenKindIDByFallbackRule")
+    let modeBuffer = try makeBuffer(modeByFallbackRule, name: "modeByFallbackRule")
+
+    let constantTableByteCount =
+      stepLoBuffer.length
+      + stepHiBuffer.length
+      + acceptLoBuffer.length
+      + acceptHiBuffer.length
+      + globalRuleIDBuffer.length
+      + priorityRankBuffer.length
+      + tokenKindIDBuffer.length
+      + modeBuffer.length
+
+    let metadata = KernelCacheRuntimeMetadata(
+      backend: "metal",
+      deviceID: cacheDeviceID,
+      pipelineFunction: "fallbackKernel",
+      constantTableByteCount: constantTableByteCount,
+      fallbackRuleCount: globalRuleIDByFallbackRule.count,
+      stepStride: Int(stepStride),
+      maxClassCount: Int(maxClassCount)
+    )
+
+    let staticConfig = FallbackKernelConfig(
+      validLen: 0,
+      pageWidth: 0,
+      maxWidth: fallback.maxWidth,
+      numStatesUsed: fallback.numStatesUsed,
+      startMaskLo: fallback.startMaskLo,
+      startMaskHi: fallback.startMaskHi,
+      startClassMaskLo: fallback.startClassMaskLo,
+      startClassMaskHi: fallback.startClassMaskHi,
+      fallbackRuleCount: UInt32(globalRuleIDByFallbackRule.count),
+      stepStride: stepStride,
+      maxClassCount: maxClassCount,
+      _padding: 0
+    )
+
+    return FallbackMetalCompiledKernel(
+      fallback: fallback,
+      metadata: metadata,
+      pipelineState: pipelineState,
+      stepLoBuffer: stepLoBuffer,
+      stepHiBuffer: stepHiBuffer,
+      acceptLoBuffer: acceptLoBuffer,
+      acceptHiBuffer: acceptHiBuffer,
+      globalRuleIDBuffer: globalRuleIDBuffer,
+      priorityRankBuffer: priorityRankBuffer,
+      tokenKindIDBuffer: tokenKindIDBuffer,
+      modeBuffer: modeBuffer,
+      staticConfig: staticConfig
+    )
+  }
+
   func evaluate(
     classIDs: [UInt16],
     boundedValidLen: Int,
-    fallback: FallbackRuntime
+    compiledKernel: FallbackMetalCompiledKernel
   ) throws -> FallbackPageResult {
     let pageWidth = classIDs.count
 
@@ -110,32 +234,9 @@ final class FallbackMetalExecutor: @unchecked Sendable {
       )
     }
 
-    let stepLo = fallback.hostStepLo()
-    let stepHi = fallback.hostStepHi()
-    let acceptLoByRule = fallback.hostAcceptLoByRule()
-    let acceptHiByRule = fallback.hostAcceptHiByRule()
-    let globalRuleIDByFallbackRule = fallback.hostGlobalRuleIDByFallbackRule()
-    let priorityRankByFallbackRule = fallback.hostPriorityRankByFallbackRule()
-    let tokenKindIDByFallbackRule = fallback.hostTokenKindIDByFallbackRule()
-    let modeByFallbackRule = fallback.hostModeByFallbackRule()
-
-    let stepStride = UInt32(max(1, Int(fallback.numStatesUsed)))
-    let maxClassCount = UInt32(stepLo.count / Int(stepStride))
-
-    var config = FallbackKernelConfig(
-      validLen: UInt32(boundedValidLen),
-      pageWidth: UInt32(pageWidth),
-      maxWidth: fallback.maxWidth,
-      numStatesUsed: fallback.numStatesUsed,
-      startMaskLo: fallback.startMaskLo,
-      startMaskHi: fallback.startMaskHi,
-      startClassMaskLo: fallback.startClassMaskLo,
-      startClassMaskHi: fallback.startClassMaskHi,
-      fallbackRuleCount: UInt32(globalRuleIDByFallbackRule.count),
-      stepStride: stepStride,
-      maxClassCount: maxClassCount,
-      _padding: 0
-    )
+    var config = compiledKernel.staticConfig
+    config.validLen = UInt32(boundedValidLen)
+    config.pageWidth = UInt32(pageWidth)
 
     guard let commandBuffer = commandQueue.makeCommandBuffer() else {
       throw FallbackMetalExecutorError.commandBufferCreationFailed
@@ -145,18 +246,6 @@ final class FallbackMetalExecutor: @unchecked Sendable {
     }
 
     let classIDsBuffer = try makeBuffer(classIDs, name: "classIDs")
-    let stepLoBuffer = try makeBuffer(stepLo, name: "stepLo")
-    let stepHiBuffer = try makeBuffer(stepHi, name: "stepHi")
-    let acceptLoBuffer = try makeBuffer(acceptLoByRule, name: "acceptLoByRule")
-    let acceptHiBuffer = try makeBuffer(acceptHiByRule, name: "acceptHiByRule")
-    let globalRuleIDBuffer = try makeBuffer(
-      globalRuleIDByFallbackRule, name: "globalRuleIDByFallbackRule")
-    let priorityRankBuffer = try makeBuffer(
-      priorityRankByFallbackRule, name: "priorityRankByFallbackRule")
-    let tokenKindIDBuffer = try makeBuffer(
-      tokenKindIDByFallbackRule, name: "tokenKindIDByFallbackRule")
-    let modeBuffer = try makeBuffer(modeByFallbackRule, name: "modeByFallbackRule")
-
     let outLenBuffer = try makeWritableBuffer(UInt16.self, count: pageWidth, name: "outLen")
     let outPriorityBuffer = try makeWritableBuffer(
       UInt16.self, count: pageWidth, name: "outPriorityRank")
@@ -165,16 +254,16 @@ final class FallbackMetalExecutor: @unchecked Sendable {
       UInt16.self, count: pageWidth, name: "outTokenKindID")
     let outModeBuffer = try makeWritableBuffer(UInt8.self, count: pageWidth, name: "outMode")
 
-    encoder.setComputePipelineState(pipelineState)
+    encoder.setComputePipelineState(compiledKernel.pipelineState)
     encoder.setBuffer(classIDsBuffer, offset: 0, index: 0)
-    encoder.setBuffer(stepLoBuffer, offset: 0, index: 1)
-    encoder.setBuffer(stepHiBuffer, offset: 0, index: 2)
-    encoder.setBuffer(acceptLoBuffer, offset: 0, index: 3)
-    encoder.setBuffer(acceptHiBuffer, offset: 0, index: 4)
-    encoder.setBuffer(globalRuleIDBuffer, offset: 0, index: 5)
-    encoder.setBuffer(priorityRankBuffer, offset: 0, index: 6)
-    encoder.setBuffer(tokenKindIDBuffer, offset: 0, index: 7)
-    encoder.setBuffer(modeBuffer, offset: 0, index: 8)
+    encoder.setBuffer(compiledKernel.stepLoBuffer, offset: 0, index: 1)
+    encoder.setBuffer(compiledKernel.stepHiBuffer, offset: 0, index: 2)
+    encoder.setBuffer(compiledKernel.acceptLoBuffer, offset: 0, index: 3)
+    encoder.setBuffer(compiledKernel.acceptHiBuffer, offset: 0, index: 4)
+    encoder.setBuffer(compiledKernel.globalRuleIDBuffer, offset: 0, index: 5)
+    encoder.setBuffer(compiledKernel.priorityRankBuffer, offset: 0, index: 6)
+    encoder.setBuffer(compiledKernel.tokenKindIDBuffer, offset: 0, index: 7)
+    encoder.setBuffer(compiledKernel.modeBuffer, offset: 0, index: 8)
     encoder.setBuffer(outLenBuffer, offset: 0, index: 9)
     encoder.setBuffer(outPriorityBuffer, offset: 0, index: 10)
     encoder.setBuffer(outRuleIDBuffer, offset: 0, index: 11)
@@ -182,7 +271,7 @@ final class FallbackMetalExecutor: @unchecked Sendable {
     encoder.setBuffer(outModeBuffer, offset: 0, index: 13)
     encoder.setBytes(&config, length: MemoryLayout<FallbackKernelConfig>.stride, index: 14)
 
-    let threadExecutionWidth = max(1, pipelineState.threadExecutionWidth)
+    let threadExecutionWidth = max(1, compiledKernel.pipelineState.threadExecutionWidth)
     let threadsPerThreadgroup = MTLSize(width: threadExecutionWidth, height: 1, depth: 1)
     let threadsPerGrid = MTLSize(width: pageWidth, height: 1, depth: 1)
     encoder.dispatchThreads(threadsPerGrid, threadsPerThreadgroup: threadsPerThreadgroup)
