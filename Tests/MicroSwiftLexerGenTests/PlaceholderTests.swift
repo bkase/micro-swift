@@ -107,6 +107,10 @@ struct RawRegexDSLTests {
 
 @Suite("LexerSpec DSL Tests")
 struct LexerSpecDSLTests {
+  @Test func microSwiftV0HasCorrectName() {
+    #expect(microSwiftV0.name == "MicroSwift.v0")
+  }
+
   @Test func microSwiftV0RuleCount() {
     // 2 skip + 1 ident + 1 int + 13 punctuation/operators = 17 rules
     #expect(microSwiftV0.rules.count == 17)
@@ -134,6 +138,16 @@ struct LexerSpecDSLTests {
 
 @Suite("Declaration Lowering Tests")
 struct DeclarationLoweringTests {
+  @Test func declarePreservesName() {
+    let declared = microSwiftV0.declare()
+    #expect(declared.name == "MicroSwift.v0")
+  }
+
+  @Test func declarePreservesRuleCount() {
+    let declared = microSwiftV0.declare()
+    #expect(declared.rules.count == 17)
+  }
+
   @Test func declarePreservesKeywordBlocks() {
     let declared = microSwiftV0.declare()
     #expect(declared.keywordBlocks.count == 1)
@@ -179,5 +193,270 @@ struct DeclarationLoweringTests {
     #expect(names[2] == "ident")
     #expect(names[3] == "int")
     #expect(names[4] == "arrow")
+  }
+}
+
+@Suite("Normalization Tests")
+struct NormalizationTests {
+  @Test func normalizesMicroSwiftSpecWithStableIDs() {
+    let declared = microSwiftV0.declare()
+    let normalized = DeclaredSpec.normalize(declared)
+
+    #expect(normalized.name == "MicroSwift.v0")
+    #expect(normalized.rules.count == 17)
+    #expect(normalized.rules[0].ruleID == RuleID(0))
+    #expect(normalized.rules[0].tokenKindID == TokenKindID(0))
+    #expect(normalized.rules[1].tokenKindID == TokenKindID(1))
+    #expect(normalized.rules[2].name == "ident")
+    #expect(normalized.rules[2].tokenKindID == TokenKindID(2))
+
+    let keywordBlock = normalized.keywordBlocks[0]
+    #expect(keywordBlock.baseKindName == "ident")
+    #expect(keywordBlock.baseTokenKindID == TokenKindID(2))
+    #expect(keywordBlock.entries.count == 7)
+  }
+
+  @Test func normalizationFlattensConcatAndMergesLiterals() {
+    let raw = literal("a") <> (literal("b") <> literal("c"))
+    let normalized = NormalizedRegex.normalize(raw)
+    #expect(normalized == .literal([97, 98, 99]))
+  }
+
+  @Test func normalizationSortsAndDedupesAlternation() {
+    let raw = alt(literal("b"), literal("a"), literal("b"))
+    let normalized = NormalizedRegex.normalize(raw)
+    #expect(normalized == .alt([.literal([97]), .literal([98])]))
+  }
+
+  @Test func normalizationIsIdempotentByCanonicalKey() {
+    let once = NormalizedRegex.normalize(literal("a") <> oneOrMore(.byteClass(.asciiDigit)))
+    let twice = NormalizedRegex.normalize(raw(from: once))
+    #expect(once == twice)
+    #expect(once.canonicalKey == twice.canonicalKey)
+  }
+
+  @Test func computesRegexPropsForConcatAndAlt() {
+    let concatRegex = NormalizedRegex.normalize(literal("ab") <> optional(literal("c")))
+    let concatProps = concatRegex.props
+    #expect(!concatProps.nullable)
+    #expect(concatProps.minWidth == 2)
+    #expect(concatProps.maxWidth == 3)
+    #expect(concatProps.firstByteSet.contains(UInt8(ascii: "a")))
+
+    let altRegex = NormalizedRegex.normalize(alt(optional(literal("x")), literal("yz")))
+    let altProps = altRegex.props
+    #expect(altProps.nullable)
+    #expect(altProps.minWidth == 0)
+    #expect(altProps.maxWidth == 2)
+    #expect(altProps.firstByteSet.contains(UInt8(ascii: "x")))
+    #expect(altProps.firstByteSet.contains(UInt8(ascii: "y")))
+  }
+
+  private func raw(from normalized: NormalizedRegex) -> RawRegex {
+    switch normalized {
+    case .never:
+      return .byteClass(.empty)
+    case .epsilon:
+      return .literal([])
+    case .literal(let bytes):
+      return .literal(bytes)
+    case .byteClass(let set):
+      return .byteClass(set)
+    case .concat(let children):
+      return .concat(children.map(raw(from:)))
+    case .alt(let children):
+      return .alt(children.map(raw(from:)))
+    case .repetition(let child, let min, let max):
+      return .repetition(raw(from: child), min: min, max: max)
+    }
+  }
+}
+
+@Suite("Validation Tests")
+struct ValidationTests {
+  @Test func validatesMicroSwiftSpec() throws {
+    let normalized = DeclaredSpec.normalize(microSwiftV0.declare())
+    let validated = try NormalizedSpec.validate(normalized)
+    #expect(validated.rules.count == 17)
+  }
+
+  @Test func rejectsNullableRule() {
+    let spec = LexerSpec(name: "nullable") {
+      token("maybe", optional(literal("a")))
+    }
+    let normalized = DeclaredSpec.normalize(spec.declare())
+
+    do {
+      _ = try NormalizedSpec.validate(normalized)
+      Issue.record("Expected validation to fail")
+    } catch let error as ValidationError {
+      #expect(error.diagnostics.contains { $0.code == .nullableRule })
+    } catch {
+      Issue.record("Unexpected error: \(error)")
+    }
+  }
+
+  @Test func rejectsDuplicateTopLevelTokenKind() {
+    let spec = LexerSpec(name: "duplicateKind") {
+      token("dup", literal("a"))
+      token("dup", literal("b"))
+    }
+    let normalized = DeclaredSpec.normalize(spec.declare())
+
+    do {
+      _ = try NormalizedSpec.validate(normalized)
+      Issue.record("Expected validation to fail")
+    } catch let error as ValidationError {
+      #expect(error.diagnostics.contains { $0.code == .duplicateTopLevelTokenKind })
+    } catch {
+      Issue.record("Unexpected error: \(error)")
+    }
+  }
+
+  @Test func rejectsDuplicateKeywordLexemeAndKind() {
+    let spec = LexerSpec(name: "duplicateKeyword") {
+      let ident = identifier(
+        "ident",
+        .byteClass(.asciiIdentStart) <> zeroOrMore(.byteClass(.asciiIdentContinue))
+      )
+      keywords(for: ident) {
+        keyword("if", as: "kwIf")
+        keyword("if", as: "kwIf2")
+        keyword("else", as: "kwIf")
+      }
+    }
+    let normalized = DeclaredSpec.normalize(spec.declare())
+
+    do {
+      _ = try NormalizedSpec.validate(normalized)
+      Issue.record("Expected validation to fail")
+    } catch let error as ValidationError {
+      #expect(error.diagnostics.contains { $0.code == .duplicateKeywordLexeme })
+      #expect(error.diagnostics.contains { $0.code == .duplicateKeywordKind })
+    } catch {
+      Issue.record("Unexpected error: \(error)")
+    }
+  }
+
+  @Test func rejectsKeywordNotMatchedByBaseRule() {
+    let spec = LexerSpec(name: "badKeyword") {
+      let ident = identifier(
+        "ident",
+        .byteClass(.asciiIdentStart) <> zeroOrMore(.byteClass(.asciiIdentContinue))
+      )
+      keywords(for: ident) {
+        keyword("123", as: "kwNumeric")
+      }
+    }
+    let normalized = DeclaredSpec.normalize(spec.declare())
+
+    do {
+      _ = try NormalizedSpec.validate(normalized)
+      Issue.record("Expected validation to fail")
+    } catch let error as ValidationError {
+      #expect(error.diagnostics.contains { $0.code == .keywordNotMatchedByBaseRule })
+    } catch {
+      Issue.record("Unexpected error: \(error)")
+    }
+  }
+}
+
+@Suite("Byte Class Tests")
+struct ByteClassTests {
+  @Test func buildsDeterministicByteClassesForMicroSwift() throws {
+    let validated = try NormalizedSpec.validate(DeclaredSpec.normalize(microSwiftV0.declare()))
+    let classesA = validated.buildByteClasses()
+    let classesB = validated.buildByteClasses()
+    #expect(classesA == classesB)
+    #expect(classesA.byteToClass.count == 256)
+    #expect(!classesA.classes.isEmpty)
+  }
+
+  @Test func classesPartitionAllBytesExactlyOnce() throws {
+    let validated = try NormalizedSpec.validate(DeclaredSpec.normalize(microSwiftV0.declare()))
+    let byteClasses = validated.buildByteClasses()
+
+    let allMembers = byteClasses.classes.flatMap(\.bytes)
+    #expect(allMembers.count == 256)
+    #expect(Set(allMembers).count == 256)
+    #expect(Set(allMembers) == Set(UInt8.min...UInt8.max))
+  }
+
+  @Test func bytesInSameClassSharePrimitiveMembership() throws {
+    let validated = try NormalizedSpec.validate(DeclaredSpec.normalize(microSwiftV0.declare()))
+    let byteClasses = validated.buildByteClasses()
+    let predicates = primitivePredicates(from: validated)
+
+    for byteClass in byteClasses.classes {
+      guard let first = byteClass.bytes.first else { continue }
+      let baseline = predicates.map { $0.contains(first) }
+      for byte in byteClass.bytes.dropFirst() {
+        let membership = predicates.map { $0.contains(byte) }
+        #expect(membership == baseline)
+      }
+    }
+  }
+
+  private func primitivePredicates(from spec: ValidatedSpec) -> [ByteSet] {
+    var predicates: [ByteSet] = []
+    for rule in spec.rules {
+      predicates.append(rule.props.firstByteSet)
+      predicates.append(contentsOf: primitiveSets(in: rule.regex))
+    }
+    return Array(Set(predicates))
+  }
+
+  private func primitiveSets(in regex: NormalizedRegex) -> [ByteSet] {
+    switch regex {
+    case .never, .epsilon:
+      return []
+    case .literal(let bytes):
+      return bytes.map { ByteSet(bytes: [$0]) }
+    case .byteClass(let set):
+      return [set]
+    case .concat(let children), .alt(let children):
+      return children.flatMap(primitiveSets(in:))
+    case .repetition(let child, _, _):
+      return primitiveSets(in: child)
+    }
+  }
+}
+
+@Suite("Class Set Tests")
+struct ClassSetTests {
+  @Test func buildsDeterministicClassSets() throws {
+    let validated = try NormalizedSpec.validate(DeclaredSpec.normalize(microSwiftV0.declare()))
+    let byteClasses = validated.buildByteClasses()
+    let a = validated.buildClassSets(using: byteClasses)
+    let b = validated.buildClassSets(using: byteClasses)
+    #expect(a == b)
+    #expect(!a.classSets.isEmpty)
+  }
+
+  @Test func classSetsUseLexicographicStableOrdering() throws {
+    let validated = try NormalizedSpec.validate(DeclaredSpec.normalize(microSwiftV0.declare()))
+    let byteClasses = validated.buildByteClasses()
+    let classSets = validated.buildClassSets(using: byteClasses)
+    let members = classSets.classSets.map(\.classes)
+    #expect(members == members.sorted { $0.lexicographicallyPrecedes($1) })
+  }
+
+  @Test func projectedMembershipInvariantHolds() throws {
+    let validated = try NormalizedSpec.validate(DeclaredSpec.normalize(microSwiftV0.declare()))
+    let byteClasses = validated.buildByteClasses()
+    let classSets = validated.buildClassSets(using: byteClasses)
+
+    for byteSet in validated.relevantByteSetsForLowering() {
+      let classSetID = try #require(classSets.classSetID(for: byteSet, in: byteClasses))
+      let projected = try #require(classSets.classSets.first { $0.classSetID == classSetID }?.classes)
+      let projectedSet = Set(projected)
+
+      for byte in UInt8.min...UInt8.max {
+        let inOriginal = byteSet.contains(byte)
+        let classID = byteClasses.byteToClass[Int(byte)]
+        let inProjected = projectedSet.contains(classID)
+        #expect(inOriginal == inProjected)
+      }
+    }
   }
 }

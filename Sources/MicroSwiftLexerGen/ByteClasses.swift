@@ -10,7 +10,7 @@ public struct ByteClasses: Sendable, Equatable, Codable {
 
 extension ValidatedSpec {
   public func buildByteClasses() -> ByteClasses {
-    let predicates = collectPrimitivePredicates()
+    let predicates = relevantByteSetsForLowering()
     var groups: [Signature: [UInt8]] = [:]
 
     for byte in UInt8.min...UInt8.max {
@@ -38,7 +38,7 @@ extension ValidatedSpec {
     return ByteClasses(byteToClass: byteToClass, classes: classes)
   }
 
-  private func collectPrimitivePredicates() -> [ByteSet] {
+  func relevantByteSetsForLowering() -> [ByteSet] {
     var allSets: [ByteSet] = []
     for rule in rules {
       allSets.append(rule.props.firstByteSet)
