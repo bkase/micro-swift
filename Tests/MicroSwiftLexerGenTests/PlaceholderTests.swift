@@ -195,3 +195,79 @@ struct DeclarationLoweringTests {
     #expect(names[4] == "arrow")
   }
 }
+
+@Suite("Normalization Tests")
+struct NormalizationTests {
+  @Test func normalizesMicroSwiftSpecWithStableIDs() {
+    let declared = microSwiftV0.declare()
+    let normalized = DeclaredSpec.normalize(declared)
+
+    #expect(normalized.name == "MicroSwift.v0")
+    #expect(normalized.rules.count == 17)
+    #expect(normalized.rules[0].ruleID == RuleID(0))
+    #expect(normalized.rules[0].tokenKindID == TokenKindID(0))
+    #expect(normalized.rules[1].tokenKindID == TokenKindID(1))
+    #expect(normalized.rules[2].name == "ident")
+    #expect(normalized.rules[2].tokenKindID == TokenKindID(2))
+
+    let keywordBlock = normalized.keywordBlocks[0]
+    #expect(keywordBlock.baseKindName == "ident")
+    #expect(keywordBlock.baseTokenKindID == TokenKindID(2))
+    #expect(keywordBlock.entries.count == 7)
+  }
+
+  @Test func normalizationFlattensConcatAndMergesLiterals() {
+    let raw = literal("a") <> (literal("b") <> literal("c"))
+    let normalized = NormalizedRegex.normalize(raw)
+    #expect(normalized == .literal([97, 98, 99]))
+  }
+
+  @Test func normalizationSortsAndDedupesAlternation() {
+    let raw = alt(literal("b"), literal("a"), literal("b"))
+    let normalized = NormalizedRegex.normalize(raw)
+    #expect(normalized == .alt([.literal([97]), .literal([98])]))
+  }
+
+  @Test func normalizationIsIdempotentByCanonicalKey() {
+    let once = NormalizedRegex.normalize(literal("a") <> oneOrMore(.byteClass(.asciiDigit)))
+    let twice = NormalizedRegex.normalize(raw(from: once))
+    #expect(once == twice)
+    #expect(once.canonicalKey == twice.canonicalKey)
+  }
+
+  @Test func computesRegexPropsForConcatAndAlt() {
+    let concatRegex = NormalizedRegex.normalize(literal("ab") <> optional(literal("c")))
+    let concatProps = concatRegex.props
+    #expect(!concatProps.nullable)
+    #expect(concatProps.minWidth == 2)
+    #expect(concatProps.maxWidth == 3)
+    #expect(concatProps.firstByteSet.contains(UInt8(ascii: "a")))
+
+    let altRegex = NormalizedRegex.normalize(alt(optional(literal("x")), literal("yz")))
+    let altProps = altRegex.props
+    #expect(altProps.nullable)
+    #expect(altProps.minWidth == 0)
+    #expect(altProps.maxWidth == 2)
+    #expect(altProps.firstByteSet.contains(UInt8(ascii: "x")))
+    #expect(altProps.firstByteSet.contains(UInt8(ascii: "y")))
+  }
+
+  private func raw(from normalized: NormalizedRegex) -> RawRegex {
+    switch normalized {
+    case .never:
+      return .byteClass(.empty)
+    case .epsilon:
+      return .literal([])
+    case .literal(let bytes):
+      return .literal(bytes)
+    case .byteClass(let set):
+      return .byteClass(set)
+    case .concat(let children):
+      return .concat(children.map(raw(from:)))
+    case .alt(let children):
+      return .alt(children.map(raw(from:)))
+    case .repetition(let child, let min, let max):
+      return .repetition(raw(from: child), min: min, max: max)
+    }
+  }
+}
