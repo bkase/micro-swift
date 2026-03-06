@@ -23,7 +23,8 @@ struct MixedOverlapTests {
     )
 
     let fastWinners = [winner(position: 0, len: 2, priorityRank: 0, ruleID: 0, tokenKindID: 0)]
-    let selected = selectMixed(fastWinners: fastWinners, fallbackResult: fallbackResult, validLen: validLen)
+    let selected = selectMixed(
+      fastWinners: fastWinners, fallbackResult: fallbackResult, validLen: validLen)
 
     #expect(selected == [winner(position: 0, len: 2, priorityRank: 0, ruleID: 0, tokenKindID: 0)])
   }
@@ -46,7 +47,8 @@ struct MixedOverlapTests {
     )
 
     let fastWinners = [winner(position: 0, len: 3, priorityRank: 0, ruleID: 200, tokenKindID: 3)]
-    let selected = selectMixed(fastWinners: fastWinners, fallbackResult: fallbackResult, validLen: validLen)
+    let selected = selectMixed(
+      fastWinners: fastWinners, fallbackResult: fallbackResult, validLen: validLen)
 
     #expect(selected == [winner(position: 0, len: 3, priorityRank: 0, ruleID: 200, tokenKindID: 3)])
   }
@@ -105,7 +107,8 @@ struct MixedOverlapTests {
     #expect(fallbackResult.fallbackLen[1] == 2)
 
     let fastWinners = [winner(position: 0, len: 2, priorityRank: 0, ruleID: 0, tokenKindID: 0)]
-    let selected = selectMixed(fastWinners: fastWinners, fallbackResult: fallbackResult, validLen: validLen)
+    let selected = selectMixed(
+      fastWinners: fastWinners, fallbackResult: fallbackResult, validLen: validLen)
 
     #expect(
       selected
@@ -141,7 +144,8 @@ struct MixedOverlapTests {
     )
     let selected = greedyNonOverlapSelect(winners: integrated, validLen: validLen)
 
-    #expect(integrated[2] == winner(position: 2, len: 2, priorityRank: 5, ruleID: 1, tokenKindID: 2))
+    #expect(
+      integrated[2] == winner(position: 2, len: 2, priorityRank: 5, ruleID: 1, tokenKindID: 2))
     #expect(
       selected
         == [

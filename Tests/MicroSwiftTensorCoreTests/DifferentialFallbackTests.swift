@@ -1,6 +1,5 @@
-import Testing
-
 import MicroSwiftTensorCore
+import Testing
 
 @testable import MicroSwiftLexerGen
 

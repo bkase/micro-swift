@@ -160,7 +160,7 @@ struct LCRNG: Sendable {
   }
 
   mutating func nextUInt64() -> UInt64 {
-    state = state &* 6364136223846793005 &+ 1442695040888963407
+    state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
     return state
   }
 
@@ -331,7 +331,8 @@ private func remapTokenKind(
   lexemeBytes: [UInt8],
   artifact: LexerArtifact
 ) -> UInt16 {
-  for table in artifact.keywordRemaps where
+  for table in artifact.keywordRemaps
+  where
     table.baseRuleID == winner.ruleID && table.baseTokenKindID == winner.tokenKindID
   {
     if lexemeBytes.count > Int(table.maxKeywordLength) {
