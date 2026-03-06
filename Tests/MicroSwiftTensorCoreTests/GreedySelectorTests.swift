@@ -15,11 +15,12 @@ struct GreedySelectorTests {
 
     let selected = greedyNonOverlapSelect(winners: winners, validLen: 8)
 
-    #expect(selected == [
-      winner(position: 0, len: 4, priorityRank: 0, ruleID: 10),
-      winner(position: 4, len: 1, priorityRank: 0, ruleID: 13),
-      winner(position: 6, len: 2, priorityRank: 0, ruleID: 14),
-    ])
+    #expect(
+      selected == [
+        winner(position: 0, len: 4, priorityRank: 0, ruleID: 10),
+        winner(position: 4, len: 1, priorityRank: 0, ruleID: 13),
+        winner(position: 6, len: 2, priorityRank: 0, ruleID: 14),
+      ])
   }
 
   @Test
@@ -47,10 +48,11 @@ struct GreedySelectorTests {
     )
     let selected = greedyNonOverlapSelect(winners: integrated, validLen: 5)
 
-    #expect(selected == [
-      winner(position: 0, len: 3, priorityRank: 0, ruleID: 10),
-      winner(position: 3, len: 2, priorityRank: 0, ruleID: 11),
-    ])
+    #expect(
+      selected == [
+        winner(position: 0, len: 3, priorityRank: 0, ruleID: 10),
+        winner(position: 3, len: 2, priorityRank: 0, ruleID: 11),
+      ])
   }
 
   private func winner(

@@ -55,30 +55,33 @@ struct WinnerReductionTests {
     #expect(integrated.count == 4)
     #expect(integrated[0] == winner(position: 0, len: 2, priorityRank: 0, ruleID: 10))
     #expect(
-      integrated[1] == winner(
-        position: 1,
-        len: 3,
-        priorityRank: 1,
-        ruleID: 71,
-        tokenKindID: 7
-      ))
+      integrated[1]
+        == winner(
+          position: 1,
+          len: 3,
+          priorityRank: 1,
+          ruleID: 71,
+          tokenKindID: 7
+        ))
     #expect(
-      integrated[2] == winner(
-        position: 2,
-        len: 1,
-        priorityRank: 0,
-        ruleID: 72,
-        tokenKindID: 7
-      ))
+      integrated[2]
+        == winner(
+          position: 2,
+          len: 1,
+          priorityRank: 0,
+          ruleID: 72,
+          tokenKindID: 7
+        ))
     #expect(
-      integrated[3] == winner(
-        position: 3,
-        len: 2,
-        priorityRank: 1,
-        ruleID: 50,
-        tokenKindID: 7,
-        mode: 1
-      ))
+      integrated[3]
+        == winner(
+          position: 3,
+          len: 2,
+          priorityRank: 1,
+          ruleID: 50,
+          tokenKindID: 7,
+          mode: 1
+        ))
   }
 
   private func winner(

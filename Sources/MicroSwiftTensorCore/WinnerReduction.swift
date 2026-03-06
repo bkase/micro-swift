@@ -35,7 +35,8 @@ public struct CandidateWinner: Sendable, Equatable {
 }
 
 public func reduceBucketWinners(buckets: [[CandidateWinner]]) -> [CandidateWinner] {
-  let maxPosition = buckets
+  let maxPosition =
+    buckets
     .flatMap(\.self)
     .map(\.position)
     .max() ?? -1
