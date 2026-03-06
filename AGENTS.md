@@ -71,3 +71,27 @@ git push                # Push to remote
 - Always sync before ending session
 
 <!-- end-br-agent-instructions -->
+
+## Parallel Codex Orchestration
+
+When spawning multiple `codex exec` instances across clones via `zmx`:
+
+```bash
+# Use -C to set working directory (NOT cd in bash -c)
+codex exec --dangerously-bypass-approvals-and-sandbox -C /path/to/clone "prompt"
+
+# Pipe echo to auto-approve the trust prompt
+echo "" | codex exec --dangerously-bypass-approvals-and-sandbox -C /path/to/clone "prompt"
+
+# Use zmx wait with stderr silenced to avoid spammy output
+/opt/homebrew/bin/zmx wait session1 session2 2>/dev/null
+
+# Full pattern for launching a codex in a zmx session
+/opt/homebrew/bin/zmx run session-name bash -c 'echo "" | codex exec --dangerously-bypass-approvals-and-sandbox -C /path/to/clone "$(cat /tmp/prompt.txt)"'
+```
+
+- Write prompts to temp files first, then `$(cat /tmp/prompt.txt)` to avoid shell escaping issues
+- Each clone (micro-swift, micro-swift2, ..., micro-swift5) should get its own codex instance
+- After codex finishes, fetch branches from clones: `git fetch /path/to/clone branch:branch`
+- Resolve `.beads/issues.jsonl` conflicts with `git checkout --ours` then re-export
+- Use `br update <id> --status=closed` to force-close beads blocked by parent-child deps

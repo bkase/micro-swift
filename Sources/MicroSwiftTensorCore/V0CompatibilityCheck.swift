@@ -1,7 +1,8 @@
 import MicroSwiftLexerGen
 
 public func validateV0UnderV1Fallback(artifact: LexerArtifact) -> Bool {
-  guard !artifact.rules.contains(where: { $0.family == .fallback || $0.family == .localWindow }) else {
+  guard !artifact.rules.contains(where: { $0.family == .fallback || $0.family == .localWindow })
+  else {
     return false
   }
 

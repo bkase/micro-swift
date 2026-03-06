@@ -37,7 +37,8 @@ public struct LexShell: Sendable {
     guard result.packedRows.count < width else {
       return result
     }
-    let padded = result.packedRows + Array(repeating: UInt64(0), count: width - result.packedRows.count)
+    let padded =
+      result.packedRows + Array(repeating: UInt64(0), count: width - result.packedRows.count)
     return PageLexResult(packedRows: padded, rowCount: result.rowCount)
   }
 }

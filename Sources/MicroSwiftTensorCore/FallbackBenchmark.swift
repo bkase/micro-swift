@@ -139,7 +139,10 @@ public func runBenchmark(
     )
     let selected = greedyNonOverlapSelect(winners: integrated, validLen: validLen)
 
-    return (tokenCount: selected.count, errorSpanCount: countErrorSpans(validLen: validLen, selected: selected))
+    return (
+      tokenCount: selected.count,
+      errorSpanCount: countErrorSpans(validLen: validLen, selected: selected)
+    )
   }
 
   if config.mode == .warm {
@@ -301,7 +304,7 @@ private struct LCRNG {
   }
 
   mutating func nextBit() -> Bool {
-    state = state &* 6364136223846793005 &+ 1442695040888963407
+    state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
     return (state & 1) == 1
   }
 }

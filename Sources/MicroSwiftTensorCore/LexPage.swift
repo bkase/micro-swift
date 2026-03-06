@@ -30,7 +30,8 @@ public func lexPage(
     return PageLexResult(packedRows: [], rowCount: 0)
   }
 
-  let classIDs = classify(bytes: bytes, validLen: boundedValidLen, byteToClassLUT: artifact.byteToClassLUT)
+  let classIDs = classify(
+    bytes: bytes, validLen: boundedValidLen, byteToClassLUT: artifact.byteToClassLUT)
 
   // Fast-family execution is intentionally stubbed for now.
   let fastWinners: [CandidateWinner] = []
@@ -38,7 +39,8 @@ public func lexPage(
   var integratedWinners = reduceBucketWinners(buckets: [fastWinners])
   if options.runtimeProfile == .v1Fallback, let fallback = artifact.fallback {
     let fallbackRunner = FallbackKernelRunner(fallback: fallback)
-    let fallbackResult = fallbackRunner.evaluatePage(classIDs: classIDs, validLen: Int32(boundedValidLen))
+    let fallbackResult = fallbackRunner.evaluatePage(
+      classIDs: classIDs, validLen: Int32(boundedValidLen))
     integratedWinners = integrateWithFallback(
       fastWinners: fastWinners,
       fallbackResult: fallbackResult,
