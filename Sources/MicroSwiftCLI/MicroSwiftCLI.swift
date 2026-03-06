@@ -11,6 +11,7 @@ public struct MicroSwift: AsyncParsableCommand {
       Doctor.self,
       Seed.self,
       MLXSmoke.self,
+      Lex.self,
       LexerGen.self,
     ]
   )
