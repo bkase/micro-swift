@@ -98,7 +98,8 @@ struct LineStartOffsetsTests {
     for fixture in SourceFixtures.all {
       let offsets = LineStructure.lineStartOffsets(bytes: fixture.bytes)
       for i in 1..<offsets.count {
-        #expect(offsets[i] > offsets[i - 1], "Fixture \(fixture.name): not strictly increasing at \(i)")
+        #expect(
+          offsets[i] > offsets[i - 1], "Fixture \(fixture.name): not strictly increasing at \(i)")
       }
     }
   }
@@ -107,7 +108,9 @@ struct LineStartOffsetsTests {
     for fixture in SourceFixtures.all {
       let offsets = LineStructure.lineStartOffsets(bytes: fixture.bytes)
       for o in offsets {
-        #expect(o >= 0 && o <= Int64(fixture.bytes.count), "Fixture \(fixture.name): offset \(o) out of bounds")
+        #expect(
+          o >= 0 && o <= Int64(fixture.bytes.count),
+          "Fixture \(fixture.name): offset \(o) out of bounds")
       }
     }
   }

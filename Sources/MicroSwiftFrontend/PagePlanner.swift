@@ -40,14 +40,16 @@ public enum SourcePaging {
   ) -> [SourcePage] {
     // Empty file: one empty page
     if byteCount == 0 {
-      return [SourcePage(
-        pageID: 0,
-        start: ByteOffset(rawValue: 0),
-        end: ByteOffset(rawValue: 0),
-        byteCount: 0,
-        lineBreakCount: 0,
-        oversize: false
-      )]
+      return [
+        SourcePage(
+          pageID: 0,
+          start: ByteOffset(rawValue: 0),
+          end: ByteOffset(rawValue: 0),
+          byteCount: 0,
+          lineBreakCount: 0,
+          oversize: false
+        )
+      ]
     }
 
     var pages = [SourcePage]()
@@ -79,14 +81,15 @@ public enum SourcePaging {
       let lineBreaks = Int32(ubEnd - lbStart)
 
       let pageBytes = Int32(end - start)
-      pages.append(SourcePage(
-        pageID: pageID,
-        start: ByteOffset(rawValue: start),
-        end: ByteOffset(rawValue: end),
-        byteCount: pageBytes,
-        lineBreakCount: lineBreaks,
-        oversize: pageBytes > policy.targetBytes
-      ))
+      pages.append(
+        SourcePage(
+          pageID: pageID,
+          start: ByteOffset(rawValue: start),
+          end: ByteOffset(rawValue: end),
+          byteCount: pageBytes,
+          lineBreakCount: lineBreaks,
+          oversize: pageBytes > policy.targetBytes
+        ))
 
       start = end
       pageID += 1
