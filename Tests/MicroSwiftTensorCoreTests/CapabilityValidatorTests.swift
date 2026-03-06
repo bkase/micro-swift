@@ -80,6 +80,18 @@ import Testing
     #expect(diagnostics.contains { $0.ruleID == 31 && $0.reason == .stateCapExceeded })
   }
 
+  @Test func v1FallbackRejectsClassCapExceeding128() {
+    let artifact = makeArtifact(
+      rules: [
+        makeFallbackRule(ruleID: 32, name: "tooManyClasses", classCount: 129, maxWidth: 4)
+      ],
+      maxLookahead: 8
+    )
+
+    let diagnostics = CapabilityValidator.validate(artifact: artifact, profile: .v1Fallback)
+    #expect(diagnostics.contains { $0.ruleID == 32 && $0.reason == .classCapExceeded })
+  }
+
   @Test func v1FallbackRejectsUnboundedFallbackWidth() {
     let unbounded = makeFallbackRule(ruleID: 40, name: "wide", maxWidth: nil)
     let artifact = makeArtifact(rules: [unbounded], maxLookahead: 8)
@@ -181,6 +193,7 @@ private func makeFallbackRule(
   name: String,
   tokenKindID: UInt16 = 1,
   stateCount: UInt32 = 2,
+  classCount: UInt16 = 1,
   maxWidth: UInt16? = 4
 ) -> LoweredRule {
   LoweredRule(
@@ -195,11 +208,11 @@ private func makeFallbackRule(
     firstClassSetID: 0,
     plan: .fallback(
       stateCount: stateCount,
-      classCount: 1,
-      transitionRowStride: 1,
+      classCount: classCount,
+      transitionRowStride: classCount,
       startState: 0,
       acceptingStates: [1],
-      transitions: Array(repeating: 0, count: Int(stateCount))
+      transitions: Array(repeating: 0, count: Int(stateCount) * Int(classCount))
     )
   )
 }

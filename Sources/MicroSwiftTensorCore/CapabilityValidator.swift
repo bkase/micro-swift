@@ -7,6 +7,7 @@ public enum RuntimeProfile: String, Sendable, Equatable {
 
 public enum CapabilityRejectionReason: String, Sendable, Equatable {
   case stateCapExceeded = "state-cap-exceeded"
+  case classCapExceeded = "class-cap-exceeded"
   case missingTable = "missing-table"
   case widthExceeded = "width-exceeded"
   case maxLookaheadMismatch = "max-lookahead-mismatch"
@@ -44,6 +45,7 @@ public struct CapabilityDiagnostic: Sendable, Equatable, CustomStringConvertible
 
 public enum CapabilityValidator {
   private static let maxFallbackStates: UInt32 = 128
+  private static let maxFallbackClasses: UInt16 = 128
 
   public static func validate(
     artifact: LexerArtifact,
@@ -134,6 +136,9 @@ public enum CapabilityValidator {
         transitions: transitions
       ) {
         diagnostics.append(diagnostic(for: rule, reason: .missingTable))
+      }
+      if classCount > maxFallbackClasses {
+        diagnostics.append(diagnostic(for: rule, reason: .classCapExceeded))
       }
 
       let maxWidth = rule.maxWidth ?? 0
