@@ -62,6 +62,10 @@ public struct ByteSet: Sendable, Equatable, Hashable {
     ByteSet(w0: w0 & other.w0, w1: w1 & other.w1, w2: w2 & other.w2, w3: w3 & other.w3)
   }
 
+  public func isSubset(of other: ByteSet) -> Bool {
+    intersection(other) == self
+  }
+
   public var isEmpty: Bool {
     w0 == 0 && w1 == 0 && w2 == 0 && w3 == 0
   }

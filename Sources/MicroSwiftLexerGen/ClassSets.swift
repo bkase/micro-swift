@@ -8,7 +8,7 @@ public struct ClassSetID: Sendable, Equatable, Hashable, Codable {
 
 public struct ClassSetDecl: Sendable, Equatable, Codable {
   public let classSetID: ClassSetID
-  public let classes: [UInt8] // strictly ascending, unique
+  public let classes: [UInt8]  // strictly ascending, unique
 }
 
 public struct ClassSets: Sendable, Equatable {
@@ -39,7 +39,8 @@ extension ValidatedSpec {
       projected.insert(ClassKey(projectedClasses(for: byteSet, in: byteClasses)))
     }
 
-    let sortedClassSets = projected
+    let sortedClassSets =
+      projected
       .map(\.classes)
       .sorted { lhs, rhs in
         lhs.lexicographicallyPrecedes(rhs)

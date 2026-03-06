@@ -448,7 +448,8 @@ struct ClassSetTests {
 
     for byteSet in validated.relevantByteSetsForLowering() {
       let classSetID = try #require(classSets.classSetID(for: byteSet, in: byteClasses))
-      let projected = try #require(classSets.classSets.first { $0.classSetID == classSetID }?.classes)
+      let projected = try #require(
+        classSets.classSets.first { $0.classSetID == classSetID }?.classes)
       let projectedSet = Set(projected)
 
       for byte in UInt8.min...UInt8.max {
@@ -457,6 +458,69 @@ struct ClassSetTests {
         let inProjected = projectedSet.contains(classID)
         #expect(inOriginal == inProjected)
       }
+    }
+  }
+}
+
+@Suite("Family Classifier Tests")
+struct FamilyClassifierTests {
+  @Test func classifiesMicroSwiftRulesIntoLiteralAndRun() throws {
+    let validated = try NormalizedSpec.validate(DeclaredSpec.normalize(microSwiftV0.declare()))
+    let byteClasses = validated.buildByteClasses()
+    let classSets = validated.buildClassSets(using: byteClasses)
+    let classified = try validated.classifyRules(
+      byteClasses: byteClasses,
+      classSets: classSets,
+      options: .init(maxLocalWindowBytes: 8, enableFallback: true, maxFallbackStatesPerRule: 256)
+    )
+
+    let byName = Dictionary(uniqueKeysWithValues: classified.rules.map { ($0.rule.name, $0.plan.family) })
+
+    #expect(byName["ws"] == .run)
+    #expect(byName["lineComment"] == .run)
+    #expect(byName["ident"] == .run)
+    #expect(byName["int"] == .run)
+    #expect(byName["eqEq"] == .literal)
+    #expect(byName["arrow"] == .literal)
+    #expect(byName["comma"] == .literal)
+  }
+
+  @Test func fallsBackWhenFallbackEnabledAndNoCheaperFamilyMatches() throws {
+    let spec = LexerSpec(name: "window-or-fallback") {
+      token("alt", alt(literal("ab"), literal("cd")))
+    }
+    let validated = try NormalizedSpec.validate(DeclaredSpec.normalize(spec.declare()))
+    let byteClasses = validated.buildByteClasses()
+    let classSets = validated.buildClassSets(using: byteClasses)
+    let classified = try validated.classifyRules(
+      byteClasses: byteClasses,
+      classSets: classSets,
+      options: .init(maxLocalWindowBytes: 1, enableFallback: true, maxFallbackStatesPerRule: 256)
+    )
+
+    #expect(classified.rules.count == 1)
+    #expect(classified.rules[0].plan.family == .fallback)
+  }
+
+  @Test func errorsWhenFallbackDisabledAndRuleNeedsFallback() throws {
+    let spec = LexerSpec(name: "fallback-disabled") {
+      token("alt", alt(literal("ab"), literal("cd")))
+    }
+    let validated = try NormalizedSpec.validate(DeclaredSpec.normalize(spec.declare()))
+    let byteClasses = validated.buildByteClasses()
+    let classSets = validated.buildClassSets(using: byteClasses)
+
+    do {
+      _ = try validated.classifyRules(
+        byteClasses: byteClasses,
+        classSets: classSets,
+        options: .init(maxLocalWindowBytes: 1, enableFallback: false, maxFallbackStatesPerRule: 256)
+      )
+      Issue.record("Expected classification failure")
+    } catch let error as ClassificationError {
+      #expect(error.message.contains("fallback is disabled"))
+    } catch {
+      Issue.record("Unexpected error: \(error)")
     }
   }
 }

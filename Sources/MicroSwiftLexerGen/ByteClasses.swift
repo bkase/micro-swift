@@ -4,7 +4,7 @@ public struct ByteClassDecl: Sendable, Equatable, Codable {
 }
 
 public struct ByteClasses: Sendable, Equatable, Codable {
-  public let byteToClass: [UInt8] // length 256
+  public let byteToClass: [UInt8]  // length 256
   public let classes: [ByteClassDecl]
 }
 
