@@ -132,8 +132,11 @@ public func runBenchmark(
       )
     }
 
+    let fastWinners = executeFastFamilies(
+      bytes: benchmarkBytes, classIDs: classIDs, validLen: validLen, artifact: artifact)
+
     let integrated = integrateWithFallback(
-      fastWinners: [],
+      fastWinners: fastWinners,
       fallbackResult: fallbackResult,
       pageWidth: validLen
     )

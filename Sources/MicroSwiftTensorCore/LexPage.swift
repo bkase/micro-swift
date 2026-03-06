@@ -59,7 +59,7 @@ public func lexPage(
 
 import MicroSwiftLexerGen
 
-private func executeFastFamilies(
+func executeFastFamilies(
   bytes: [UInt8],
   classIDs: [UInt16],
   validLen: Int,
