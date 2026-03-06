@@ -72,12 +72,13 @@ struct CoverageMaskTests {
     let spans = CoverageMask.errorSpans(unknown: unknown)
 
     #expect(covered == [false, true, false, true, false, false, true, false])
-    #expect(spans == [
-      ErrorSpan(start: 0, end: 1),
-      ErrorSpan(start: 2, end: 3),
-      ErrorSpan(start: 4, end: 6),
-      ErrorSpan(start: 7, end: 8),
-    ])
+    #expect(
+      spans == [
+        ErrorSpan(start: 0, end: 1),
+        ErrorSpan(start: 2, end: 3),
+        ErrorSpan(start: 4, end: 6),
+        ErrorSpan(start: 7, end: 8),
+      ])
   }
 
   @Test
@@ -106,7 +107,8 @@ struct CoverageMaskTests {
     #expect(spans.isEmpty)
   }
 
-  private func token(start: Int32, length: UInt16, mode: UInt8 = 0) -> GreedySelector.SelectedToken {
+  private func token(start: Int32, length: UInt16, mode: UInt8 = 0) -> GreedySelector.SelectedToken
+  {
     GreedySelector.SelectedToken(
       startPos: start,
       length: length,

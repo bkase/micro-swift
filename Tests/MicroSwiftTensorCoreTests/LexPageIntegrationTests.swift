@@ -19,7 +19,8 @@ struct LexPageIntegrationTests {
       options: LexOptions(emitSkipTokens: false)
     )
     let tokens = TokenUnpacker.unpack(result: result, baseOffset: 0)
-    let kindByID = Dictionary(uniqueKeysWithValues: runtime.tokenKinds.map { ($0.tokenKindID, $0.name) })
+    let kindByID = Dictionary(
+      uniqueKeysWithValues: runtime.tokenKinds.map { ($0.tokenKindID, $0.name) })
     let kindNames = tokens.map { kindByID[$0.kind] ?? "<unknown>" }
 
     #expect(kindNames == ["kwLet", "ident", "eq", "int"])

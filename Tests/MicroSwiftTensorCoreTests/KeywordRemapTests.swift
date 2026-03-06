@@ -18,9 +18,10 @@ struct KeywordRemapTests {
 
     let remapped = KeywordRemap.apply(tokens: tokens, bytes: bytes, remapTables: tables)
 
-    #expect(remapped == [
-      .init(startPos: 0, length: 4, ruleID: 7, tokenKindID: 200, mode: 0)
-    ])
+    #expect(
+      remapped == [
+        .init(startPos: 0, length: 4, ruleID: 7, tokenKindID: 200, mode: 0)
+      ])
   }
 
   @Test
@@ -35,9 +36,10 @@ struct KeywordRemapTests {
 
     let remapped = KeywordRemap.apply(tokens: tokens, bytes: bytes, remapTables: tables)
 
-    #expect(remapped == [
-      .init(startPos: 0, length: 3, ruleID: 7, tokenKindID: 201, mode: 0)
-    ])
+    #expect(
+      remapped == [
+        .init(startPos: 0, length: 3, ruleID: 7, tokenKindID: 201, mode: 0)
+      ])
   }
 
   @Test
@@ -77,7 +79,9 @@ struct KeywordRemapTests {
     ]
     let bytes = Array("function".utf8)
     let tables = [
-      table(baseRuleID: 7, maxKeywordLength: 4, entries: [([102, 117, 110, 99, 116, 105, 111, 110], 200)])
+      table(
+        baseRuleID: 7, maxKeywordLength: 4,
+        entries: [([102, 117, 110, 99, 116, 105, 111, 110], 200)])
     ]
 
     let remapped = KeywordRemap.apply(tokens: tokens, bytes: bytes, remapTables: tables)
@@ -98,9 +102,10 @@ struct KeywordRemapTests {
 
     let remapped = KeywordRemap.apply(tokens: tokens, bytes: bytes, remapTables: tables)
 
-    #expect(remapped == [
-      .init(startPos: 0, length: 4, ruleID: 7, tokenKindID: 201, mode: 0)
-    ])
+    #expect(
+      remapped == [
+        .init(startPos: 0, length: 4, ruleID: 7, tokenKindID: 201, mode: 0)
+      ])
   }
 
   private func table(

@@ -54,7 +54,8 @@ struct Lex: AsyncParsableCommand {
       options: LexOptions(emitSkipTokens: false)
     )
 
-    let kindByID = Dictionary(uniqueKeysWithValues: runtime.tokenKinds.map { ($0.tokenKindID, $0.name) })
+    let kindByID = Dictionary(
+      uniqueKeysWithValues: runtime.tokenKinds.map { ($0.tokenKindID, $0.name) })
     let tokens = lexResult.tokenTape.tokens.map { token in
       TokenOutput(
         kindID: token.kind,
@@ -70,7 +71,9 @@ struct Lex: AsyncParsableCommand {
       fileID: source.fileID.rawValue,
       tokenCount: tokens.count,
       tokens: tokens,
-      errorSpans: lexResult.tokenTape.errorSpans.map { ErrorSpanOutput(start: $0.start, end: $0.end) },
+      errorSpans: lexResult.tokenTape.errorSpans.map {
+        ErrorSpanOutput(start: $0.start, end: $0.end)
+      },
       overflows: lexResult.tokenTape.overflows.map {
         OverflowOutput(
           message: $0.message,

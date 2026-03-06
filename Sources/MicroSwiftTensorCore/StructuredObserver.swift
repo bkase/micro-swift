@@ -46,7 +46,8 @@ public enum StructuredObserver {
       bucketDistribution[bucket.byteCapacity, default: 0] += 1
     }
 
-    let traceID = "f\(source.fileID.rawValue)-b\(source.bytes.count)-p\(pages.count)-t\(tape.tokens.count)-e\(tape.errorSpans.count)-o\(tape.overflows.count)"
+    let traceID =
+      "f\(source.fileID.rawValue)-b\(source.bytes.count)-p\(pages.count)-t\(tape.tokens.count)-e\(tape.errorSpans.count)-o\(tape.overflows.count)"
 
     return LexObservation(
       traceID: traceID,

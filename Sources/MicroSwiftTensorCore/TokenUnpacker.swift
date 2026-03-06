@@ -6,7 +6,8 @@ public enum TokenUnpacker {
     baseOffset: Int64
   ) -> [LogicalToken] {
     precondition(result.rowCount >= 0, "rowCount must be non-negative")
-    precondition(Int(result.rowCount) <= result.packedRows.count, "rowCount must not exceed packedRows.count")
+    precondition(
+      Int(result.rowCount) <= result.packedRows.count, "rowCount must not exceed packedRows.count")
 
     var tokens: [LogicalToken] = []
     tokens.reserveCapacity(Int(result.rowCount))

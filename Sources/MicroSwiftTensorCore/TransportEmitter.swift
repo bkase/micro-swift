@@ -30,7 +30,8 @@ public enum TransportEmitter {
       remapTables: remapTables
     )
 
-    let covered = CoverageMask.build(tokens: remappedTokens, pageSize: bytes.count, validLen: validLen)
+    let covered = CoverageMask.build(
+      tokens: remappedTokens, pageSize: bytes.count, validLen: validLen)
     let unknown = CoverageMask.unknownBytes(covered: covered, validLen: validLen)
     let errorSpans = CoverageMask.errorSpans(unknown: unknown)
 

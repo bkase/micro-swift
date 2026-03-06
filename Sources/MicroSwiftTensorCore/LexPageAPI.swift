@@ -85,7 +85,9 @@ public enum TensorLexer {
 
     var nextStopBySetID: [UInt16: [Int32]] = [:]
     for rule in buckets.prefixedRules {
-      guard case .runPrefixed(let prefix, let bodyClassSetID, let stopClassSetID) = rule.plan else { continue }
+      guard case .runPrefixed(let prefix, let bodyClassSetID, let stopClassSetID) = rule.plan else {
+        continue
+      }
 
       let nextStop: [Int32]?
       if let stopClassSetID {

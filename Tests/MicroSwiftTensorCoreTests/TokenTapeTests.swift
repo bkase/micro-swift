@@ -21,10 +21,11 @@ struct TokenTapeTests {
       overflows: []
     )
 
-    #expect(tape.tokens == [
-      LogicalToken(kind: 10, flags: 0, startByte: 100, endByte: 103, payloadA: 0, payloadB: 0),
-      LogicalToken(kind: 11, flags: 0, startByte: 104, endByte: 105, payloadA: 0, payloadB: 0),
-    ])
+    #expect(
+      tape.tokens == [
+        LogicalToken(kind: 10, flags: 0, startByte: 100, endByte: 103, payloadA: 0, payloadB: 0),
+        LogicalToken(kind: 11, flags: 0, startByte: 104, endByte: 105, payloadA: 0, payloadB: 0),
+      ])
     #expect(tape.errorSpans == [ErrorSpan(start: 106, end: 107)])
     #expect(tape.overflows.isEmpty)
   }
@@ -33,7 +34,7 @@ struct TokenTapeTests {
   func assembleMultiplePagesAdjustsOffsets() {
     let page0 = PageLexResult(
       packedRows: [
-        PackedToken.pack(localStart: 1, length: 2, tokenKindID: 1, flags: 0),
+        PackedToken.pack(localStart: 1, length: 2, tokenKindID: 1, flags: 0)
       ],
       rowCount: 1,
       errorSpans: [ErrorSpan(start: 3, end: 5)],
@@ -41,7 +42,7 @@ struct TokenTapeTests {
     )
     let page1 = PageLexResult(
       packedRows: [
-        PackedToken.pack(localStart: 0, length: 4, tokenKindID: 2, flags: 0),
+        PackedToken.pack(localStart: 0, length: 4, tokenKindID: 2, flags: 0)
       ],
       rowCount: 1,
       errorSpans: [ErrorSpan(start: 7, end: 8)],
@@ -62,14 +63,16 @@ struct TokenTapeTests {
       overflows: [overflow]
     )
 
-    #expect(tape.tokens == [
-      LogicalToken(kind: 1, flags: 0, startByte: 1, endByte: 3, payloadA: 0, payloadB: 0),
-      LogicalToken(kind: 2, flags: 0, startByte: 50, endByte: 54, payloadA: 0, payloadB: 0),
-    ])
-    #expect(tape.errorSpans == [
-      ErrorSpan(start: 3, end: 5),
-      ErrorSpan(start: 57, end: 58),
-    ])
+    #expect(
+      tape.tokens == [
+        LogicalToken(kind: 1, flags: 0, startByte: 1, endByte: 3, payloadA: 0, payloadB: 0),
+        LogicalToken(kind: 2, flags: 0, startByte: 50, endByte: 54, payloadA: 0, payloadB: 0),
+      ])
+    #expect(
+      tape.errorSpans == [
+        ErrorSpan(start: 3, end: 5),
+        ErrorSpan(start: 57, end: 58),
+      ])
     #expect(tape.overflows == [overflow])
   }
 

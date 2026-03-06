@@ -40,13 +40,15 @@ public enum PrefixedExecution {
     var candidateLengths = Array(repeating: UInt16(0), count: count)
 
     for start in 0..<count {
-      guard prefixMatches(
-        bytes: bytes,
-        validMask: validMask,
-        prefix: prefix,
-        start: start,
-        count: count
-      ) else {
+      guard
+        prefixMatches(
+          bytes: bytes,
+          validMask: validMask,
+          prefix: prefix,
+          start: start,
+          count: count
+        )
+      else {
         continue
       }
 

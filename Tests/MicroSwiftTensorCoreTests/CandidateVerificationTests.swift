@@ -256,7 +256,11 @@ struct CandidateVerificationTests {
       ]
     )
 
-    #expect(tokenTriples(selection.tokens) == [TokenTriple(start: 0, length: 2, tokenKindID: 11), TokenTriple(start: 2, length: 1, tokenKindID: 12)])
+    #expect(
+      tokenTriples(selection.tokens) == [
+        TokenTriple(start: 0, length: 2, tokenKindID: 11),
+        TokenTriple(start: 2, length: 1, tokenKindID: 12),
+      ])
     #expect(selection.errors.isEmpty)
   }
 
@@ -271,7 +275,11 @@ struct CandidateVerificationTests {
       ]
     )
 
-    #expect(tokenTriples(selection.tokens) == [TokenTriple(start: 0, length: 2, tokenKindID: 21), TokenTriple(start: 2, length: 2, tokenKindID: 22)])
+    #expect(
+      tokenTriples(selection.tokens) == [
+        TokenTriple(start: 0, length: 2, tokenKindID: 21),
+        TokenTriple(start: 2, length: 2, tokenKindID: 22),
+      ])
     #expect(selection.errors.isEmpty)
   }
 
@@ -286,7 +294,11 @@ struct CandidateVerificationTests {
       ]
     )
 
-    #expect(tokenTriples(selection.tokens) == [TokenTriple(start: 0, length: 2, tokenKindID: 31), TokenTriple(start: 2, length: 2, tokenKindID: 31)])
+    #expect(
+      tokenTriples(selection.tokens) == [
+        TokenTriple(start: 0, length: 2, tokenKindID: 31),
+        TokenTriple(start: 2, length: 2, tokenKindID: 31),
+      ])
     #expect(selection.errors == [ErrorSpan(start: 4, end: 5)])
   }
 
@@ -301,7 +313,11 @@ struct CandidateVerificationTests {
       ]
     )
 
-    #expect(tokenTriples(selection.tokens) == [TokenTriple(start: 0, length: 2, tokenKindID: 41), TokenTriple(start: 2, length: 1, tokenKindID: 43)])
+    #expect(
+      tokenTriples(selection.tokens) == [
+        TokenTriple(start: 0, length: 2, tokenKindID: 41),
+        TokenTriple(start: 2, length: 1, tokenKindID: 43),
+      ])
     #expect(selection.errors.isEmpty)
   }
 
@@ -317,7 +333,12 @@ struct CandidateVerificationTests {
       ]
     )
 
-    #expect(tokenTriples(selection.tokens) == [TokenTriple(start: 0, length: 3, tokenKindID: 51), TokenTriple(start: 3, length: 1, tokenKindID: 53), TokenTriple(start: 4, length: 1, tokenKindID: 54)])
+    #expect(
+      tokenTriples(selection.tokens) == [
+        TokenTriple(start: 0, length: 3, tokenKindID: 51),
+        TokenTriple(start: 3, length: 1, tokenKindID: 53),
+        TokenTriple(start: 4, length: 1, tokenKindID: 54),
+      ])
     #expect(selection.errors.isEmpty)
   }
 
@@ -332,7 +353,11 @@ struct CandidateVerificationTests {
       ]
     )
 
-    #expect(tokenTriples(selection.tokens) == [TokenTriple(start: 0, length: 4, tokenKindID: 61), TokenTriple(start: 4, length: 1, tokenKindID: 63)])
+    #expect(
+      tokenTriples(selection.tokens) == [
+        TokenTriple(start: 0, length: 4, tokenKindID: 61),
+        TokenTriple(start: 4, length: 1, tokenKindID: 63),
+      ])
     #expect(selection.errors.isEmpty)
   }
 
@@ -347,7 +372,11 @@ struct CandidateVerificationTests {
       ]
     )
 
-    #expect(tokenTriples(selection.tokens) == [TokenTriple(start: 0, length: 3, tokenKindID: 71), TokenTriple(start: 5, length: 1, tokenKindID: 73)])
+    #expect(
+      tokenTriples(selection.tokens) == [
+        TokenTriple(start: 0, length: 3, tokenKindID: 71),
+        TokenTriple(start: 5, length: 1, tokenKindID: 73),
+      ])
     #expect(selection.errors == [ErrorSpan(start: 3, end: 5)])
   }
 }
@@ -379,7 +408,7 @@ private struct LCG {
   }
 
   mutating func next() -> UInt64 {
-    state = state &* 6364136223846793005 &+ 1
+    state = state &* 6_364_136_223_846_793_005 &+ 1
     return state
   }
 
@@ -445,7 +474,9 @@ private func classifyPrefixed(_ bytes: [UInt8]) -> [UInt8] {
     if byte == UInt8(ascii: "=") { return 1 }
     if byte == UInt8(ascii: ">") { return 2 }
     if byte == UInt8(ascii: "-") { return 3 }
-    if byte == UInt8(ascii: "x") || byte == UInt8(ascii: "a") || byte == UInt8(ascii: "b") || byte == UInt8(ascii: "c") {
+    if byte == UInt8(ascii: "x") || byte == UInt8(ascii: "a") || byte == UInt8(ascii: "b")
+      || byte == UInt8(ascii: "c")
+    {
       return 4
     }
     if byte == UInt8(ascii: "\n") { return 5 }
@@ -496,7 +527,9 @@ private func referenceClassRun(
 
     let start = i
     var end = i + 1
-    while end < count && validMask[end] && runtime.contains(setID: bodySetID, classID: classIDs[end]) {
+    while end < count && validMask[end]
+      && runtime.contains(setID: bodySetID, classID: classIDs[end])
+    {
       end += 1
     }
 
@@ -561,7 +594,10 @@ private func referencePrefixed(
   var out = Array(repeating: UInt16(0), count: count)
 
   for start in 0..<count {
-    guard referencePrefixMatch(bytes: bytes, validMask: validMask, prefix: prefix, start: start, count: count) else {
+    guard
+      referencePrefixMatch(
+        bytes: bytes, validMask: validMask, prefix: prefix, start: start, count: count)
+    else {
       continue
     }
 

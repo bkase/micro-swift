@@ -22,10 +22,11 @@ struct TransportEmitterTests {
     let unpacked = TokenUnpacker.unpack(result: result, baseOffset: 0)
 
     #expect(result.rowCount == 2)
-    #expect(unpacked == [
-      LogicalToken(kind: 10, flags: 0, startByte: 0, endByte: 2, payloadA: 0, payloadB: 0),
-      LogicalToken(kind: 22, flags: 2, startByte: 3, endByte: 7, payloadA: 0, payloadB: 0),
-    ])
+    #expect(
+      unpacked == [
+        LogicalToken(kind: 10, flags: 0, startByte: 0, endByte: 2, payloadA: 0, payloadB: 0),
+        LogicalToken(kind: 22, flags: 2, startByte: 3, endByte: 7, payloadA: 0, payloadB: 0),
+      ])
   }
 
   @Test
@@ -46,9 +47,10 @@ struct TransportEmitterTests {
     let unpacked = TokenUnpacker.unpack(result: result, baseOffset: 0)
 
     #expect(result.rowCount == 1)
-    #expect(unpacked == [
-      LogicalToken(kind: 12, flags: 0, startByte: 2, endByte: 3, payloadA: 0, payloadB: 0)
-    ])
+    #expect(
+      unpacked == [
+        LogicalToken(kind: 12, flags: 0, startByte: 2, endByte: 3, payloadA: 0, payloadB: 0)
+      ])
     #expect(result.errorSpans.isEmpty)
   }
 
@@ -70,10 +72,11 @@ struct TransportEmitterTests {
     let unpacked = TokenUnpacker.unpack(result: result, baseOffset: 0)
 
     #expect(result.rowCount == 2)
-    #expect(unpacked == [
-      LogicalToken(kind: 11, flags: 1, startByte: 0, endByte: 2, payloadA: 0, payloadB: 0),
-      LogicalToken(kind: 12, flags: 0, startByte: 2, endByte: 3, payloadA: 0, payloadB: 0),
-    ])
+    #expect(
+      unpacked == [
+        LogicalToken(kind: 11, flags: 1, startByte: 0, endByte: 2, payloadA: 0, payloadB: 0),
+        LogicalToken(kind: 12, flags: 0, startByte: 2, endByte: 3, payloadA: 0, payloadB: 0),
+      ])
   }
 
   @Test
@@ -91,10 +94,11 @@ struct TransportEmitterTests {
       maxRowCapacity: 4
     )
 
-    #expect(result.errorSpans == [
-      ErrorSpan(start: 0, end: 1),
-      ErrorSpan(start: 2, end: 4),
-    ])
+    #expect(
+      result.errorSpans == [
+        ErrorSpan(start: 0, end: 1),
+        ErrorSpan(start: 2, end: 4),
+      ])
   }
 
   @Test
@@ -136,13 +140,16 @@ struct TransportEmitterTests {
 
     let unpacked = TokenUnpacker.unpack(result: result, baseOffset: 100)
 
-    #expect(unpacked == [
-      LogicalToken(kind: 7, flags: 3, startByte: 101, endByte: 103, payloadA: 0, payloadB: 0),
-      LogicalToken(kind: 8, flags: 0, startByte: 104, endByte: 105, payloadA: 0, payloadB: 0),
-    ])
+    #expect(
+      unpacked == [
+        LogicalToken(kind: 7, flags: 3, startByte: 101, endByte: 103, payloadA: 0, payloadB: 0),
+        LogicalToken(kind: 8, flags: 0, startByte: 104, endByte: 105, payloadA: 0, payloadB: 0),
+      ])
   }
 
-  private func token(start: Int32, length: UInt16, kind: UInt16, mode: UInt8) -> GreedySelector.SelectedToken {
+  private func token(start: Int32, length: UInt16, kind: UInt16, mode: UInt8)
+    -> GreedySelector.SelectedToken
+  {
     GreedySelector.SelectedToken(
       startPos: start,
       length: length,

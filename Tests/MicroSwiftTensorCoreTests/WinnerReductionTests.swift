@@ -63,7 +63,8 @@ struct WinnerReductionTests {
       candLen: [4]
     )
 
-    let winners = WinnerReduction.reduce(candidates: [highPriorityRank, lowPriorityRank], pageSize: 1)
+    let winners = WinnerReduction.reduce(
+      candidates: [highPriorityRank, lowPriorityRank], pageSize: 1)
 
     expectWinner(winners[0], len: 4, priorityRank: 1, ruleID: 4, tokenKindID: 40, mode: 0)
   }

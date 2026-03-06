@@ -1,6 +1,7 @@
-import Testing
-@testable import MicroSwiftTensorCore
 import MicroSwiftLexerGen
+import Testing
+
+@testable import MicroSwiftTensorCore
 
 @Suite
 struct BridgeVerificationTests {
@@ -33,7 +34,8 @@ struct BridgeVerificationTests {
       #expect(runtime.classSetRuntime.contains(setID: digitSetID, classID: classID))
     }
 
-    let letterClassIDs = Set((asciiRange("A", "Z") + asciiRange("a", "z")).map { runtime.byteToClassLUT[Int($0)] })
+    let letterClassIDs = Set(
+      (asciiRange("A", "Z") + asciiRange("a", "z")).map { runtime.byteToClassLUT[Int($0)] })
     for classID in letterClassIDs {
       #expect(runtime.classSetRuntime.contains(setID: identStartSetID, classID: classID))
     }
@@ -69,7 +71,8 @@ struct BridgeVerificationTests {
     let allBytes = Array(UInt8.min...UInt8.max)
     let classIDs = ByteClassifier.classify(bytes: allBytes, byteToClassLUT: runtime.byteToClassLUT)
 
-    let bytesByClassID = Dictionary(uniqueKeysWithValues: runtime.classes.map { ($0.classID, Set($0.bytes)) })
+    let bytesByClassID = Dictionary(
+      uniqueKeysWithValues: runtime.classes.map { ($0.classID, Set($0.bytes)) })
 
     for set in runtime.classSets {
       let kernelMask = MembershipKernels.membershipMask(
@@ -139,8 +142,8 @@ struct BridgeVerificationTests {
   }
 }
 
-private extension Array {
-  subscript(safe index: Int) -> Element? {
+extension Array {
+  fileprivate subscript(safe index: Int) -> Element? {
     guard indices.contains(index) else { return nil }
     return self[index]
   }

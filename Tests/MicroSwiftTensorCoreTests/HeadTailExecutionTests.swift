@@ -1,4 +1,5 @@
 import Testing
+
 @testable import MicroSwiftTensorCore
 
 @Suite
@@ -92,8 +93,8 @@ struct HeadTailExecutionTests {
   /// 0 = space, 1 = letterOrUnderscore, 2 = digit
   private func makeIdentifierRuntime() -> ClassSetRuntime {
     let mask: [[Bool]] = [
-      [false, true, false], // head: [a-zA-Z_]
-      [false, true, true], // tail: [a-zA-Z0-9_]
+      [false, true, false],  // head: [a-zA-Z_]
+      [false, true, true],  // tail: [a-zA-Z0-9_]
     ]
     return ClassSetRuntime(mask: mask, numClassSets: 2, numByteClasses: 3)
   }

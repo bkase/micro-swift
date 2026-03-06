@@ -18,11 +18,12 @@ struct GreedySelectorTests {
 
     let selected = GreedySelector.select(winners: winners, validLen: 7)
 
-    #expect(selected == [
-      .init(startPos: 0, length: 2, ruleID: 10, tokenKindID: 100, mode: 1),
-      .init(startPos: 2, length: 1, ruleID: 11, tokenKindID: 101, mode: 1),
-      .init(startPos: 4, length: 3, ruleID: 12, tokenKindID: 102, mode: 2),
-    ])
+    #expect(
+      selected == [
+        .init(startPos: 0, length: 2, ruleID: 10, tokenKindID: 100, mode: 1),
+        .init(startPos: 2, length: 1, ruleID: 11, tokenKindID: 101, mode: 1),
+        .init(startPos: 4, length: 3, ruleID: 12, tokenKindID: 102, mode: 2),
+      ])
   }
 
   @Test
@@ -36,10 +37,11 @@ struct GreedySelectorTests {
 
     let selected = GreedySelector.select(winners: winners, validLen: 3)
 
-    #expect(selected == [
-      .init(startPos: 0, length: 2, ruleID: 20, tokenKindID: 200, mode: 0),
-      .init(startPos: 2, length: 1, ruleID: 21, tokenKindID: 201, mode: 0),
-    ])
+    #expect(
+      selected == [
+        .init(startPos: 0, length: 2, ruleID: 20, tokenKindID: 200, mode: 0),
+        .init(startPos: 2, length: 1, ruleID: 21, tokenKindID: 201, mode: 0),
+      ])
   }
 
   @Test
@@ -54,10 +56,11 @@ struct GreedySelectorTests {
 
     let selected = GreedySelector.select(winners: winners, validLen: 4)
 
-    #expect(selected == [
-      .init(startPos: 0, length: 3, ruleID: 30, tokenKindID: 300, mode: 0),
-      .init(startPos: 3, length: 1, ruleID: 33, tokenKindID: 303, mode: 0),
-    ])
+    #expect(
+      selected == [
+        .init(startPos: 0, length: 3, ruleID: 30, tokenKindID: 300, mode: 0),
+        .init(startPos: 3, length: 1, ruleID: 33, tokenKindID: 303, mode: 0),
+      ])
   }
 
   @Test
@@ -73,10 +76,11 @@ struct GreedySelectorTests {
 
     let selected = GreedySelector.select(winners: winners, validLen: 5)
 
-    #expect(selected == [
-      .init(startPos: 0, length: 4, ruleID: 40, tokenKindID: 400, mode: 0),
-      .init(startPos: 4, length: 1, ruleID: 44, tokenKindID: 404, mode: 0),
-    ])
+    #expect(
+      selected == [
+        .init(startPos: 0, length: 4, ruleID: 40, tokenKindID: 400, mode: 0),
+        .init(startPos: 4, length: 1, ruleID: 44, tokenKindID: 404, mode: 0),
+      ])
   }
 
   @Test
@@ -99,10 +103,11 @@ struct GreedySelectorTests {
 
     let selected = GreedySelector.select(winners: winners, validLen: 4)
 
-    #expect(selected == [
-      .init(startPos: 0, length: 2, ruleID: 50, tokenKindID: 500, mode: 0),
-      .init(startPos: 2, length: 2, ruleID: 51, tokenKindID: 501, mode: 0),
-    ])
+    #expect(
+      selected == [
+        .init(startPos: 0, length: 2, ruleID: 50, tokenKindID: 500, mode: 0),
+        .init(startPos: 2, length: 2, ruleID: 51, tokenKindID: 501, mode: 0),
+      ])
   }
 
   @Test
@@ -118,10 +123,11 @@ struct GreedySelectorTests {
 
     let selected = GreedySelector.select(winners: winners, validLen: 5)
 
-    #expect(selected == [
-      .init(startPos: 0, length: 3, ruleID: 60, tokenKindID: 600, mode: 0),
-      .init(startPos: 3, length: 2, ruleID: 62, tokenKindID: 602, mode: 0),
-    ])
+    #expect(
+      selected == [
+        .init(startPos: 0, length: 3, ruleID: 60, tokenKindID: 600, mode: 0),
+        .init(startPos: 3, length: 2, ruleID: 62, tokenKindID: 602, mode: 0),
+      ])
   }
 
   private func w(len: UInt16, ruleID: UInt16, tokenKindID: UInt16, mode: UInt8 = 0) -> WinnerTuple {

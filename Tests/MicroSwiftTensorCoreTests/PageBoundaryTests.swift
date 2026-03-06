@@ -13,14 +13,15 @@ struct PageBoundaryTests {
 
     #expect(fixture.pages.count == 2)
     #expect(fixture.pages[0].sourcePage.end.rawValue == 4)
-    #expect(fixture.tokens == [
-      .init(kind: "ident", lexeme: "x", start: 0, end: 1),
-      .init(kind: "eqEq", lexeme: "==", start: 1, end: 3),
-      .init(kind: "kwLet", lexeme: "let", start: 4, end: 7),
-      .init(kind: "ident", lexeme: "a", start: 8, end: 9),
-      .init(kind: "eq", lexeme: "=", start: 10, end: 11),
-      .init(kind: "int", lexeme: "1", start: 12, end: 13),
-    ])
+    #expect(
+      fixture.tokens == [
+        .init(kind: "ident", lexeme: "x", start: 0, end: 1),
+        .init(kind: "eqEq", lexeme: "==", start: 1, end: 3),
+        .init(kind: "kwLet", lexeme: "let", start: 4, end: 7),
+        .init(kind: "ident", lexeme: "a", start: 8, end: 9),
+        .init(kind: "eq", lexeme: "=", start: 10, end: 11),
+        .init(kind: "int", lexeme: "1", start: 12, end: 13),
+      ])
     #expect(fixture.errorSpans.isEmpty)
     #expect(fixture.overflows.isEmpty)
   }
@@ -31,14 +32,15 @@ struct PageBoundaryTests {
 
     #expect(fixture.pages.count == 2)
     #expect(fixture.pages[0].sourcePage.end.rawValue == 4)
-    #expect(fixture.tokens == [
-      .init(kind: "ident", lexeme: "f", start: 0, end: 1),
-      .init(kind: "arrow", lexeme: "->", start: 1, end: 3),
-      .init(kind: "kwLet", lexeme: "let", start: 4, end: 7),
-      .init(kind: "ident", lexeme: "b", start: 8, end: 9),
-      .init(kind: "eq", lexeme: "=", start: 10, end: 11),
-      .init(kind: "int", lexeme: "2", start: 12, end: 13),
-    ])
+    #expect(
+      fixture.tokens == [
+        .init(kind: "ident", lexeme: "f", start: 0, end: 1),
+        .init(kind: "arrow", lexeme: "->", start: 1, end: 3),
+        .init(kind: "kwLet", lexeme: "let", start: 4, end: 7),
+        .init(kind: "ident", lexeme: "b", start: 8, end: 9),
+        .init(kind: "eq", lexeme: "=", start: 10, end: 11),
+        .init(kind: "int", lexeme: "2", start: 12, end: 13),
+      ])
     #expect(fixture.errorSpans.isEmpty)
     #expect(fixture.overflows.isEmpty)
   }
@@ -50,9 +52,10 @@ struct PageBoundaryTests {
     #expect(fixture.pages.count == 1)
     #expect(fixture.pages[0].validLen == 8)
     #expect(fixture.pages[0].bucket?.byteCapacity == 8)
-    #expect(fixture.tokens == [
-      .init(kind: "ident", lexeme: "boundary", start: 0, end: 8)
-    ])
+    #expect(
+      fixture.tokens == [
+        .init(kind: "ident", lexeme: "boundary", start: 0, end: 8)
+      ])
     #expect(fixture.tokens[0].end == fixture.pages[0].sourcePage.end.rawValue)
   }
 
@@ -63,9 +66,10 @@ struct PageBoundaryTests {
     #expect(fixture.pages.count == 1)
     #expect(fixture.pages[0].validLen == 8)
     #expect(fixture.pages[0].bucket?.byteCapacity == 8)
-    #expect(fixture.tokens == [
-      .init(kind: "int", lexeme: "12345678", start: 0, end: 8)
-    ])
+    #expect(
+      fixture.tokens == [
+        .init(kind: "int", lexeme: "12345678", start: 0, end: 8)
+      ])
     #expect(fixture.tokens[0].end == fixture.pages[0].sourcePage.end.rawValue)
   }
 
@@ -75,13 +79,14 @@ struct PageBoundaryTests {
 
     #expect(fixture.pages.count == 2)
     #expect(fixture.pages[0].sourcePage.end.rawValue == 3)
-    #expect(fixture.tokens == [
-      .init(kind: "ident", lexeme: "x", start: 0, end: 1),
-      .init(kind: "ws", lexeme: " \n", start: 1, end: 3),
-      .init(kind: "ws", lexeme: "   ", start: 3, end: 6),
-      .init(kind: "ident", lexeme: "yyyyy", start: 6, end: 11),
-      .init(kind: "ws", lexeme: "\n", start: 11, end: 12),
-    ])
+    #expect(
+      fixture.tokens == [
+        .init(kind: "ident", lexeme: "x", start: 0, end: 1),
+        .init(kind: "ws", lexeme: " \n", start: 1, end: 3),
+        .init(kind: "ws", lexeme: "   ", start: 3, end: 6),
+        .init(kind: "ident", lexeme: "yyyyy", start: 6, end: 11),
+        .init(kind: "ws", lexeme: "\n", start: 11, end: 12),
+      ])
     #expect(fixture.errorSpans.isEmpty)
     #expect(fixture.overflows.isEmpty)
   }
@@ -92,18 +97,19 @@ struct PageBoundaryTests {
 
     #expect(fixture.pages.count == 2)
     #expect(fixture.pages[0].sourcePage.end.rawValue == 4)
-    #expect(fixture.tokens == [
-      .init(kind: "lineComment", lexeme: "//a", start: 0, end: 3),
-      .init(kind: "ws", lexeme: "\n", start: 3, end: 4),
-      .init(kind: "kwLet", lexeme: "let", start: 4, end: 7),
-      .init(kind: "ws", lexeme: " ", start: 7, end: 8),
-      .init(kind: "ident", lexeme: "d", start: 8, end: 9),
-      .init(kind: "ws", lexeme: " ", start: 9, end: 10),
-      .init(kind: "eq", lexeme: "=", start: 10, end: 11),
-      .init(kind: "ws", lexeme: " ", start: 11, end: 12),
-      .init(kind: "int", lexeme: "4", start: 12, end: 13),
-      .init(kind: "ws", lexeme: "\n", start: 13, end: 14),
-    ])
+    #expect(
+      fixture.tokens == [
+        .init(kind: "lineComment", lexeme: "//a", start: 0, end: 3),
+        .init(kind: "ws", lexeme: "\n", start: 3, end: 4),
+        .init(kind: "kwLet", lexeme: "let", start: 4, end: 7),
+        .init(kind: "ws", lexeme: " ", start: 7, end: 8),
+        .init(kind: "ident", lexeme: "d", start: 8, end: 9),
+        .init(kind: "ws", lexeme: " ", start: 9, end: 10),
+        .init(kind: "eq", lexeme: "=", start: 10, end: 11),
+        .init(kind: "ws", lexeme: " ", start: 11, end: 12),
+        .init(kind: "int", lexeme: "4", start: 12, end: 13),
+        .init(kind: "ws", lexeme: "\n", start: 13, end: 14),
+      ])
     #expect(fixture.errorSpans.isEmpty)
     #expect(fixture.overflows.isEmpty)
   }
@@ -115,10 +121,11 @@ struct PageBoundaryTests {
     #expect(fixture.pages.count == 1)
     #expect(fixture.pages[0].validLen == 13)
     #expect(fixture.pages[0].bucket?.byteCapacity == 16)
-    #expect(fixture.tokens == [
-      .init(kind: "lineComment", lexeme: "//1234567890", start: 0, end: 12),
-      .init(kind: "ws", lexeme: "\n", start: 12, end: 13),
-    ])
+    #expect(
+      fixture.tokens == [
+        .init(kind: "lineComment", lexeme: "//1234567890", start: 0, end: 12),
+        .init(kind: "ws", lexeme: "\n", start: 12, end: 13),
+      ])
     #expect(fixture.errorSpans.isEmpty)
     #expect(fixture.overflows.isEmpty)
   }
@@ -132,7 +139,9 @@ struct PageBoundaryTests {
     #expect(fixture.tokens.isEmpty)
     #expect(fixture.errorSpans.isEmpty)
     #expect(fixture.overflows.count == 1)
-    #expect(fixture.overflows[0].message == "lex-page-overflow: line exceeds maximum supported page bucket")
+    #expect(
+      fixture.overflows[0].message
+        == "lex-page-overflow: line exceeds maximum supported page bucket")
     #expect(fixture.overflows[0].pageByteCount == fixture.pages[0].validLen)
     #expect(fixture.overflows[0].maxBucketSize == 16)
   }
@@ -158,7 +167,8 @@ struct PageBoundaryTests {
       options: LexOptions(emitSkipTokens: emitSkipTokens)
     )
 
-    let kindByID = Dictionary(uniqueKeysWithValues: runtime.tokenKinds.map { ($0.tokenKindID, $0.name) })
+    let kindByID = Dictionary(
+      uniqueKeysWithValues: runtime.tokenKinds.map { ($0.tokenKindID, $0.name) })
     let tokens = result.tokenTape.tokens.map { token in
       BoundaryToken(
         kind: kindByID[token.kind] ?? "<unknown>",

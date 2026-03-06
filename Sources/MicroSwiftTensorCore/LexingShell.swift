@@ -25,32 +25,35 @@ public struct LexingShell: Sendable {
         maxBucketSize: pagingShell.maxBucketSize
       ) {
         overflowPages.append(diagnostic)
-        pageResults.append((
-          result: PageLexResult(
-            packedRows: [],
-            rowCount: 0,
-            errorSpans: [],
-            overflowDiagnostic: diagnostic
-          ),
-          baseOffset: page.baseOffset
-        ))
+        pageResults.append(
+          (
+            result: PageLexResult(
+              packedRows: [],
+              rowCount: 0,
+              errorSpans: [],
+              overflowDiagnostic: diagnostic
+            ),
+            baseOffset: page.baseOffset
+          ))
         continue
       }
 
-      pageResults.append((
-        result: TensorLexer.lexPage(
-          bytes: page.byteSlice,
-          validLen: page.validLen,
-          baseOffset: page.baseOffset,
-          artifact: artifact,
-          options: options
-        ),
-        baseOffset: page.baseOffset
-      ))
+      pageResults.append(
+        (
+          result: TensorLexer.lexPage(
+            bytes: page.byteSlice,
+            validLen: page.validLen,
+            baseOffset: page.baseOffset,
+            artifact: artifact,
+            options: options
+          ),
+          baseOffset: page.baseOffset
+        ))
     }
 
     let tokenTape = TokenTape.assemble(pageResults: pageResults, overflows: overflowPages)
-    return LexSourceResult(tokenTape: tokenTape, pageResults: pageResults, overflowPages: overflowPages)
+    return LexSourceResult(
+      tokenTape: tokenTape, pageResults: pageResults, overflowPages: overflowPages)
   }
 }
 

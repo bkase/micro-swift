@@ -22,7 +22,9 @@ public struct TokenTape: Sendable {
     var errorSpans: [ErrorSpan] = []
 
     for pageResult in pageResults {
-      tokens.append(contentsOf: TokenUnpacker.unpack(result: pageResult.result, baseOffset: pageResult.baseOffset))
+      tokens.append(
+        contentsOf: TokenUnpacker.unpack(
+          result: pageResult.result, baseOffset: pageResult.baseOffset))
       errorSpans.append(
         contentsOf: pageResult.result.errorSpans.map { span in
           let start = pageResult.baseOffset + Int64(span.start)

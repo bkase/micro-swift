@@ -15,7 +15,8 @@ public enum ClassRunExecution {
 
     var inBody = Array(repeating: false, count: positionCount)
     for index in 0..<positionCount {
-      inBody[index] = validMask[index]
+      inBody[index] =
+        validMask[index]
         && classSetRuntime.contains(setID: bodyClassSetID, classID: classIDs[index])
     }
 
