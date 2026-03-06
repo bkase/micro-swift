@@ -210,10 +210,6 @@ private func buildFallbackRuntime(from artifact: LexerArtifact) throws -> Fallba
       for classID in 0..<classCount {
         let tIndex = localState * Int(bridge.transitionRowStride) + classID
         let localDestination = bridge.transitions[tIndex]
-        if localDestination == 0 {
-          continue
-        }
-
         let globalDestination = offset + localDestination
         let flatIndex = classID * Int(numStatesUsed) + globalState
         setStateBit(globalDestination, lo: &stepLo[flatIndex], hi: &stepHi[flatIndex])

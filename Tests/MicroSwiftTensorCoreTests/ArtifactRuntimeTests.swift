@@ -32,7 +32,7 @@ import Testing
     #expect(fallback.maxWidth == 6)
     #expect(fallback.startMaskLo == (1 << 1))
     #expect(fallback.startMaskHi == 0)
-    #expect(fallback.startClassMaskLo == 1)
+    #expect(fallback.startClassMaskLo == 0b1111)
     #expect(fallback.startClassMaskHi == 0)
 
     #expect(fallback.acceptLoByRule == [1 << 2])
@@ -46,7 +46,7 @@ import Testing
     #expect(fallback.stepLo[(0 * numStates) + 1] == (1 << 2))
     #expect(fallback.stepLo[(0 * numStates) + 2] == (1 << 2))
     #expect(fallback.stepLo[(1 * numStates) + 2] == (1 << 2))
-    #expect(fallback.stepLo[(1 * numStates) + 1] == 0)
+    #expect(fallback.stepLo[(1 * numStates) + 1] == 1)
     #expect(fallback.stepHi.allSatisfy { $0 == 0 })
   }
 
@@ -93,7 +93,7 @@ import Testing
     #expect(fallback.maxWidth == 6)
     #expect(fallback.startMaskLo == ((1 << 1) | (1 << 4)))
     #expect(fallback.startMaskHi == 0)
-    #expect(fallback.startClassMaskLo == ((1 << 0) | (1 << 2)))
+    #expect(fallback.startClassMaskLo == 0b1111)
 
     #expect(fallback.acceptLoByRule == [(1 << 2), (1 << 5)])
     #expect(fallback.acceptHiByRule == [0, 0])
@@ -101,6 +101,55 @@ import Testing
     #expect(fallback.priorityRankByFallbackRule == [3, 1])
     #expect(fallback.tokenKindIDByFallbackRule == [11, 5])
     #expect(fallback.modeByFallbackRule == [0, 1])
+  }
+
+  @Test func preservesTransitionsThatTargetFallbackStateZero() throws {
+    let artifact = makeArtifact(
+      byteToClass: makeByteToClass(
+        defaultClass: 2,
+        assignments: [
+          Character("a").asciiValue!: 0,
+          Character("b").asciiValue!: 1,
+        ]
+      ),
+      rules: [
+        makeFallbackRule(
+          ruleID: 12,
+          tokenKindID: 13,
+          priorityRank: 0,
+          mode: .emit,
+          maxWidth: 6,
+          classCount: 3,
+          startState: 0,
+          acceptingStates: [0],
+          transitions: [
+            1, 2, 2,
+            2, 0, 2,
+            2, 2, 2,
+          ]
+        )
+      ]
+    )
+
+    let runtime = try ArtifactRuntime.fromArtifact(artifact)
+    let fallback = try #require(runtime.fallback)
+
+    #expect(fallback.numStatesUsed == 3)
+    #expect(fallback.startMaskLo == 1)
+    #expect(fallback.acceptLoByRule == [1])
+
+    let numStates = Int(fallback.numStatesUsed)
+    #expect(fallback.stepLo[(1 * numStates) + 1] == 1)
+
+    let runner = FallbackKernelRunner(fallback: fallback)
+    let bytes = Array("abab".utf8)
+    let classIDs = bytes.map { UInt16(artifact.byteToClass[Int($0)]) }
+    let result = runner.evaluatePage(classIDs: classIDs, validLen: Int32(classIDs.count))
+
+    #expect(result.fallbackLen == [4, 0, 2, 0])
+    #expect(result.fallbackRuleID == [12, 0, 12, 0])
+    #expect(result.fallbackTokenKindID == [13, 0, 13, 0])
+    #expect(result.fallbackMode == [0, 0, 0, 0])
   }
 
   @Test func rejectsCombinedFallbackStatesOver128() {
@@ -139,7 +188,10 @@ import Testing
   }
 }
 
-private func makeArtifact(rules: [LoweredRule]) -> LexerArtifact {
+private func makeArtifact(
+  byteToClass: [UInt8] = Array(repeating: 0, count: 256),
+  rules: [LoweredRule]
+) -> LexerArtifact {
   let classCount = rules.reduce(into: UInt16(1)) { partial, rule in
     if case .fallback(_, let count, _, _, _, _) = rule.plan {
       partial = max(partial, count)
@@ -163,13 +215,25 @@ private func makeArtifact(rules: [LoweredRule]) -> LexerArtifact {
       TokenKindDecl(tokenKindID: 1, name: "tok1", defaultMode: .emit),
       TokenKindDecl(tokenKindID: 5, name: "tok5", defaultMode: .emit),
       TokenKindDecl(tokenKindID: 11, name: "tok11", defaultMode: .emit),
+      TokenKindDecl(tokenKindID: 13, name: "tok13", defaultMode: .emit),
     ],
-    byteToClass: Array(repeating: 0, count: 256),
+    byteToClass: byteToClass,
     classes: classes,
     classSets: [ClassSetDecl(classSetID: ClassSetID(0), classes: [0])],
     rules: rules,
     keywordRemaps: []
   )
+}
+
+private func makeByteToClass(
+  defaultClass: UInt8 = 0,
+  assignments: [UInt8: UInt8]
+) -> [UInt8] {
+  var byteToClass = Array(repeating: defaultClass, count: 256)
+  for (byte, classID) in assignments {
+    byteToClass[Int(byte)] = classID
+  }
+  return byteToClass
 }
 
 private func makeFallbackRule(
