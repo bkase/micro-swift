@@ -178,7 +178,8 @@ public enum ArtifactSerializer {
     classSets: ClassSets,
     generatorVersion: String = "dev"
   ) throws -> LexerArtifact {
-    let diagnostics = validateFiniteRuleWidths(classified: classified)
+    var diagnostics = validateFiniteRuleWidths(classified: classified)
+    diagnostics.append(contentsOf: validateKeywordLengths(classified: classified))
     if !diagnostics.isEmpty {
       throw ValidationError(diagnostics: sortDiagnostics(diagnostics))
     }
@@ -374,7 +375,7 @@ private func buildKeywordRemaps(classified: ClassifiedSpec) -> [KeywordRemapTabl
           lexeme: entry.lexemeBytes, tokenKindID: UInt16(entry.tokenKindID.rawValue))
       }
 
-    let maxKeywordLength = UInt8(entries.map { $0.lexeme.count }.max() ?? 0)
+    let maxKeywordLength = UInt8(clamping: entries.map { $0.lexeme.count }.max() ?? 0)
     return KeywordRemapTable(
       baseRuleID: UInt16(baseRule.ruleID.rawValue),
       baseTokenKindID: UInt16(block.baseTokenKindID.rawValue),
@@ -455,6 +456,28 @@ private func validateFiniteRuleWidths(classified: ClassifiedSpec) -> [SpecDiagno
           secondarySpan: nil,
           message:
             "Rule '\(rule.name)' has maxWidth \(finiteMaxWidth), which exceeds UInt16.max."
+        )
+      )
+    }
+  }
+
+  return diagnostics
+}
+
+private func validateKeywordLengths(classified: ClassifiedSpec) -> [SpecDiagnostic] {
+  var diagnostics: [SpecDiagnostic] = []
+  let maxLength = Int(UInt8.max)
+
+  for block in classified.keywordBlocks {
+    for entry in block.entries where entry.lexemeBytes.count > maxLength {
+      diagnostics.append(
+        SpecDiagnostic(
+          code: .keywordLexemeTooLong,
+          severity: .error,
+          primarySpan: entry.sourceSpan,
+          secondarySpan: nil,
+          message:
+            "Keyword '\(entry.lexeme)' in block '\(block.baseKindName)' has \(entry.lexemeBytes.count) bytes, exceeding UInt8.max."
         )
       )
     }

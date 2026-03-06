@@ -24,3 +24,5 @@ Thumbs.db
 
 # Testing / benchmark outputs
 *.xcresult
+
+.claude/worktrees

@@ -628,6 +628,31 @@ struct ArtifactSerializerTests {
     }
   }
 
+  @Test func rejectsKeywordLexemeLengthBeyondUInt8Range() {
+    let veryLongKeyword = String(repeating: "a", count: 300)
+    let spec = LexerSpec(name: "keyword-too-long") {
+      let ident = identifier(
+        "ident",
+        .byteClass(.asciiIdentContinue) <> zeroOrMore(.byteClass(.asciiIdentContinue))
+      )
+      keywords(for: ident) {
+        keyword(veryLongKeyword, as: "kwLong")
+      }
+    }
+
+    do {
+      _ = try buildArtifact(
+        from: spec,
+        options: .init(maxLocalWindowBytes: 8, enableFallback: true, maxFallbackStatesPerRule: 256)
+      )
+      Issue.record("Expected artifact build failure")
+    } catch let error as ValidationError {
+      #expect(error.diagnostics.contains { $0.code == .keywordLexemeTooLong })
+    } catch {
+      Issue.record("Unexpected error: \(error)")
+    }
+  }
+
   private func buildMicroSwiftArtifact() throws -> LexerArtifact {
     try buildArtifact(
       from: microSwiftV0,
