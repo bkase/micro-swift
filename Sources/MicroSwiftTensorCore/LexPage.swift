@@ -1,3 +1,5 @@
+import MicroSwiftLexerGen
+
 public struct LexOptions: Sendable, Equatable {
   public let debugMode: Bool
   public let runtimeProfile: RuntimeProfile
@@ -57,8 +59,6 @@ public func lexPage(
   )
 }
 
-import MicroSwiftLexerGen
-
 func executeFastFamilies(
   bytes: [UInt8],
   classIDs: [UInt16],
@@ -81,14 +81,15 @@ func executeFastFamilies(
           }
         }
         if matched {
-          winners.append(CandidateWinner(
-            position: i,
-            len: UInt16(literalBytes.count),
-            priorityRank: rule.priorityRank,
-            ruleID: rule.ruleID,
-            tokenKindID: rule.tokenKindID,
-            mode: modeIDForRule(rule.mode)
-          ))
+          winners.append(
+            CandidateWinner(
+              position: i,
+              len: UInt16(literalBytes.count),
+              priorityRank: rule.priorityRank,
+              ruleID: rule.ruleID,
+              tokenKindID: rule.tokenKindID,
+              mode: modeIDForRule(rule.mode)
+            ))
         }
       }
 
@@ -100,14 +101,15 @@ func executeFastFamilies(
         while end < validLen, bodyClasses.contains(classIDs[end]) { end += 1 }
         let runLen = end - i
         if runLen >= Int(minLength) {
-          winners.append(CandidateWinner(
-            position: i,
-            len: UInt16(runLen),
-            priorityRank: rule.priorityRank,
-            ruleID: rule.ruleID,
-            tokenKindID: rule.tokenKindID,
-            mode: modeIDForRule(rule.mode)
-          ))
+          winners.append(
+            CandidateWinner(
+              position: i,
+              len: UInt16(runLen),
+              priorityRank: rule.priorityRank,
+              ruleID: rule.ruleID,
+              tokenKindID: rule.tokenKindID,
+              mode: modeIDForRule(rule.mode)
+            ))
         }
       }
 
@@ -118,14 +120,15 @@ func executeFastFamilies(
         guard headClasses.contains(classIDs[i]) else { continue }
         var end = i + 1
         while end < validLen, tailClasses.contains(classIDs[end]) { end += 1 }
-        winners.append(CandidateWinner(
-          position: i,
-          len: UInt16(end - i),
-          priorityRank: rule.priorityRank,
-          ruleID: rule.ruleID,
-          tokenKindID: rule.tokenKindID,
-          mode: modeIDForRule(rule.mode)
-        ))
+        winners.append(
+          CandidateWinner(
+            position: i,
+            len: UInt16(end - i),
+            priorityRank: rule.priorityRank,
+            ruleID: rule.ruleID,
+            tokenKindID: rule.tokenKindID,
+            mode: modeIDForRule(rule.mode)
+          ))
       }
 
     case .runPrefixed(let prefix, let bodyClassSetID, _):
@@ -143,14 +146,15 @@ func executeFastFamilies(
         guard prefixMatched else { continue }
         var end = i + prefix.count
         while end < validLen, bodyClasses.contains(classIDs[end]) { end += 1 }
-        winners.append(CandidateWinner(
-          position: i,
-          len: UInt16(end - i),
-          priorityRank: rule.priorityRank,
-          ruleID: rule.ruleID,
-          tokenKindID: rule.tokenKindID,
-          mode: modeIDForRule(rule.mode)
-        ))
+        winners.append(
+          CandidateWinner(
+            position: i,
+            len: UInt16(end - i),
+            priorityRank: rule.priorityRank,
+            ruleID: rule.ruleID,
+            tokenKindID: rule.tokenKindID,
+            mode: modeIDForRule(rule.mode)
+          ))
       }
 
     case .fallback, .localWindow:

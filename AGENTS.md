@@ -80,14 +80,19 @@ When spawning multiple `codex exec` instances across clones via `zmx`:
 # Use -C to set working directory (NOT cd in bash -c)
 codex exec --dangerously-bypass-approvals-and-sandbox -C /path/to/clone "prompt"
 
-# Pipe echo to auto-approve the trust prompt
-echo "" | codex exec --dangerously-bypass-approvals-and-sandbox -C /path/to/clone "prompt"
+# DON'T pipe echo — codex exec errors with "stdin is not a terminal"
+# DON'T use bash -c wrapping — zmx passes args directly to the process
 
-# Use zmx wait with stderr silenced to avoid spammy output
-/opt/homebrew/bin/zmx wait session1 session2 2>/dev/null
+# Use zmx wait with stdout AND stderr silenced to avoid spammy output
+/opt/homebrew/bin/zmx wait session1 session2 >/dev/null 2>/dev/null
 
-# Full pattern for launching a codex in a zmx session
-/opt/homebrew/bin/zmx run session-name bash -c 'echo "" | codex exec --dangerously-bypass-approvals-and-sandbox -C /path/to/clone "$(cat /tmp/prompt.txt)"'
+# Full pattern: write a script file, then zmx run it
+cat > /tmp/run-fix.sh << 'SCRIPT'
+#!/bin/bash
+codex exec --dangerously-bypass-approvals-and-sandbox -C /path/to/clone "$(cat /tmp/prompt.txt)"
+SCRIPT
+chmod +x /tmp/run-fix.sh
+/opt/homebrew/bin/zmx run session-name /tmp/run-fix.sh
 ```
 
 - Write prompts to temp files first, then `$(cat /tmp/prompt.txt)` to avoid shell escaping issues

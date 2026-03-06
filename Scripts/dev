@@ -84,11 +84,25 @@ case "${cmd}" in
     "$SCRIPT_DIR/mlx-run" "$binary" mlx-smoke --json
     ;;
   verify)
+    # Start mlx-smoke in background (xcodebuild uses separate build dir)
+    mlx_log="$(mktemp)"
+    ( "$0" mlx-smoke > "$mlx_log" 2>&1 ) &
+    mlx_pid=$!
+
     "$0" format
     "$0" lint
     "$0" build
     "$0" test
-    "$0" mlx-smoke
+
+    # Wait for mlx-smoke and report
+    if ! wait "$mlx_pid"; then
+      echo "=== mlx-smoke failed ===" >&2
+      cat "$mlx_log" >&2
+      rm -f "$mlx_log"
+      exit 1
+    fi
+    cat "$mlx_log"
+    rm -f "$mlx_log"
     ;;
   install-hooks)
     mkdir -p "$ROOT_DIR/.git/hooks"
