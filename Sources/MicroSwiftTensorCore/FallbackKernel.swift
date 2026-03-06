@@ -30,6 +30,21 @@ public struct FallbackKernelRunner: Sendable {
   public func evaluatePage(classIDs: [UInt16], validLen: Int32) -> FallbackPageResult {
     runFallbackPage(classIDs: classIDs, validLen: validLen, fallback: fallback)
   }
+
+  public func evaluatePage(
+    classIDs: [UInt16],
+    validLen: Int32,
+    observability: inout FallbackObservability
+  ) -> FallbackPageResult {
+    withUnsafeMutablePointer(to: &observability) { observabilityPointer in
+      runFallbackPage(
+        classIDs: classIDs,
+        validLen: validLen,
+        fallback: fallback,
+        observability: observabilityPointer
+      )
+    }
+  }
 }
 
 public func evaluatePage(
@@ -43,7 +58,8 @@ public func evaluatePage(
 private func runFallbackPage(
   classIDs: [UInt16],
   validLen: Int32,
-  fallback: FallbackRuntime
+  fallback: FallbackRuntime,
+  observability: UnsafeMutablePointer<FallbackObservability>? = nil
 ) -> FallbackPageResult {
   let pageWidth = classIDs.count
   let boundedValidLen = max(0, min(Int(validLen), pageWidth))
@@ -62,7 +78,11 @@ private func runFallbackPage(
 
   for i in 0..<pageWidth {
     guard i < boundedValidLen else { continue }
-    guard startEligible(classID: classIDs[i], fallback: fallback) else { continue }
+    guard startEligible(classID: classIDs[i], fallback: fallback) else {
+      observability?.pointee.recordSkippedByStartMask()
+      continue
+    }
+    observability?.pointee.recordEntered()
 
     var bestLen: UInt16 = 0
     var bestPriorityRank: UInt16 = 0
