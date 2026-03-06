@@ -44,31 +44,26 @@ struct LexPageTests {
   }
 
   @Test
-  func lexShellPagesWhenPageCapacityExceeded() throws {
+  func lexShellRejectsOversizePageFromPlanner() throws {
     let runtime = try makeRuntime(maxLookahead: 4)
     let shell = LexShell()
 
-    let results = try shell.lexFile(
-      bytes: Array("aaaaa".utf8),
-      artifact: runtime,
-      options: LexOptions(runtimeProfile: .v1Fallback)
-    )
-
-    #expect(results.count == 2)
-    #expect(results[0].rowCount == 1)
-    #expect(results[0].packedRows.count == 4)
-    #expect(results[1].rowCount == 1)
-    #expect(results[1].packedRows.count == 4)
-    #expect(results[1].packedRows[1...] == Array(repeating: UInt64(0), count: 3)[...])
+    #expect(throws: LexShellError.pageOverflow(actual: 5, max: 4)) {
+      _ = try shell.lexFile(
+        bytes: Array("aaaaa".utf8),
+        artifact: runtime,
+        options: LexOptions(runtimeProfile: .v1Fallback)
+      )
+    }
   }
 
   @Test
   func lexShellUsesBaseOffsetsAcrossMultiplePages() throws {
-    let runtime = try makeRuntime(maxLookahead: 4)
+    let runtime = try makeRuntime(maxLookahead: 8)
     let shell = LexShell()
 
     let results = try shell.lexFile(
-      bytes: Array("aaaaaaaa".utf8),
+      bytes: Array("aaaa\naaaa".utf8),
       artifact: runtime,
       options: LexOptions(runtimeProfile: .v1Fallback)
     )
@@ -77,7 +72,7 @@ struct LexPageTests {
     #expect(results[0].rowCount == 1)
     #expect(results[1].rowCount == 1)
     #expect(unpackStartByte(results[0].packedRows[0]) == 0)
-    #expect(unpackStartByte(results[1].packedRows[0]) == 4)
+    #expect(unpackStartByte(results[1].packedRows[0]) == 5)
   }
 
   @Test
@@ -98,8 +93,8 @@ struct LexPageTests {
 
     let page = try #require(first.first)
     #expect(page.rowCount == 1)
-    #expect(page.packedRows.count == 8)
-    #expect(page.packedRows[1...] == Array(repeating: UInt64(0), count: 7)[...])
+    #expect(page.packedRows.count == 2)
+    #expect(page.packedRows[1...] == Array(repeating: UInt64(0), count: 1)[...])
     #expect(first == second)
   }
 

@@ -1,3 +1,6 @@
+import Foundation
+import MicroSwiftFrontend
+
 public enum LexShellError: Error, Sendable, Equatable {
   case pageOverflow(actual: Int, max: Int)
 }
@@ -10,36 +13,28 @@ public struct LexShell: Sendable {
     artifact: ArtifactRuntime,
     options: LexOptions
   ) throws -> [PageLexResult] {
-    let maxPageSize = pageCapacity(for: artifact)
-
-    if bytes.isEmpty {
-      let pageResult = lexPage(
-        bytes: bytes,
-        validLen: Int32(bytes.count),
-        baseOffset: 0,
-        artifact: artifact,
-        options: options
-      )
-
-      return [pad(result: pageResult, to: maxPageSize)]
-    }
-
+    let maxSupportedBucket = pageCapacity(for: artifact)
+    let pages = plannedPages(for: bytes, targetBytes: maxSupportedBucket)
     var results: [PageLexResult] = []
-    var offset = 0
 
-    while offset < bytes.count {
-      let pageLen = min(maxPageSize, bytes.count - offset)
-      let pageBytes = Array(bytes[offset..<(offset + pageLen)])
+    for page in pages {
+      let pageLen = Int(page.byteCount)
+      let pageBucket = pageBucketSize(for: pageLen)
+      guard pageBucket <= maxSupportedBucket else {
+        throw LexShellError.pageOverflow(actual: pageLen, max: maxSupportedBucket)
+      }
+
+      let start = Int(page.start.rawValue)
+      let end = Int(page.end.rawValue)
+      let pageBytes = Array(bytes[start..<end])
       let pageResult = lexPage(
         bytes: pageBytes,
         validLen: Int32(pageLen),
-        baseOffset: Int64(offset),
+        baseOffset: page.start.rawValue,
         artifact: artifact,
         options: options
       )
-
-      results.append(pad(result: pageResult, to: maxPageSize))
-      offset += pageLen
+      results.append(pad(result: pageResult, to: pageBucket))
     }
 
     return results
@@ -49,6 +44,24 @@ public struct LexShell: Sendable {
     let lookahead = Int(artifact.runtimeHints.maxDeterministicLookaheadBytes)
     if lookahead > 0 { return lookahead }
     return max(1, Int(artifact.runtimeHints.maxBoundedRuleWidth))
+  }
+
+  private func plannedPages(for bytes: [UInt8], targetBytes: Int) -> [SourcePage] {
+    let sourceData = Data(bytes)
+    let lineStarts = LineStructure.lineStartOffsets(bytes: sourceData)
+    return SourcePaging.planPages(
+      lineStartOffsets: lineStarts,
+      byteCount: Int64(bytes.count),
+      policy: PagePolicy(targetBytes: Int32(targetBytes))
+    )
+  }
+
+  private func pageBucketSize(for pageLen: Int) -> Int {
+    var bucket = 1
+    while bucket < max(pageLen, 1) {
+      bucket <<= 1
+    }
+    return bucket
   }
 
   private func pad(result: PageLexResult, to width: Int) -> PageLexResult {

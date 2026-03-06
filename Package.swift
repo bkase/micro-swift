@@ -30,7 +30,7 @@ let package = Package(
     .target(name: "MicroSwiftLexerGen"),
     .target(
       name: "MicroSwiftTensorCore",
-      dependencies: ["MicroSwiftLexerGen"]
+      dependencies: ["MicroSwiftLexerGen", "MicroSwiftFrontend"]
     ),
     .target(
       name: "MicroSwiftFrontend",
