@@ -65,7 +65,7 @@ let package = Package(
     ),
     .testTarget(
       name: "MicroSwiftTensorCoreTests",
-      dependencies: ["MicroSwiftTensorCore", "MicroSwiftLexerGen"],
+      dependencies: ["MicroSwiftTensorCore", "MicroSwiftLexerGen", "MicroSwiftFrontend"],
       path: "Tests/MicroSwiftTensorCoreTests"
     ),
     .testTarget(
