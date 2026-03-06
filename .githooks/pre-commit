@@ -1,3 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
-exec ./dev verify
+# Skip mlx-smoke in pre-commit (too heavy); CI runs full verify.
+SKIP_MLX_SMOKE=1 exec ./dev verify
