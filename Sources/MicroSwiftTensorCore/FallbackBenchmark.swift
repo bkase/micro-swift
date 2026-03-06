@@ -143,7 +143,8 @@ public func runBenchmark(
         )
         observability.merge(runObservability)
       } else {
-        fallbackResult = entry.fallbackRunner.evaluatePage(classIDs: classIDs, validLen: Int32(validLen))
+        fallbackResult = entry.fallbackRunner.evaluatePage(
+          classIDs: classIDs, validLen: Int32(validLen))
       }
     } else {
       fallbackResult = FallbackPageResult(
@@ -248,14 +249,14 @@ private final class BenchmarkLogSink: @unchecked Sendable {
 }
 
 private struct StableHash {
-  private var value: UInt64 = 0xcbf29ce484222325
+  private var value: UInt64 = 0xcbf2_9ce4_8422_2325
 
   mutating func combine<T: FixedWidthInteger>(_ number: T) {
     var littleEndian = number.littleEndian
     withUnsafeBytes(of: &littleEndian) { bytes in
       for byte in bytes {
         value ^= UInt64(byte)
-        value &*= 0x100000001b3
+        value &*= 0x100_0000_01b3
       }
     }
   }
@@ -263,7 +264,7 @@ private struct StableHash {
   mutating func combineBytes<S: Sequence>(_ bytes: S) where S.Element == UInt8 {
     for byte in bytes {
       value ^= UInt64(byte)
-      value &*= 0x100000001b3
+      value &*= 0x100_0000_01b3
     }
   }
 
@@ -461,7 +462,7 @@ private struct LCRNG {
   }
 
   mutating func next() -> UInt64 {
-    state = state &* 6364136223846793005 &+ 1
+    state = state &* 6_364_136_223_846_793_005 &+ 1
     return state
   }
 }

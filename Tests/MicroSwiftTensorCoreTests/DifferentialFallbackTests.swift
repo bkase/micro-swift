@@ -28,7 +28,17 @@ struct DifferentialFallbackTests {
         let classIDs = bytes.map { UInt16(artifact.byteToClass[Int($0)]) }
         let validLen = rng.nextInt(upperBound: classIDs.count + 1)
 
-        let page = runner.evaluatePage(classIDs: classIDs, validLen: Int32(validLen))
+        var observability = FallbackObservability()
+        let page = runner.evaluatePage(
+          classIDs: classIDs,
+          validLen: Int32(validLen),
+          observability: &observability
+        )
+        #expect(observability.fallbackKernelBackendDispatches == 1)
+        #expect(
+          observability.fallbackPositionsEntered + observability.fallbackPositionsSkippedByStartMask
+            == validLen
+        )
         for position in 0..<bytes.count {
           let scalarWinner = scalar.evaluate(
             bytes: bytes,

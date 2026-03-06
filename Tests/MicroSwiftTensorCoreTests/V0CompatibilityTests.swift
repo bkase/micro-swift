@@ -29,7 +29,22 @@ struct V0CompatibilityTests {
       options: LexOptions(runtimeProfile: .v1Fallback)
     )
 
-    #expect(v0 == v1)
+    assertEquivalentProfiles(
+      runtime: runtime,
+      bytes: sample,
+      v0: v0,
+      v1: v1
+    )
+
+    let decoded = decodeOutput(result: v0, bytes: sample, runtime: runtime)
+    #expect(
+      decoded.tokens == [
+        .init(start: 0, end: 3, kindName: "kwLet", lexeme: "let"),
+        .init(start: 4, end: 9, kindName: "ident", lexeme: "alpha"),
+        .init(start: 12, end: 14, kindName: "ident", lexeme: "42"),
+      ])
+    #expect(decoded.errorSpans == [.init(start: 3, end: 4), .init(start: 9, end: 12)])
+    #expect(decoded.overflowDiagnostic == nil)
   }
 
   @Test
@@ -60,7 +75,34 @@ struct V0CompatibilityTests {
       options: LexOptions(runtimeProfile: .v1Fallback)
     )
 
-    #expect(v0 == v1)
+    assertEquivalentProfiles(
+      runtime: runtime,
+      bytes: sample,
+      v0: v0,
+      v1: v1
+    )
+
+    let decoded = decodeOutput(result: v0, bytes: sample, runtime: runtime)
+    #expect(
+      decoded.tokens == [
+        .init(start: 0, end: 4, kindName: "kwFunc", lexeme: "func"),
+        .init(start: 5, end: 6, kindName: "ident", lexeme: "f"),
+        .init(start: 6, end: 7, kindName: "lParen", lexeme: "("),
+        .init(start: 7, end: 8, kindName: "ident", lexeme: "x"),
+        .init(start: 8, end: 9, kindName: "colon", lexeme: ":"),
+        .init(start: 10, end: 13, kindName: "ident", lexeme: "int"),
+        .init(start: 13, end: 14, kindName: "rParen", lexeme: ")"),
+        .init(start: 15, end: 17, kindName: "arrow", lexeme: "->"),
+        .init(start: 18, end: 21, kindName: "ident", lexeme: "int"),
+        .init(start: 22, end: 23, kindName: "lBrace", lexeme: "{"),
+        .init(start: 24, end: 30, kindName: "kwReturn", lexeme: "return"),
+        .init(start: 31, end: 32, kindName: "ident", lexeme: "x"),
+        .init(start: 33, end: 34, kindName: "plus", lexeme: "+"),
+        .init(start: 35, end: 36, kindName: "int", lexeme: "1"),
+        .init(start: 37, end: 38, kindName: "rBrace", lexeme: "}"),
+      ])
+    #expect(decoded.errorSpans.isEmpty)
+    #expect(decoded.overflowDiagnostic == nil)
   }
 
   @Test
@@ -77,12 +119,66 @@ struct V0CompatibilityTests {
   }
 }
 
-private func makeV0LikeArtifact() -> LexerArtifact {
-  var byteToClass = Array(repeating: UInt8(1), count: 256)
-  byteToClass[Int(Character("l").asciiValue!)] = 0
-  byteToClass[Int(Character("e").asciiValue!)] = 0
-  byteToClass[Int(Character("t").asciiValue!)] = 0
+private func assertEquivalentProfiles(
+  runtime: ArtifactRuntime,
+  bytes: [UInt8],
+  v0: PageLexResult,
+  v1: PageLexResult
+) {
+  #expect(v0.rowCount == v1.rowCount)
+  #expect(v0.hostPackedRows() == v1.hostPackedRows())
+  #expect(v0.errorSpans == v1.errorSpans)
+  #expect(v0.overflowDiagnostic == v1.overflowDiagnostic)
+  #expect(
+    TokenUnpacker.unpack(result: v0, baseOffset: 0)
+      == TokenUnpacker.unpack(result: v1, baseOffset: 0))
+  let decoded = decodeOutput(result: v0, bytes: bytes, runtime: runtime)
+  #expect(!decoded.tokens.isEmpty || !decoded.errorSpans.isEmpty)
+}
 
+private struct DecodedToken: Equatable {
+  let start: Int
+  let end: Int
+  let kindName: String
+  let lexeme: String
+}
+
+private struct DecodedOutput: Equatable {
+  let tokens: [DecodedToken]
+  let errorSpans: [ErrorSpan]
+  let overflowDiagnostic: OverflowDiagnostic?
+}
+
+private func decodeOutput(
+  result: PageLexResult,
+  bytes: [UInt8],
+  runtime: ArtifactRuntime
+) -> DecodedOutput {
+  let kindByID = Dictionary(
+    uniqueKeysWithValues: runtime.tokenKinds.map { ($0.tokenKindID, $0.name) })
+  let tokens = TokenUnpacker.unpack(result: result, baseOffset: 0).map { token in
+    let start = Int(token.startByte)
+    let end = Int(token.endByte)
+    return DecodedToken(
+      start: start,
+      end: end,
+      kindName: kindByID[token.kind] ?? "<unknown>",
+      lexeme: String(decoding: bytes[start..<end], as: UTF8.self)
+    )
+  }
+  return DecodedOutput(
+    tokens: tokens, errorSpans: result.errorSpans, overflowDiagnostic: result.overflowDiagnostic)
+}
+
+private func makeV0LikeArtifact() -> LexerArtifact {
+  var byteToClass = Array(repeating: UInt8(2), count: 256)
+  for byte in UInt8(97)...UInt8(122) {
+    byteToClass[Int(byte)] = 1
+  }
+  for byte in UInt8(48)...UInt8(57) {
+    byteToClass[Int(byte)] = 1
+  }
+  byteToClass[Int(Character("_").asciiValue!)] = 1
   let rules = [
     LoweredRule(
       ruleID: 0,
@@ -127,7 +223,11 @@ private func makeV0LikeArtifact() -> LexerArtifact {
     byteToClass: byteToClass,
     classes: [
       ByteClassDecl(classID: 0, bytes: Array("let".utf8)),
-      ByteClassDecl(classID: 1, bytes: [0]),
+      ByteClassDecl(
+        classID: 1,
+        bytes: Array("abcdefghijklmnopqrstuvwxyz0123456789_".utf8)
+      ),
+      ByteClassDecl(classID: 2, bytes: [0]),
     ],
     classSets: [
       ClassSetDecl(classSetID: ClassSetID(0), classes: [0]),

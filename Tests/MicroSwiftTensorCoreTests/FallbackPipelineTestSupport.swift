@@ -22,6 +22,7 @@ struct TestPipelineResult: Equatable {
   let selected: [CandidateWinner]
   let tokens: [TestToken]
   let errorRuns: [TestErrorRun]
+  let fallbackObservability: FallbackObservability
 }
 
 func runTestPipeline(
@@ -40,9 +41,14 @@ func runTestPipeline(
   )
 
   let fallbackResult: FallbackPageResult
+  var observability = FallbackObservability()
   if let fallback = runtime.fallback {
     let runner = FallbackKernelRunner(fallback: fallback)
-    fallbackResult = runner.evaluatePage(classIDs: classIDs, validLen: Int32(bytes.count))
+    fallbackResult = runner.evaluatePage(
+      classIDs: classIDs,
+      validLen: Int32(bytes.count),
+      observability: &observability
+    )
   } else {
     fallbackResult = FallbackPageResult(
       fallbackLen: Array(repeating: 0, count: bytes.count),
@@ -84,7 +90,12 @@ func runTestPipeline(
     )
   }
 
-  return TestPipelineResult(selected: selected, tokens: tokens, errorRuns: errorRuns)
+  return TestPipelineResult(
+    selected: selected,
+    tokens: tokens,
+    errorRuns: errorRuns,
+    fallbackObservability: observability
+  )
 }
 
 func renderSnapshot(_ result: TestPipelineResult) -> String {

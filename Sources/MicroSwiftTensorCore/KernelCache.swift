@@ -103,7 +103,8 @@ public final class KernelCache: @unchecked Sendable {
     self.jsonEncoder = encoder
   }
 
-  public func lookup(key: KernelCacheKey, traceID: String = UUID().uuidString) -> KernelCacheEntry? {
+  public func lookup(key: KernelCacheKey, traceID: String = UUID().uuidString) -> KernelCacheEntry?
+  {
     lock.lock()
     defer { lock.unlock() }
 
@@ -134,7 +135,9 @@ public final class KernelCache: @unchecked Sendable {
     return nil
   }
 
-  public func store(key: KernelCacheKey, entry: KernelCacheEntry, traceID: String = UUID().uuidString) {
+  public func store(
+    key: KernelCacheKey, entry: KernelCacheEntry, traceID: String = UUID().uuidString
+  ) {
     lock.lock()
     defer { lock.unlock() }
 
