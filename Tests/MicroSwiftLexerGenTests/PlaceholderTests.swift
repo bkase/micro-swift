@@ -360,3 +360,64 @@ struct ValidationTests {
     }
   }
 }
+
+@Suite("Byte Class Tests")
+struct ByteClassTests {
+  @Test func buildsDeterministicByteClassesForMicroSwift() throws {
+    let validated = try NormalizedSpec.validate(DeclaredSpec.normalize(microSwiftV0.declare()))
+    let classesA = validated.buildByteClasses()
+    let classesB = validated.buildByteClasses()
+    #expect(classesA == classesB)
+    #expect(classesA.byteToClass.count == 256)
+    #expect(!classesA.classes.isEmpty)
+  }
+
+  @Test func classesPartitionAllBytesExactlyOnce() throws {
+    let validated = try NormalizedSpec.validate(DeclaredSpec.normalize(microSwiftV0.declare()))
+    let byteClasses = validated.buildByteClasses()
+
+    let allMembers = byteClasses.classes.flatMap(\.bytes)
+    #expect(allMembers.count == 256)
+    #expect(Set(allMembers).count == 256)
+    #expect(Set(allMembers) == Set(UInt8.min...UInt8.max))
+  }
+
+  @Test func bytesInSameClassSharePrimitiveMembership() throws {
+    let validated = try NormalizedSpec.validate(DeclaredSpec.normalize(microSwiftV0.declare()))
+    let byteClasses = validated.buildByteClasses()
+    let predicates = primitivePredicates(from: validated)
+
+    for byteClass in byteClasses.classes {
+      guard let first = byteClass.bytes.first else { continue }
+      let baseline = predicates.map { $0.contains(first) }
+      for byte in byteClass.bytes.dropFirst() {
+        let membership = predicates.map { $0.contains(byte) }
+        #expect(membership == baseline)
+      }
+    }
+  }
+
+  private func primitivePredicates(from spec: ValidatedSpec) -> [ByteSet] {
+    var predicates: [ByteSet] = []
+    for rule in spec.rules {
+      predicates.append(rule.props.firstByteSet)
+      predicates.append(contentsOf: primitiveSets(in: rule.regex))
+    }
+    return Array(Set(predicates))
+  }
+
+  private func primitiveSets(in regex: NormalizedRegex) -> [ByteSet] {
+    switch regex {
+    case .never, .epsilon:
+      return []
+    case .literal(let bytes):
+      return bytes.map { ByteSet(bytes: [$0]) }
+    case .byteClass(let set):
+      return [set]
+    case .concat(let children), .alt(let children):
+      return children.flatMap(primitiveSets(in:))
+    case .repetition(let child, _, _):
+      return primitiveSets(in: child)
+    }
+  }
+}

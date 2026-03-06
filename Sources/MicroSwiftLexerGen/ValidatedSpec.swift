@@ -46,7 +46,9 @@ public struct ValidatedSpec: Sendable, Equatable {
 }
 
 extension NormalizedSpec {
-  public static func validate(_ spec: NormalizedSpec, options: CompileOptions = .init()) throws -> ValidatedSpec {
+  public static func validate(_ spec: NormalizedSpec, options: CompileOptions = .init()) throws
+    -> ValidatedSpec
+  {
     var diagnostics: [SpecDiagnostic] = []
 
     diagnostics.append(contentsOf: validateNullableRules(spec.rules))
@@ -57,7 +59,7 @@ extension NormalizedSpec {
       throw ValidationError(diagnostics: sortDiagnostics(diagnostics))
     }
 
-    _ = options // consumed by later validator phases
+    _ = options  // consumed by later validator phases
     return ValidatedSpec(name: spec.name, rules: spec.rules, keywordBlocks: spec.keywordBlocks)
   }
 
@@ -75,7 +77,8 @@ extension NormalizedSpec {
       }
   }
 
-  private static func validateDuplicateTopLevelKinds(_ rules: [NormalizedRule]) -> [SpecDiagnostic] {
+  private static func validateDuplicateTopLevelKinds(_ rules: [NormalizedRule]) -> [SpecDiagnostic]
+  {
     var firstSeen: [String: NormalizedRule] = [:]
     var diagnostics: [SpecDiagnostic] = []
 
@@ -121,7 +124,8 @@ extension NormalizedSpec {
               severity: .error,
               primarySpan: entry.sourceSpan,
               secondarySpan: prior.sourceSpan,
-              message: "Duplicate keyword lexeme '\(entry.lexeme)' in block '\(block.baseKindName)'."
+              message:
+                "Duplicate keyword lexeme '\(entry.lexeme)' in block '\(block.baseKindName)'."
             )
           )
         } else {
@@ -135,7 +139,8 @@ extension NormalizedSpec {
               severity: .error,
               primarySpan: entry.sourceSpan,
               secondarySpan: prior.sourceSpan,
-              message: "Duplicate keyword kind '\(entry.kindName)' in block '\(block.baseKindName)'."
+              message:
+                "Duplicate keyword kind '\(entry.kindName)' in block '\(block.baseKindName)'."
             )
           )
         } else {
@@ -149,7 +154,8 @@ extension NormalizedSpec {
               severity: .error,
               primarySpan: entry.sourceSpan,
               secondarySpan: baseRule.sourceSpan,
-              message: "Keyword '\(entry.lexeme)' is not matched by base rule '\(block.baseKindName)'."
+              message:
+                "Keyword '\(entry.lexeme)' is not matched by base rule '\(block.baseKindName)'."
             )
           )
         }
