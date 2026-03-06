@@ -52,23 +52,28 @@ let package = Package(
     ),
     .testTarget(
       name: "MicroSwiftLexerGenTests",
-      dependencies: ["MicroSwiftLexerGen"]
+      dependencies: ["MicroSwiftLexerGen"],
+      path: "Tests/MicroSwiftLexerGenTests"
     ),
     .testTarget(
       name: "MicroSwiftTensorCoreTests",
-      dependencies: ["MicroSwiftTensorCore"]
+      dependencies: ["MicroSwiftTensorCore"],
+      path: "Tests/MicroSwiftTensorCoreTests"
     ),
     .testTarget(
       name: "MicroSwiftFrontendTests",
-      dependencies: ["MicroSwiftFrontend"]
+      dependencies: ["MicroSwiftFrontend"],
+      path: "Tests/MicroSwiftFrontendTests"
     ),
     .testTarget(
       name: "MicroSwiftWasmTests",
-      dependencies: ["MicroSwiftWasm"]
+      dependencies: ["MicroSwiftWasm"],
+      path: "Tests/MicroSwiftWasmTests"
     ),
     .testTarget(
       name: "MicroSwiftBenchTests",
-      dependencies: ["MicroSwiftBench"]
+      dependencies: ["MicroSwiftBench"],
+      path: "Tests/MicroSwiftBenchTests"
     ),
     .testTarget(
       name: "MicroSwiftCLITests",
@@ -77,7 +82,8 @@ let package = Package(
         "MicroSwiftSpec",
         .product(name: "SnapshotTesting", package: "swift-snapshot-testing"),
         .product(name: "CustomDump", package: "swift-custom-dump"),
-      ]
+      ],
+      resources: [.copy("__Snapshots__")]
     ),
   ]
 )
