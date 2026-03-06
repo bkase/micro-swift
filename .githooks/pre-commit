@@ -1,3 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
-exec ./dev verify
+
+# Format first, then re-stage any files that were already staged
+# so the committed content includes formatting fixes.
+./dev format
+
+# Re-add any previously staged files that formatting may have changed.
+git diff --name-only --cached --diff-filter=d | xargs -r git add
+
+./dev lint
+./dev build
+./dev test
+./dev mlx-smoke
