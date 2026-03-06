@@ -271,3 +271,92 @@ struct NormalizationTests {
     }
   }
 }
+
+@Suite("Validation Tests")
+struct ValidationTests {
+  @Test func validatesMicroSwiftSpec() throws {
+    let normalized = DeclaredSpec.normalize(microSwiftV0.declare())
+    let validated = try NormalizedSpec.validate(normalized)
+    #expect(validated.rules.count == 17)
+  }
+
+  @Test func rejectsNullableRule() {
+    let spec = LexerSpec(name: "nullable") {
+      token("maybe", optional(literal("a")))
+    }
+    let normalized = DeclaredSpec.normalize(spec.declare())
+
+    do {
+      _ = try NormalizedSpec.validate(normalized)
+      Issue.record("Expected validation to fail")
+    } catch let error as ValidationError {
+      #expect(error.diagnostics.contains { $0.code == .nullableRule })
+    } catch {
+      Issue.record("Unexpected error: \(error)")
+    }
+  }
+
+  @Test func rejectsDuplicateTopLevelTokenKind() {
+    let spec = LexerSpec(name: "duplicateKind") {
+      token("dup", literal("a"))
+      token("dup", literal("b"))
+    }
+    let normalized = DeclaredSpec.normalize(spec.declare())
+
+    do {
+      _ = try NormalizedSpec.validate(normalized)
+      Issue.record("Expected validation to fail")
+    } catch let error as ValidationError {
+      #expect(error.diagnostics.contains { $0.code == .duplicateTopLevelTokenKind })
+    } catch {
+      Issue.record("Unexpected error: \(error)")
+    }
+  }
+
+  @Test func rejectsDuplicateKeywordLexemeAndKind() {
+    let spec = LexerSpec(name: "duplicateKeyword") {
+      let ident = identifier(
+        "ident",
+        .byteClass(.asciiIdentStart) <> zeroOrMore(.byteClass(.asciiIdentContinue))
+      )
+      keywords(for: ident) {
+        keyword("if", as: "kwIf")
+        keyword("if", as: "kwIf2")
+        keyword("else", as: "kwIf")
+      }
+    }
+    let normalized = DeclaredSpec.normalize(spec.declare())
+
+    do {
+      _ = try NormalizedSpec.validate(normalized)
+      Issue.record("Expected validation to fail")
+    } catch let error as ValidationError {
+      #expect(error.diagnostics.contains { $0.code == .duplicateKeywordLexeme })
+      #expect(error.diagnostics.contains { $0.code == .duplicateKeywordKind })
+    } catch {
+      Issue.record("Unexpected error: \(error)")
+    }
+  }
+
+  @Test func rejectsKeywordNotMatchedByBaseRule() {
+    let spec = LexerSpec(name: "badKeyword") {
+      let ident = identifier(
+        "ident",
+        .byteClass(.asciiIdentStart) <> zeroOrMore(.byteClass(.asciiIdentContinue))
+      )
+      keywords(for: ident) {
+        keyword("123", as: "kwNumeric")
+      }
+    }
+    let normalized = DeclaredSpec.normalize(spec.declare())
+
+    do {
+      _ = try NormalizedSpec.validate(normalized)
+      Issue.record("Expected validation to fail")
+    } catch let error as ValidationError {
+      #expect(error.diagnostics.contains { $0.code == .keywordNotMatchedByBaseRule })
+    } catch {
+      Issue.record("Unexpected error: \(error)")
+    }
+  }
+}

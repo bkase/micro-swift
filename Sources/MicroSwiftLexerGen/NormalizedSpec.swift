@@ -218,7 +218,8 @@ extension NormalizedRegex {
         }
       }
 
-      return RegexProps(nullable: nullable, minWidth: minWidth, maxWidth: maxWidth, firstByteSet: first)
+      return RegexProps(
+        nullable: nullable, minWidth: minWidth, maxWidth: maxWidth, firstByteSet: first)
 
     case .alt(let children):
       var nullable = false
@@ -262,7 +263,8 @@ extension NormalizedRegex {
       }
 
       let firstByteSet = max == 0 ? ByteSet.empty : childProps.firstByteSet
-      return RegexProps(nullable: nullable, minWidth: minWidth, maxWidth: maxWidth, firstByteSet: firstByteSet)
+      return RegexProps(
+        nullable: nullable, minWidth: minWidth, maxWidth: maxWidth, firstByteSet: firstByteSet)
     }
   }
 
@@ -287,8 +289,8 @@ extension NormalizedRegex {
     var merged: [NormalizedRegex] = []
     for item in flattened {
       if case .literal(let rightBytes) = item,
-         let lastIndex = merged.indices.last,
-         case .literal(let leftBytes) = merged[lastIndex]
+        let lastIndex = merged.indices.last,
+        case .literal(let leftBytes) = merged[lastIndex]
       {
         merged[lastIndex] = .literal(leftBytes + rightBytes)
       } else {
@@ -323,7 +325,9 @@ extension NormalizedRegex {
     return .alt(deduped)
   }
 
-  private static func normalizeRepetition(_ child: NormalizedRegex, min: Int, max: Int?) -> NormalizedRegex {
+  private static func normalizeRepetition(_ child: NormalizedRegex, min: Int, max: Int?)
+    -> NormalizedRegex
+  {
     precondition(min >= 0, "repetition min must be non-negative")
     if let max {
       precondition(max >= min, "repetition max must be >= min")
