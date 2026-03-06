@@ -1,6 +1,7 @@
 import MicroSwiftTensorCore
-@testable import MicroSwiftLexerGen
 import Testing
+
+@testable import MicroSwiftLexerGen
 
 @Suite
 struct ScalarFallbackEvaluatorTests {
@@ -33,13 +34,14 @@ struct ScalarFallbackEvaluatorTests {
     )
 
     #expect(
-      winner == FallbackWinner(
-        len: 2,
-        priorityRank: 4,
-        ruleID: 10,
-        tokenKindID: 3,
-        mode: 0
-      ))
+      winner
+        == FallbackWinner(
+          len: 2,
+          priorityRank: 4,
+          ruleID: 10,
+          tokenKindID: 3,
+          mode: 0
+        ))
   }
 
   @Test
@@ -80,13 +82,14 @@ struct ScalarFallbackEvaluatorTests {
     )
 
     #expect(
-      winner == FallbackWinner(
-        len: 2,
-        priorityRank: 1,
-        ruleID: 3,
-        tokenKindID: 13,
-        mode: 0
-      ))
+      winner
+        == FallbackWinner(
+          len: 2,
+          priorityRank: 1,
+          ruleID: 3,
+          tokenKindID: 13,
+          mode: 0
+        ))
   }
 
   @Test

@@ -55,14 +55,22 @@ private func buildFallbackRuntime(from artifact: LexerArtifact) throws -> Fallba
   var bridges: [FallbackRuleBridge] = []
 
   for rule in artifact.rules {
-    guard case let .fallback(
-      stateCount,
-      classCount,
-      transitionRowStride,
-      startState,
-      acceptingStates,
-      transitions
-    ) = rule.plan else {
+    guard
+      case .fallback(
+        let
+          stateCount,
+        let
+          classCount,
+        let
+          transitionRowStride,
+        let
+          startState,
+        let
+          acceptingStates,
+        let
+          transitions
+      ) = rule.plan
+    else {
       continue
     }
 
@@ -96,7 +104,8 @@ private func buildFallbackRuntime(from artifact: LexerArtifact) throws -> Fallba
     }
 
     if classCount > 128 {
-      throw ArtifactRuntimeError.fallbackClassCountExceeds128(ruleID: rule.ruleID, classCount: classCount)
+      throw ArtifactRuntimeError.fallbackClassCountExceeds128(
+        ruleID: rule.ruleID, classCount: classCount)
     }
 
     bridges.append(

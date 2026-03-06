@@ -1,6 +1,7 @@
+import Testing
+
 @testable import MicroSwiftLexerGen
 @testable import MicroSwiftTensorCore
-import Testing
 
 @Suite struct ArtifactRuntimeTests {
   @Test func packsFallbackTablesAndMetadata() throws {

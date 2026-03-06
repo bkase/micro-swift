@@ -1,6 +1,7 @@
+import Testing
+
 @testable import MicroSwiftLexerGen
 @testable import MicroSwiftTensorCore
-import Testing
 
 @Suite struct CapabilityValidatorTests {
   @Test func v1FallbackAcceptsLiteralRunAndFallback() {
@@ -8,7 +9,7 @@ import Testing
       rules: [
         makeLiteralRule(ruleID: 1, name: "literal"),
         makeRunRule(ruleID: 2, name: "run"),
-        makeFallbackRule(ruleID: 3, name: "fallback")
+        makeFallbackRule(ruleID: 3, name: "fallback"),
       ],
       maxLookahead: 8
     )
@@ -70,7 +71,7 @@ import Testing
     let artifact = makeArtifact(
       rules: [
         makeFallbackRule(ruleID: 30, name: "a", stateCount: 80, maxWidth: 4),
-        makeFallbackRule(ruleID: 31, name: "b", stateCount: 60, maxWidth: 4)
+        makeFallbackRule(ruleID: 31, name: "b", stateCount: 60, maxWidth: 4),
       ],
       maxLookahead: 8
     )

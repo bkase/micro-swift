@@ -48,14 +48,22 @@ public struct ScalarFallbackEvaluator: Sendable {
     var winner = FallbackWinner.noMatch
 
     for rule in artifact.rules {
-      guard case let .fallback(
-        stateCount,
-        classCount,
-        transitionRowStride,
-        startState,
-        acceptingStates,
-        transitions
-      ) = rule.plan else {
+      guard
+        case .fallback(
+          let
+            stateCount,
+          let
+            classCount,
+          let
+            transitionRowStride,
+          let
+            startState,
+          let
+            acceptingStates,
+          let
+            transitions
+        ) = rule.plan
+      else {
         continue
       }
 

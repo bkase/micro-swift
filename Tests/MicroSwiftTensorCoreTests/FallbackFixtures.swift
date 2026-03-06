@@ -1,4 +1,5 @@
 import Foundation
+
 @testable import MicroSwiftLexerGen
 
 enum FallbackFixtures {
@@ -248,12 +249,13 @@ enum FallbackFixtures {
   ]
 
   private static func makeArtifact(specName: String, rules: [LoweredRule]) -> LexerArtifact {
-    let maxLiteralLength = rules.compactMap { rule -> UInt16? in
-      if case .literal(let bytes) = rule.plan {
-        return UInt16(bytes.count)
-      }
-      return nil
-    }.max() ?? 0
+    let maxLiteralLength =
+      rules.compactMap { rule -> UInt16? in
+        if case .literal(let bytes) = rule.plan {
+          return UInt16(bytes.count)
+        }
+        return nil
+      }.max() ?? 0
 
     let maxBoundedRuleWidth = rules.compactMap(\.maxWidth).max() ?? 0
     let runtimeHints = RuntimeHints(
@@ -351,7 +353,8 @@ enum FallbackFixtures {
     )
   }
 
-  private static func makeLinearFallback(stateCount: Int, matchingClasses: Set<UInt16>) -> RulePlan {
+  private static func makeLinearFallback(stateCount: Int, matchingClasses: Set<UInt16>) -> RulePlan
+  {
     precondition(stateCount >= 3)
     let classCount = Int(classes.count)
     let rowStride = classCount

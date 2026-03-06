@@ -32,13 +32,13 @@ public struct CapabilityDiagnostic: Sendable, Equatable, CustomStringConvertible
   }
 
   public var description: String {
-    "artifact-capability-error: unsupported \(family.rawValue) " +
-      "ruleID=\(ruleID) name=\(ruleName) reason=\(reason.rawValue)"
+    "artifact-capability-error: unsupported \(family.rawValue) "
+      + "ruleID=\(ruleID) name=\(ruleName) reason=\(reason.rawValue)"
   }
 
   public func formattedMessage(profile: RuntimeProfile) -> String {
-    "artifact-capability-error: unsupported \(family.rawValue) for runtime profile \(profile.rawValue) " +
-      "ruleID=\(ruleID) name=\(ruleName) reason=\(reason.rawValue)"
+    "artifact-capability-error: unsupported \(family.rawValue) for runtime profile \(profile.rawValue) "
+      + "ruleID=\(ruleID) name=\(ruleName) reason=\(reason.rawValue)"
   }
 }
 
@@ -111,14 +111,16 @@ public enum CapabilityValidator {
     case .localWindow:
       diagnostics.append(diagnostic(for: rule, reason: .localWindowPresent))
     case .fallback:
-      guard case .fallback(
-        let stateCount,
-        let classCount,
-        let transitionRowStride,
-        let startState,
-        let acceptingStates,
-        let transitions
-      ) = rule.plan else {
+      guard
+        case .fallback(
+          let stateCount,
+          let classCount,
+          let transitionRowStride,
+          let startState,
+          let acceptingStates,
+          let transitions
+        ) = rule.plan
+      else {
         diagnostics.append(diagnostic(for: rule, reason: .missingTable))
         return
       }
