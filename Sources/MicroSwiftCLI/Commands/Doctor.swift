@@ -22,11 +22,12 @@ struct Doctor: AsyncParsableCommand {
   func run() async throws {
     let deps = DependencyValues._current
     let stdout = deps.stdout
+    let environment = deps.env.environment()
     let report = Report(
       status: "ok",
       timestamp: ISO8601DateFormatter().string(from: deps.clock.now()),
-      environment: deps.env.environment(),
-      runtime: ProcessInfo.processInfo.operatingSystemVersionString
+      environment: environment,
+      runtime: environment["MS_RUNTIME"] ?? ProcessInfo.processInfo.operatingSystemVersionString
     )
 
     if json {

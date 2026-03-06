@@ -1,15 +1,42 @@
 #!/usr/bin/env bash
 set -euo pipefail
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+resolve_binary() {
+  local requested="$1"
+  local name
+  name="$(basename "$requested")"
+
+  if [[ -x "$requested" ]]; then
+    echo "$requested"
+    return 0
+  fi
+
+  if [[ "$requested" == */* ]]; then
+    echo "not executable: $requested" >&2
+    return 1
+  fi
+
+  local found
+  found="$(find "$ROOT_DIR/.build" -type f -perm -111 -name "$name" 2>/dev/null | sort | head -n 1 || true)"
+  if [[ -z "$found" ]]; then
+    echo "not found in .build: $requested" >&2
+    return 1
+  fi
+
+  echo "$found"
+  return 0
+}
 
 if [[ $# -lt 1 ]]; then
   echo "usage: ./mlx-run <binary> [args...]" >&2
   exit 1
 fi
 
-BINARY="$1"
+REQUESTED_BINARY="$1"
 shift
-if [[ ! -x "$BINARY" ]]; then
-  echo "not executable: $BINARY" >&2
+if ! BINARY="$(resolve_binary "$REQUESTED_BINARY")"; then
+  echo "not executable: $REQUESTED_BINARY" >&2
   exit 1
 fi
 

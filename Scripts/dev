@@ -21,6 +21,31 @@ Usage: ./dev <command>
 USAGE
 }
 
+resolve_mlx_binary() {
+  local candidates=(
+    "$ROOT_DIR/.build/Build/Products/Debug/micro-swift"
+    "$ROOT_DIR/.build/Build/Products/Release/micro-swift"
+    "$ROOT_DIR/.build/debug/micro-swift"
+    "$ROOT_DIR/.build/xcodebuild/micro-swift"
+  )
+
+  for candidate in "${candidates[@]}"; do
+    if [[ -x "$candidate" ]]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+
+  local found=""
+  found="$(find "$ROOT_DIR/.build" -type f -perm -111 -name micro-swift 2>/dev/null | sort | head -n 1 || true)"
+  if [[ -n "$found" ]]; then
+    echo "$found"
+    return 0
+  fi
+
+  return 1
+}
+
 cmd="${1:-}"; shift || true
 
 case "${cmd}" in
@@ -46,8 +71,18 @@ case "${cmd}" in
     ;;
   mlx-smoke)
     require_command swift
-    run_or_dry swift build --product micro-swift
-    "$SCRIPT_DIR/mlx-run" ".build/debug/micro-swift" mlx-smoke --json
+    if command -v xcodebuild >/dev/null 2>&1; then
+      run_or_dry xcodebuild -scheme micro-swift -configuration Debug -destination "platform=macOS" -derivedDataPath "$ROOT_DIR/.build" build
+    else
+      run_or_dry swift build --product micro-swift
+    fi
+
+    binary="$(resolve_mlx_binary)"
+    if [[ -z "$binary" ]]; then
+      echo "unable to locate micro-swift executable after build" >&2
+      exit 1
+    fi
+    "$SCRIPT_DIR/mlx-run" "$binary" mlx-smoke --json
     ;;
   verify)
     "$0" format

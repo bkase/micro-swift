@@ -1,0 +1,4 @@
+micro-swift doctor
+status: ok
+os: test-runtime
+time: 2023-12-29T10:33:20Z

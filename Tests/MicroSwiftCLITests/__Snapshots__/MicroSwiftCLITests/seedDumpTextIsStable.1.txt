@@ -1,0 +1,8 @@
+micro-swift seed dump
+schemaVersion: 1
+globalSeed: 20260306
+seed(bench): 150
+seed(frontend): 147
+seed(spec): 146
+seed(tensor-core): 148
+seed(wasm): 149

@@ -1,0 +1,3 @@
+mlx-smoke: ok
+kernel: trivial-add
+runtime: deterministic-mock

@@ -1,8 +1,9 @@
 {
   "environment" : {
+    "MS_RUNTIME" : "test-runtime",
     "MS_TEST" : "1"
   },
-  "runtime" : "Version 15.7.3 (Build 24G419)",
+  "runtime" : "test-runtime",
   "status" : "ok",
   "timestamp" : "2023-12-29T10:33:20Z"
 }
