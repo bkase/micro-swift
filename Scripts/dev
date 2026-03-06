@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/lib/common.sh"
+
+ROOT_DIR="$(repo_root)"
+
+usage() {
+  cat <<USAGE
+Usage: ./dev <command>
+  doctor
+  format
+  lint
+  build
+  test
+  mlx-smoke
+  verify
+  install-hooks
+  run
+USAGE
+}
+
+cmd="${1:-}"; shift || true
+
+case "${cmd}" in
+  doctor)
+    shift || true
+    "$SCRIPT_DIR/doctor.sh" "$@"
+    ;;
+  format)
+    require_command swift
+    run_or_dry swift format --in-place --recursive .
+    ;;
+  lint)
+    require_command swift
+    run_or_dry swift format lint --recursive --strict .
+    ;;
+  build)
+    require_command swift
+    run_or_dry swift build
+    ;;
+  test)
+    require_command swift
+    run_or_dry swift test
+    ;;
+  mlx-smoke)
+    require_command swift
+    run_or_dry swift build --product micro-swift
+    "$SCRIPT_DIR/mlx-run" ".build/debug/micro-swift" mlx-smoke --json
+    ;;
+  verify)
+    "$0" format
+    "$0" lint
+    "$0" build
+    "$0" test
+    ;;
+  install-hooks)
+    mkdir -p "$ROOT_DIR/.git/hooks"
+    ln -sf "$ROOT_DIR/.githooks/pre-commit" "$ROOT_DIR/.git/hooks/pre-commit"
+    echo "installed hook: .githooks/pre-commit -> .git/hooks/pre-commit"
+    ;;
+  run)
+    require_command swift
+    swift run micro-swift "$@"
+    ;;
+  *)
+    usage
+    exit 1
+    ;;
+esac

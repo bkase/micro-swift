@@ -1,0 +1,9 @@
+{
+  "swift": {
+    "minimumVersion": "6.0"
+  },
+  "swiftFormat": {
+    "enabled": true,
+    "version": "swift-format"
+  }
+}

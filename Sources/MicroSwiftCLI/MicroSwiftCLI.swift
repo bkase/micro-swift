@@ -1,0 +1,24 @@
+import ArgumentParser
+import Dependencies
+import Foundation
+
+@main
+public struct MicroSwift: AsyncParsableCommand {
+  public static var configuration = CommandConfiguration(
+    commandName: "micro-swift",
+    abstract: "Local-first tooling shell for MicroSwift",
+    subcommands: [
+      Doctor.self,
+      Seed.self,
+      MLXSmoke.self,
+    ]
+  )
+
+  public init() {}
+}
+
+extension URL {
+  fileprivate static func from(_ path: String) -> URL {
+    URL(fileURLWithPath: path)
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "globalSeed": 20260306,
+  "corpusSeeds": {
+    "spec": 146,
+    "frontend": 147,
+    "tensor-core": 148,
+    "wasm": 149,
+    "bench": 150
+  }
+}
