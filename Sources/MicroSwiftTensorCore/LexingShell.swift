@@ -40,12 +40,15 @@ public struct LexingShell: Sendable {
 
       pageResults.append(
         (
-          result: TensorLexer.lexPage(
-            bytes: page.byteSlice,
-            validLen: page.validLen,
-            baseOffset: page.baseOffset,
-            artifact: artifact,
-            options: options
+          result: padResult(
+            TensorLexer.lexPage(
+              bytes: page.byteSlice,
+              validLen: page.validLen,
+              baseOffset: page.baseOffset,
+              artifact: artifact,
+              options: options
+            ),
+            to: page.byteSlice.count
           ),
           baseOffset: page.baseOffset
         ))
@@ -54,6 +57,18 @@ public struct LexingShell: Sendable {
     let tokenTape = TokenTape.assemble(pageResults: pageResults, overflows: overflowPages)
     return LexSourceResult(
       tokenTape: tokenTape, pageResults: pageResults, overflowPages: overflowPages)
+  }
+
+  private func padResult(_ result: PageLexResult, to width: Int) -> PageLexResult {
+    guard result.packedRows.count < width else { return result }
+    let paddedRows =
+      result.packedRows + Array(repeating: UInt64(0), count: width - result.packedRows.count)
+    return PageLexResult(
+      packedRows: paddedRows,
+      rowCount: result.rowCount,
+      errorSpans: result.errorSpans,
+      overflowDiagnostic: result.overflowDiagnostic
+    )
   }
 }
 

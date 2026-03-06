@@ -1,6 +1,7 @@
 import Testing
 
 @testable import MicroSwiftLexerGen
+@testable import MicroSwiftFrontend
 @testable import MicroSwiftTensorCore
 
 @Suite
@@ -46,10 +47,10 @@ struct LexPageTests {
   @Test
   func lexShellPagesWhenPageCapacityExceeded() throws {
     let runtime = try makeRuntime(maxLookahead: 4)
-    let shell = LexShell()
+    let shell = makeShell(targetBytes: 3, bucketBytes: 4)
 
     let results = try shell.lexFile(
-      bytes: Array("aaaaa".utf8),
+      bytes: Array("aa\naa\n".utf8),
       artifact: runtime,
       options: LexOptions(runtimeProfile: .v1Fallback)
     )
@@ -65,10 +66,10 @@ struct LexPageTests {
   @Test
   func lexShellUsesBaseOffsetsAcrossMultiplePages() throws {
     let runtime = try makeRuntime(maxLookahead: 4)
-    let shell = LexShell()
+    let shell = makeShell(targetBytes: 3, bucketBytes: 4)
 
     let results = try shell.lexFile(
-      bytes: Array("aaaaaaaa".utf8),
+      bytes: Array("aa\naa\n".utf8),
       artifact: runtime,
       options: LexOptions(runtimeProfile: .v1Fallback)
     )
@@ -77,32 +78,52 @@ struct LexPageTests {
     #expect(results[0].rowCount == 1)
     #expect(results[1].rowCount == 1)
     let firstPageTokens = TokenUnpacker.unpack(result: results[0], baseOffset: 0)
-    let secondPageTokens = TokenUnpacker.unpack(result: results[1], baseOffset: 4)
+    let secondPageTokens = TokenUnpacker.unpack(result: results[1], baseOffset: 3)
     #expect(firstPageTokens.map(\.startByte) == [0])
-    #expect(secondPageTokens.map(\.startByte) == [4])
+    #expect(secondPageTokens.map(\.startByte) == [3])
   }
 
   @Test
   func lexShellPadsUnusedRowsDeterministically() throws {
     let runtime = try makeRuntime(maxLookahead: 8)
-    let shell = LexShell()
+    let shell = makeShell(targetBytes: 3, bucketBytes: 4)
 
     let first = try shell.lexFile(
-      bytes: Array("aa".utf8),
+      bytes: Array("aa\n".utf8),
       artifact: runtime,
       options: LexOptions(runtimeProfile: .v1Fallback)
     )
     let second = try shell.lexFile(
-      bytes: Array("aa".utf8),
+      bytes: Array("aa\n".utf8),
       artifact: runtime,
       options: LexOptions(runtimeProfile: .v1Fallback)
     )
 
     let page = try #require(first.first)
     #expect(page.rowCount == 1)
-    #expect(page.packedRows.count == 8)
-    #expect(page.packedRows[1...] == Array(repeating: UInt64(0), count: 7)[...])
+    #expect(page.packedRows.count == 4)
+    #expect(page.packedRows[1...] == Array(repeating: UInt64(0), count: 3)[...])
     #expect(first == second)
+  }
+
+  @Test
+  func lexShellReturnsOverflowDiagnosticForUnsupportedPage() throws {
+    let runtime = try makeRuntime(maxLookahead: 8)
+    let shell = makeShell(targetBytes: 3, bucketBytes: 4)
+
+    let results = try shell.lexFile(
+      bytes: Array("aaaaa".utf8),
+      artifact: runtime,
+      options: LexOptions(runtimeProfile: .v1Fallback)
+    )
+
+    #expect(results.count == 1)
+    let page = try #require(results.first)
+    #expect(page.rowCount == 0)
+    #expect(page.packedRows.isEmpty)
+    let overflow = try #require(page.overflowDiagnostic)
+    #expect(overflow.pageByteCount == 5)
+    #expect(overflow.maxBucketSize == 4)
   }
 
   @Test
@@ -174,6 +195,15 @@ private func makeRuntime(maxLookahead: UInt16, tokenKindID: UInt16 = 9) throws -
   )
 
   return try ArtifactRuntime.fromArtifact(artifact)
+}
+
+private func makeShell(targetBytes: Int32, bucketBytes: Int32) -> LexShell {
+  let pagingShell = PagingShell(
+    pagePolicy: PagePolicy(targetBytes: targetBytes),
+    maxBucketSize: bucketBytes,
+    buckets: [PageBucket(byteCapacity: bucketBytes)]
+  )
+  return LexShell(lexingShell: LexingShell(pagingShell: pagingShell))
 }
 
 private extension UInt64 {
