@@ -36,8 +36,9 @@ private enum FallbackMetalExecutorError: Error, CustomStringConvertible {
     case .pipelineCreationFailed: return "Metal compute pipeline creation failed"
     case .commandBufferCreationFailed: return "Metal command buffer creation failed"
     case .commandEncoderCreationFailed: return "Metal compute encoder creation failed"
-    case let .bufferCreationFailed(name): return "Metal buffer creation failed for \(name)"
-    case let .backendExecutionFailed(status): return "Metal command buffer finished with status \(status.rawValue)"
+    case .bufferCreationFailed(let name): return "Metal buffer creation failed for \(name)"
+    case .backendExecutionFailed(let status):
+      return "Metal command buffer finished with status \(status.rawValue)"
     }
   }
 }
@@ -148,15 +149,20 @@ final class FallbackMetalExecutor: @unchecked Sendable {
     let stepHiBuffer = try makeBuffer(stepHi, name: "stepHi")
     let acceptLoBuffer = try makeBuffer(acceptLoByRule, name: "acceptLoByRule")
     let acceptHiBuffer = try makeBuffer(acceptHiByRule, name: "acceptHiByRule")
-    let globalRuleIDBuffer = try makeBuffer(globalRuleIDByFallbackRule, name: "globalRuleIDByFallbackRule")
-    let priorityRankBuffer = try makeBuffer(priorityRankByFallbackRule, name: "priorityRankByFallbackRule")
-    let tokenKindIDBuffer = try makeBuffer(tokenKindIDByFallbackRule, name: "tokenKindIDByFallbackRule")
+    let globalRuleIDBuffer = try makeBuffer(
+      globalRuleIDByFallbackRule, name: "globalRuleIDByFallbackRule")
+    let priorityRankBuffer = try makeBuffer(
+      priorityRankByFallbackRule, name: "priorityRankByFallbackRule")
+    let tokenKindIDBuffer = try makeBuffer(
+      tokenKindIDByFallbackRule, name: "tokenKindIDByFallbackRule")
     let modeBuffer = try makeBuffer(modeByFallbackRule, name: "modeByFallbackRule")
 
     let outLenBuffer = try makeWritableBuffer(UInt16.self, count: pageWidth, name: "outLen")
-    let outPriorityBuffer = try makeWritableBuffer(UInt16.self, count: pageWidth, name: "outPriorityRank")
+    let outPriorityBuffer = try makeWritableBuffer(
+      UInt16.self, count: pageWidth, name: "outPriorityRank")
     let outRuleIDBuffer = try makeWritableBuffer(UInt16.self, count: pageWidth, name: "outRuleID")
-    let outTokenKindBuffer = try makeWritableBuffer(UInt16.self, count: pageWidth, name: "outTokenKindID")
+    let outTokenKindBuffer = try makeWritableBuffer(
+      UInt16.self, count: pageWidth, name: "outTokenKindID")
     let outModeBuffer = try makeWritableBuffer(UInt8.self, count: pageWidth, name: "outMode")
 
     encoder.setComputePipelineState(pipelineState)
@@ -238,159 +244,159 @@ final class FallbackMetalExecutor: @unchecked Sendable {
 }
 
 private let fallbackKernelSource = """
-#include <metal_stdlib>
-using namespace metal;
+  #include <metal_stdlib>
+  using namespace metal;
 
-struct FallbackKernelConfig {
-  uint validLen;
-  uint pageWidth;
-  ushort maxWidth;
-  ushort numStatesUsed;
-  ulong startMaskLo;
-  ulong startMaskHi;
-  ulong startClassMaskLo;
-  ulong startClassMaskHi;
-  uint fallbackRuleCount;
-  uint stepStride;
-  uint maxClassCount;
-  uint padding;
-};
+  struct FallbackKernelConfig {
+    uint validLen;
+    uint pageWidth;
+    ushort maxWidth;
+    ushort numStatesUsed;
+    ulong startMaskLo;
+    ulong startMaskHi;
+    ulong startClassMaskLo;
+    ulong startClassMaskHi;
+    uint fallbackRuleCount;
+    uint stepStride;
+    uint maxClassCount;
+    uint padding;
+  };
 
-inline bool isStartEligible(ushort classID, constant FallbackKernelConfig& cfg) {
-  if (classID < 64) {
-    ulong mask = 1ul << (ulong)classID;
-    return (cfg.startClassMaskLo & mask) != 0ul;
+  inline bool isStartEligible(ushort classID, constant FallbackKernelConfig& cfg) {
+    if (classID < 64) {
+      ulong mask = 1ul << (ulong)classID;
+      return (cfg.startClassMaskLo & mask) != 0ul;
+    }
+
+    if (classID < 128) {
+      ulong mask = 1ul << (ulong)(classID - 64);
+      return (cfg.startClassMaskHi & mask) != 0ul;
+    }
+
+    return false;
   }
 
-  if (classID < 128) {
-    ulong mask = 1ul << (ulong)(classID - 64);
-    return (cfg.startClassMaskHi & mask) != 0ul;
-  }
+  kernel void fallbackKernel(
+    device const ushort* classIDs [[buffer(0)]],
+    constant ulong* stepLo [[buffer(1)]],
+    constant ulong* stepHi [[buffer(2)]],
+    constant ulong* acceptLoByRule [[buffer(3)]],
+    constant ulong* acceptHiByRule [[buffer(4)]],
+    constant ushort* globalRuleIDByFallbackRule [[buffer(5)]],
+    constant ushort* priorityRankByFallbackRule [[buffer(6)]],
+    constant ushort* tokenKindIDByFallbackRule [[buffer(7)]],
+    constant uchar* modeByFallbackRule [[buffer(8)]],
+    device ushort* outLen [[buffer(9)]],
+    device ushort* outPriorityRank [[buffer(10)]],
+    device ushort* outRuleID [[buffer(11)]],
+    device ushort* outTokenKindID [[buffer(12)]],
+    device uchar* outMode [[buffer(13)]],
+    constant FallbackKernelConfig& cfg [[buffer(14)]],
+    uint gid [[thread_position_in_grid]]
+  ) {
+    if (gid >= cfg.pageWidth) {
+      return;
+    }
 
-  return false;
-}
+    ushort bestLen = 0;
+    ushort bestPriorityRank = 0;
+    ushort bestRuleID = 0;
+    ushort bestTokenKindID = 0;
+    uchar bestMode = 0;
 
-kernel void fallbackKernel(
-  device const ushort* classIDs [[buffer(0)]],
-  constant ulong* stepLo [[buffer(1)]],
-  constant ulong* stepHi [[buffer(2)]],
-  constant ulong* acceptLoByRule [[buffer(3)]],
-  constant ulong* acceptHiByRule [[buffer(4)]],
-  constant ushort* globalRuleIDByFallbackRule [[buffer(5)]],
-  constant ushort* priorityRankByFallbackRule [[buffer(6)]],
-  constant ushort* tokenKindIDByFallbackRule [[buffer(7)]],
-  constant uchar* modeByFallbackRule [[buffer(8)]],
-  device ushort* outLen [[buffer(9)]],
-  device ushort* outPriorityRank [[buffer(10)]],
-  device ushort* outRuleID [[buffer(11)]],
-  device ushort* outTokenKindID [[buffer(12)]],
-  device uchar* outMode [[buffer(13)]],
-  constant FallbackKernelConfig& cfg [[buffer(14)]],
-  uint gid [[thread_position_in_grid]]
-) {
-  if (gid >= cfg.pageWidth) {
-    return;
-  }
+    if (gid < cfg.validLen && isStartEligible(classIDs[gid], cfg)) {
+      ulong activeLo = cfg.startMaskLo;
+      ulong activeHi = cfg.startMaskHi;
 
-  ushort bestLen = 0;
-  ushort bestPriorityRank = 0;
-  ushort bestRuleID = 0;
-  ushort bestTokenKindID = 0;
-  uchar bestMode = 0;
-
-  if (gid < cfg.validLen && isStartEligible(classIDs[gid], cfg)) {
-    ulong activeLo = cfg.startMaskLo;
-    ulong activeHi = cfg.startMaskHi;
-
-    for (uint k = 0; k < (uint)cfg.maxWidth; ++k) {
-      uint cursor = gid + k;
-      if (cursor >= cfg.validLen) {
-        activeLo = 0ul;
-        activeHi = 0ul;
-        continue;
-      }
-
-      if (activeLo == 0ul && activeHi == 0ul) {
-        continue;
-      }
-
-      uint classID = (uint)classIDs[cursor];
-      if (classID >= cfg.maxClassCount) {
-        activeLo = 0ul;
-        activeHi = 0ul;
-        continue;
-      }
-
-      ulong nextLo = 0ul;
-      ulong nextHi = 0ul;
-
-      ulong loBits = activeLo;
-      while (loBits != 0ul) {
-        uint bit = ctz(loBits);
-        uint state = bit;
-        if (state < (uint)cfg.numStatesUsed) {
-          uint flatIndex = classID * cfg.stepStride + state;
-          nextLo |= stepLo[flatIndex];
-          nextHi |= stepHi[flatIndex];
-        }
-        loBits &= (loBits - 1ul);
-      }
-
-      ulong hiBits = activeHi;
-      while (hiBits != 0ul) {
-        uint bit = ctz(hiBits);
-        uint state = 64u + bit;
-        if (state < (uint)cfg.numStatesUsed) {
-          uint flatIndex = classID * cfg.stepStride + state;
-          nextLo |= stepLo[flatIndex];
-          nextHi |= stepHi[flatIndex];
-        }
-        hiBits &= (hiBits - 1ul);
-      }
-
-      activeLo = nextLo;
-      activeHi = nextHi;
-
-      if (activeLo == 0ul && activeHi == 0ul) {
-        continue;
-      }
-
-      ushort candidateLen = (ushort)(k + 1u);
-      for (uint ruleIndex = 0; ruleIndex < cfg.fallbackRuleCount; ++ruleIndex) {
-        if ((activeLo & acceptLoByRule[ruleIndex]) == 0ul &&
-            (activeHi & acceptHiByRule[ruleIndex]) == 0ul) {
+      for (uint k = 0; k < (uint)cfg.maxWidth; ++k) {
+        uint cursor = gid + k;
+        if (cursor >= cfg.validLen) {
+          activeLo = 0ul;
+          activeHi = 0ul;
           continue;
         }
 
-        ushort candidatePriority = priorityRankByFallbackRule[ruleIndex];
-        ushort candidateRuleID = globalRuleIDByFallbackRule[ruleIndex];
-
-        bool better = false;
-        if (candidateLen != bestLen) {
-          better = candidateLen > bestLen;
-        } else if (candidateLen != 0u) {
-          if (candidatePriority != bestPriorityRank) {
-            better = candidatePriority < bestPriorityRank;
-          } else {
-            better = candidateRuleID < bestRuleID;
-          }
+        if (activeLo == 0ul && activeHi == 0ul) {
+          continue;
         }
 
-        if (better) {
-          bestLen = candidateLen;
-          bestPriorityRank = candidatePriority;
-          bestRuleID = candidateRuleID;
-          bestTokenKindID = tokenKindIDByFallbackRule[ruleIndex];
-          bestMode = modeByFallbackRule[ruleIndex];
+        uint classID = (uint)classIDs[cursor];
+        if (classID >= cfg.maxClassCount) {
+          activeLo = 0ul;
+          activeHi = 0ul;
+          continue;
+        }
+
+        ulong nextLo = 0ul;
+        ulong nextHi = 0ul;
+
+        ulong loBits = activeLo;
+        while (loBits != 0ul) {
+          uint bit = ctz(loBits);
+          uint state = bit;
+          if (state < (uint)cfg.numStatesUsed) {
+            uint flatIndex = classID * cfg.stepStride + state;
+            nextLo |= stepLo[flatIndex];
+            nextHi |= stepHi[flatIndex];
+          }
+          loBits &= (loBits - 1ul);
+        }
+
+        ulong hiBits = activeHi;
+        while (hiBits != 0ul) {
+          uint bit = ctz(hiBits);
+          uint state = 64u + bit;
+          if (state < (uint)cfg.numStatesUsed) {
+            uint flatIndex = classID * cfg.stepStride + state;
+            nextLo |= stepLo[flatIndex];
+            nextHi |= stepHi[flatIndex];
+          }
+          hiBits &= (hiBits - 1ul);
+        }
+
+        activeLo = nextLo;
+        activeHi = nextHi;
+
+        if (activeLo == 0ul && activeHi == 0ul) {
+          continue;
+        }
+
+        ushort candidateLen = (ushort)(k + 1u);
+        for (uint ruleIndex = 0; ruleIndex < cfg.fallbackRuleCount; ++ruleIndex) {
+          if ((activeLo & acceptLoByRule[ruleIndex]) == 0ul &&
+              (activeHi & acceptHiByRule[ruleIndex]) == 0ul) {
+            continue;
+          }
+
+          ushort candidatePriority = priorityRankByFallbackRule[ruleIndex];
+          ushort candidateRuleID = globalRuleIDByFallbackRule[ruleIndex];
+
+          bool better = false;
+          if (candidateLen != bestLen) {
+            better = candidateLen > bestLen;
+          } else if (candidateLen != 0u) {
+            if (candidatePriority != bestPriorityRank) {
+              better = candidatePriority < bestPriorityRank;
+            } else {
+              better = candidateRuleID < bestRuleID;
+            }
+          }
+
+          if (better) {
+            bestLen = candidateLen;
+            bestPriorityRank = candidatePriority;
+            bestRuleID = candidateRuleID;
+            bestTokenKindID = tokenKindIDByFallbackRule[ruleIndex];
+            bestMode = modeByFallbackRule[ruleIndex];
+          }
         }
       }
     }
-  }
 
-  outLen[gid] = bestLen;
-  outPriorityRank[gid] = bestPriorityRank;
-  outRuleID[gid] = bestRuleID;
-  outTokenKindID[gid] = bestTokenKindID;
-  outMode[gid] = bestMode;
-}
-"""
+    outLen[gid] = bestLen;
+    outPriorityRank[gid] = bestPriorityRank;
+    outRuleID[gid] = bestRuleID;
+    outTokenKindID[gid] = bestTokenKindID;
+    outMode[gid] = bestMode;
+  }
+  """

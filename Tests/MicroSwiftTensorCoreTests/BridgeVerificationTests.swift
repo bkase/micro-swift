@@ -31,13 +31,16 @@ struct BridgeVerificationTests {
     let digitSetID = try classSetID(for: ByteSet.asciiDigit, runtime: runtime)
     let identStartSetID = try classSetID(for: ByteSet.asciiIdentStart, runtime: runtime)
 
-    let digitClassIDs = Set(asciiRange("0", "9").map { UInt8(truncatingIfNeeded: byteToClassLUT[Int($0)]) })
+    let digitClassIDs = Set(
+      asciiRange("0", "9").map { UInt8(truncatingIfNeeded: byteToClassLUT[Int($0)]) })
     for classID in digitClassIDs {
       #expect(runtime.classSetRuntime.contains(setID: digitSetID, classID: classID))
     }
 
     let letterClassIDs = Set(
-      (asciiRange("A", "Z") + asciiRange("a", "z")).map { UInt8(truncatingIfNeeded: byteToClassLUT[Int($0)]) })
+      (asciiRange("A", "Z") + asciiRange("a", "z")).map {
+        UInt8(truncatingIfNeeded: byteToClassLUT[Int($0)])
+      })
     for classID in letterClassIDs {
       #expect(runtime.classSetRuntime.contains(setID: identStartSetID, classID: classID))
     }
