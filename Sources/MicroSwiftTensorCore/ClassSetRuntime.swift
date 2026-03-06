@@ -1,15 +1,11 @@
 import MLX
 import MicroSwiftLexerGen
 
-public struct ClassSetRuntime: @unchecked Sendable {
-  /// Dense mask bytes in row-major order: [numClassSets, numByteClasses].
-  /// 1 means member, 0 means non-member.
-  public let mask: MLXArray
+public struct ClassSetRuntime: Sendable {
   private let hostMaskBytesStorage: [UInt8]
   public let numClassSets: Int
   public let numByteClasses: Int
 
-  /// Check if classID belongs to classSet setID
   public func contains(setID: UInt16, classID: UInt8) -> Bool {
     guard Int(setID) < numClassSets, Int(classID) < numByteClasses else { return false }
     let flatIndex = Int(setID) * numByteClasses + Int(classID)
@@ -20,35 +16,36 @@ public struct ClassSetRuntime: @unchecked Sendable {
     hostMaskBytesStorage
   }
 
+  /// MLX-backed mask for device execution. Created on demand.
+  public func mlxMask() -> MLXArray {
+    withMLXCPU { MLXArray(hostMaskBytesStorage, [numClassSets, numByteClasses]) }
+  }
+
   public init(
-    mask: MLXArray,
+    maskBytes: [UInt8],
     numClassSets: Int,
-    numByteClasses: Int,
-    hostMaskBytesStorage: [UInt8]? = nil
+    numByteClasses: Int
   ) {
-    self.mask = mask
+    self.hostMaskBytesStorage = maskBytes
     self.numClassSets = numClassSets
     self.numByteClasses = numByteClasses
-    self.hostMaskBytesStorage = hostMaskBytesStorage ?? withMLXCPU { mask.asArray(UInt8.self) }
   }
 
   public init(mask: [[Bool]], numClassSets: Int, numByteClasses: Int) {
     var flatMask = Array(repeating: UInt8(0), count: numClassSets * numByteClasses)
     for setIndex in 0..<min(mask.count, numClassSets) {
-      for classIndex in 0..<min(mask[setIndex].count, numByteClasses) where mask[setIndex][classIndex]
-      {
+      for classIndex in 0..<min(mask[setIndex].count, numByteClasses)
+      where mask[setIndex][classIndex] {
         flatMask[(setIndex * numByteClasses) + classIndex] = 1
       }
     }
     self.init(
-      mask: withMLXCPU { MLXArray(flatMask, [numClassSets, numByteClasses]) },
+      maskBytes: flatMask,
       numClassSets: numClassSets,
-      numByteClasses: numByteClasses,
-      hostMaskBytesStorage: flatMask
+      numByteClasses: numByteClasses
     )
   }
 
-  /// Build from artifact's classSets and classes
   public static func build(classSets: [ClassSetDecl], classes: [ByteClassDecl]) -> ClassSetRuntime {
     let maxSetID = classSets.map { Int($0.classSetID.rawValue) }.max() ?? -1
     let maxClassID = classes.map { Int($0.classID) }.max() ?? -1
@@ -68,10 +65,9 @@ public struct ClassSetRuntime: @unchecked Sendable {
     }
 
     return ClassSetRuntime(
-      mask: withMLXCPU { MLXArray(mask, [numClassSets, numByteClasses]) },
+      maskBytes: mask,
       numClassSets: numClassSets,
-      numByteClasses: numByteClasses,
-      hostMaskBytesStorage: mask
+      numByteClasses: numByteClasses
     )
   }
 }

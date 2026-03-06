@@ -126,24 +126,24 @@ private func runFallbackPage(
       var loBits = activeLo
       while loBits != 0 {
         let bit = loBits.trailingZeroBitCount
-          let state = bit
-          if state < numStatesUsed {
-            let flatIndex = (classID * stepStride) + state
-            nextLo |= stepLo[flatIndex]
-            nextHi |= stepHi[flatIndex]
-          }
+        let state = bit
+        if state < numStatesUsed {
+          let flatIndex = (classID * stepStride) + state
+          nextLo |= stepLo[flatIndex]
+          nextHi |= stepHi[flatIndex]
+        }
         loBits &= (loBits - 1)
       }
 
       var hiBits = activeHi
       while hiBits != 0 {
         let bit = hiBits.trailingZeroBitCount
-          let state = 64 + bit
-          if state < numStatesUsed {
-            let flatIndex = (classID * stepStride) + state
-            nextLo |= stepLo[flatIndex]
-            nextHi |= stepHi[flatIndex]
-          }
+        let state = 64 + bit
+        if state < numStatesUsed {
+          let flatIndex = (classID * stepStride) + state
+          nextLo |= stepLo[flatIndex]
+          nextHi |= stepHi[flatIndex]
+        }
         hiBits &= (hiBits - 1)
       }
 

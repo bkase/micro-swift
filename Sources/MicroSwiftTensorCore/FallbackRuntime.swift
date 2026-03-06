@@ -1,25 +1,17 @@
 import MLX
 
-public struct FallbackRuntime: @unchecked Sendable {
+public struct FallbackRuntime: Sendable {
   public let numStatesUsed: UInt16
   public let maxWidth: UInt16
   public let startMaskLo: UInt64
   public let startMaskHi: UInt64
 
-  public let stepLo: MLXArray
-  public let stepHi: MLXArray
   private let hostStepLoStorage: [UInt64]
   private let hostStepHiStorage: [UInt64]
 
-  public let acceptLoByRule: MLXArray
-  public let acceptHiByRule: MLXArray
   private let hostAcceptLoByRuleStorage: [UInt64]
   private let hostAcceptHiByRuleStorage: [UInt64]
 
-  public let globalRuleIDByFallbackRule: MLXArray
-  public let priorityRankByFallbackRule: MLXArray
-  public let tokenKindIDByFallbackRule: MLXArray
-  public let modeByFallbackRule: MLXArray
   private let hostGlobalRuleIDByFallbackRuleStorage: [UInt16]
   private let hostPriorityRankByFallbackRuleStorage: [UInt16]
   private let hostTokenKindIDByFallbackRuleStorage: [UInt16]
@@ -48,18 +40,10 @@ public struct FallbackRuntime: @unchecked Sendable {
     self.maxWidth = maxWidth
     self.startMaskLo = startMaskLo
     self.startMaskHi = startMaskHi
-    self.stepLo = withMLXCPU { MLXArray(stepLo) }
-    self.stepHi = withMLXCPU { MLXArray(stepHi) }
     self.hostStepLoStorage = stepLo
     self.hostStepHiStorage = stepHi
-    self.acceptLoByRule = withMLXCPU { MLXArray(acceptLoByRule) }
-    self.acceptHiByRule = withMLXCPU { MLXArray(acceptHiByRule) }
     self.hostAcceptLoByRuleStorage = acceptLoByRule
     self.hostAcceptHiByRuleStorage = acceptHiByRule
-    self.globalRuleIDByFallbackRule = withMLXCPU { MLXArray(globalRuleIDByFallbackRule) }
-    self.priorityRankByFallbackRule = withMLXCPU { MLXArray(priorityRankByFallbackRule) }
-    self.tokenKindIDByFallbackRule = withMLXCPU { MLXArray(tokenKindIDByFallbackRule) }
-    self.modeByFallbackRule = withMLXCPU { MLXArray(modeByFallbackRule) }
     self.hostGlobalRuleIDByFallbackRuleStorage = globalRuleIDByFallbackRule
     self.hostPriorityRankByFallbackRuleStorage = priorityRankByFallbackRule
     self.hostTokenKindIDByFallbackRuleStorage = tokenKindIDByFallbackRule
@@ -68,6 +52,7 @@ public struct FallbackRuntime: @unchecked Sendable {
     self.startClassMaskHi = startClassMaskHi
   }
 
+  // Host extraction helpers
   public func hostStepLo() -> [UInt64] { hostStepLoStorage }
   public func hostStepHi() -> [UInt64] { hostStepHiStorage }
   public func hostAcceptLoByRule() -> [UInt64] { hostAcceptLoByRuleStorage }
@@ -83,5 +68,23 @@ public struct FallbackRuntime: @unchecked Sendable {
   }
   public func hostModeByFallbackRule() -> [UInt8] {
     hostModeByFallbackRuleStorage
+  }
+
+  // MLX-backed accessors for device execution. Created on demand.
+  public func mlxStepLo() -> MLXArray { withMLXCPU { MLXArray(hostStepLoStorage) } }
+  public func mlxStepHi() -> MLXArray { withMLXCPU { MLXArray(hostStepHiStorage) } }
+  public func mlxAcceptLoByRule() -> MLXArray { withMLXCPU { MLXArray(hostAcceptLoByRuleStorage) } }
+  public func mlxAcceptHiByRule() -> MLXArray { withMLXCPU { MLXArray(hostAcceptHiByRuleStorage) } }
+  public func mlxGlobalRuleIDByFallbackRule() -> MLXArray {
+    withMLXCPU { MLXArray(hostGlobalRuleIDByFallbackRuleStorage) }
+  }
+  public func mlxPriorityRankByFallbackRule() -> MLXArray {
+    withMLXCPU { MLXArray(hostPriorityRankByFallbackRuleStorage) }
+  }
+  public func mlxTokenKindIDByFallbackRule() -> MLXArray {
+    withMLXCPU { MLXArray(hostTokenKindIDByFallbackRuleStorage) }
+  }
+  public func mlxModeByFallbackRule() -> MLXArray {
+    withMLXCPU { MLXArray(hostModeByFallbackRuleStorage) }
   }
 }

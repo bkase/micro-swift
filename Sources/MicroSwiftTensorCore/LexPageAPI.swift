@@ -210,7 +210,8 @@ func executeFastFamilies(
     bytes: bytes,
     byteToClassLUT: artifact.hostByteToClassLUT()
   )
-  let validMask = ByteClassifier.validityMask(pageSize: bytes.count, validLen: Int32(boundedValidLen))
+  let validMask = ByteClassifier.validityMask(
+    pageSize: bytes.count, validLen: Int32(boundedValidLen))
   let winners = WinnerReduction.reduce(
     candidates: TensorLexer.makeFastCandidates(
       bytes: bytes,

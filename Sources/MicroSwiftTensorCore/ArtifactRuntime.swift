@@ -11,11 +11,10 @@ public enum ArtifactRuntimeError: Error, Sendable, Equatable {
   case fallbackWidthInvalid(ruleID: UInt16, minWidth: UInt16, maxWidth: UInt16)
 }
 
-public struct ArtifactRuntime: @unchecked Sendable {
+public struct ArtifactRuntime: Sendable {
   public let specName: String
   public let ruleCount: Int
   public let runtimeHints: RuntimeHints
-  public let byteToClassLUT: MLXArray
   private let hostByteToClassLUTStorage: [UInt16]
   public let tokenKinds: [TokenKindDecl]
   public let rules: [LoweredRule]
@@ -41,8 +40,7 @@ public struct ArtifactRuntime: @unchecked Sendable {
     specName: String,
     ruleCount: Int,
     runtimeHints: RuntimeHints,
-    byteToClassLUT: MLXArray,
-    hostByteToClassLUTStorage: [UInt16]? = nil,
+    byteToClassLUT: [UInt16],
     tokenKinds: [TokenKindDecl],
     rules: [LoweredRule],
     classSets: [ClassSetDecl],
@@ -53,9 +51,7 @@ public struct ArtifactRuntime: @unchecked Sendable {
     self.specName = specName
     self.ruleCount = ruleCount
     self.runtimeHints = runtimeHints
-    self.byteToClassLUT = byteToClassLUT
-    self.hostByteToClassLUTStorage =
-      hostByteToClassLUTStorage ?? withMLXCPU { byteToClassLUT.asArray(UInt16.self) }
+    self.hostByteToClassLUTStorage = byteToClassLUT
     self.tokenKinds = tokenKinds
     self.rules = rules
     self.classSets = classSets
@@ -67,6 +63,11 @@ public struct ArtifactRuntime: @unchecked Sendable {
 
   public func hostByteToClassLUT() -> [UInt16] {
     hostByteToClassLUTStorage
+  }
+
+  /// MLX-backed byte-to-class LUT for device execution. Created on demand.
+  public func mlxByteToClassLUT() -> MLXArray {
+    withMLXCPU { MLXArray(hostByteToClassLUTStorage, [256]) }
   }
 
   public static func fromArtifact(_ artifact: LexerArtifact) throws -> ArtifactRuntime {
@@ -81,8 +82,7 @@ public struct ArtifactRuntime: @unchecked Sendable {
       specName: artifact.specName,
       ruleCount: artifact.rules.count,
       runtimeHints: artifact.runtimeHints,
-      byteToClassLUT: withMLXCPU { MLXArray(hostByteToClassLUT, [256]) },
-      hostByteToClassLUTStorage: hostByteToClassLUT,
+      byteToClassLUT: hostByteToClassLUT,
       tokenKinds: artifact.tokenKinds,
       rules: artifact.rules,
       classSets: artifact.classSets,
