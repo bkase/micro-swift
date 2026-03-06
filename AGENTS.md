@@ -71,3 +71,13 @@ git push                # Push to remote
 - Always sync before ending session
 
 <!-- end-br-agent-instructions -->
+
+## Benchmarking
+
+Run the lexer benchmark in release mode:
+
+```bash
+swift build -c release --product micro-swift-bench && .build/release/micro-swift-bench
+```
+
+This runs cold/warm/error benchmarks at small (1KB), medium (310KB), and large (3.9MB) scales and reports MB/s, Ktok/s, latency, and page bucket distribution.
