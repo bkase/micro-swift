@@ -198,10 +198,15 @@ public enum ArtifactSerializer {
       maxDeterministicLookaheadBytes: maxLiteralLength
     )
 
-    let semanticHashInput = semanticHashInput(
-      classified: classified,
-      byteClasses: byteClasses,
-      classSets: classSets
+    let semanticHashInput = semanticHashPayload(
+      specName: classified.name,
+      runtimeHints: runtimeHints,
+      tokenKinds: tokenKinds,
+      byteToClass: byteClasses.byteToClass,
+      classes: byteClasses.classes,
+      classSets: classSets.classSets,
+      rules: rules,
+      keywordRemaps: keywordRemaps
     )
     let specHashHex = sha256Hex(semanticHashInput)
 
@@ -339,22 +344,44 @@ private func buildKeywordRemaps(classified: ClassifiedSpec) -> [KeywordRemapTabl
   }
 }
 
-private func semanticHashInput(
-  classified: ClassifiedSpec,
-  byteClasses: ByteClasses,
-  classSets: ClassSets
-) -> String {
-  var lines: [String] = []
-  lines.append("name:\(classified.name)")
-  for rule in classified.rules {
-    lines.append("rule:\(rule.rule.ruleID.rawValue):\(rule.rule.name):\(rule.plan.family.rawValue)")
-  }
-  lines.append("byteClasses:\(byteClasses.classes.count)")
-  lines.append("classSets:\(classSets.classSets.count)")
-  return lines.joined(separator: "\n")
+private struct SemanticHashPayload: Codable {
+  let specName: String
+  let runtimeHints: RuntimeHints
+  let tokenKinds: [TokenKindDecl]
+  let byteToClass: [UInt8]
+  let classes: [ByteClassDecl]
+  let classSets: [ClassSetDecl]
+  let rules: [LoweredRule]
+  let keywordRemaps: [KeywordRemapTable]
 }
 
-private func sha256Hex(_ input: String) -> String {
-  let digest = SHA256.hash(data: Data(input.utf8))
+private func semanticHashPayload(
+  specName: String,
+  runtimeHints: RuntimeHints,
+  tokenKinds: [TokenKindDecl],
+  byteToClass: [UInt8],
+  classes: [ByteClassDecl],
+  classSets: [ClassSetDecl],
+  rules: [LoweredRule],
+  keywordRemaps: [KeywordRemapTable]
+) -> Data {
+  let payload = SemanticHashPayload(
+    specName: specName,
+    runtimeHints: runtimeHints,
+    tokenKinds: tokenKinds,
+    byteToClass: byteToClass,
+    classes: classes,
+    classSets: classSets,
+    rules: rules,
+    keywordRemaps: keywordRemaps
+  )
+
+  let encoder = JSONEncoder()
+  encoder.outputFormatting = [.sortedKeys]
+  return (try? encoder.encode(payload)) ?? Data()
+}
+
+private func sha256Hex(_ input: Data) -> String {
+  let digest = SHA256.hash(data: input)
   return digest.map { String(format: "%02x", $0) }.joined()
 }

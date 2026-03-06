@@ -569,6 +569,26 @@ struct ArtifactSerializerTests {
     #expect(bytesA == bytesB)
   }
 
+  @Test func specHashTracksRuleSemantics() throws {
+    let specA = LexerSpec(name: "hash-semantics") {
+      token("t", literal("ab"))
+    }
+    let specB = LexerSpec(name: "hash-semantics") {
+      token("t", literal("ac"))
+    }
+
+    let artifactA = try buildArtifact(
+      from: specA,
+      options: .init(maxLocalWindowBytes: 8, enableFallback: true, maxFallbackStatesPerRule: 256)
+    )
+    let artifactB = try buildArtifact(
+      from: specB,
+      options: .init(maxLocalWindowBytes: 8, enableFallback: true, maxFallbackStatesPerRule: 256)
+    )
+
+    #expect(artifactA.specHashHex != artifactB.specHashHex)
+  }
+
   @Test func fallbackLayoutIsDenseRowMajor() throws {
     let spec = LexerSpec(name: "fallback-artifact") {
       token("alt", alt(literal("ab"), literal("cd")))
