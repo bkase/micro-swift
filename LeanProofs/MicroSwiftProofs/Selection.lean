@@ -163,25 +163,56 @@ private theorem fixpoint_stable (winners : List Reduction.Winner) (validLen : Na
     rw [ih]
     exact h_fix
 
+/-- Notation: mask after k iterations. -/
+private def maskAfter (winners : List Reduction.Winner) (validLen : Nat) (k : Nat) : List Bool :=
+  (List.range k).foldl (fun m _ => iterStep winners validLen m) (mkPositive winners validLen)
+
+/-- maskAfter k+1 = iterStep (maskAfter k). -/
+private theorem maskAfter_succ (winners : List Reduction.Winner) (validLen k : Nat) :
+    maskAfter winners validLen (k + 1) = iterStep winners validLen (maskAfter winners validLen k) := by
+  simp only [maskAfter, List.range_succ, List.foldl_append, List.foldl_cons, List.foldl_nil]
+
+/-- cummaxFwd at position i depends only on inputs at positions 0..i.
+    Since cummaxFwd = (scanl max 0).drop 1, cummaxFwd(xs)[i] = max(0, xs[0], ..., xs[i]). -/
+private theorem cummaxFwd_prefix_eq (xs ys : List Nat) (i : Nat)
+    (h : ∀ j ≤ i, xs.getD j 0 = ys.getD j 0) :
+    (cummaxFwd xs).getD i 0 = (cummaxFwd ys).getD i 0 := by
+  sorry
+
+/-- iterStep at position i depends only on the input mask at positions j < i.
+    This is the key locality property: coveredBefore[i] depends on cummaxFwd[i-1],
+    which depends on selectedEnds[0..i-1], which depends on mask[0..i-1]. -/
+private theorem iterStep_prefix_eq (winners : List Reduction.Winner) (validLen : Nat)
+    (mask₁ mask₂ : List Bool) (i : Nat)
+    (h : ∀ j < i, mask₁.getD j false = mask₂.getD j false) :
+    (iterStep winners validLen mask₁).getD i false =
+    (iterStep winners validLen mask₂).getD i false := by
+  sorry
+
+/-- After j+1 iterations, position j has converged: further iterations don't change it.
+    Uses the wave-front argument: iterStep at position j depends only on mask at positions < j.
+    By strong induction on j: positions 0..j-1 have already converged (IH), so the inputs to
+    iterStep at position j are the same for all k ≥ j+1. -/
+private theorem mask_converges_at (winners : List Reduction.Winner) (validLen : Nat)
+    (j : Nat) (hj : j < winners.length)
+    (k : Nat) (hk : k ≥ j + 1) :
+    (maskAfter winners validLen k).getD j false =
+    (maskAfter winners validLen (j + 1)).getD j false := by
+  sorry
+
+/-- For positions i ≥ validLen, iterStep always gives false (positive[i] = false). -/
+private theorem iterStep_false_beyond_validLen (winners : List Reduction.Winner) (validLen : Nat)
+    (mask : List Bool) (i : Nat) (hi : i ≥ validLen) :
+    (iterStep winners validLen mask).getD i false = false := by
+  sorry
+
 /-- The mask after validLen iterations is a fixpoint of iterStep.
 
-    This is the core convergence argument. The proof requires showing that
-    selectionIteration's coverage propagation via cummax reaches steady state
-    within validLen iterations. Each iteration can propagate coverage information
-    by at least one position (via the cummax scan), and there are at most validLen
-    valid positions, so validLen iterations suffice.
-
-    Formally, the argument is:
-    - The output of selectionIteration is `and positive uncovered`
-    - `uncovered[i]` depends on `max{selectedEnd[j] : j < i}` (via cummax + shift)
-    - If mask is a fixpoint, then the coverage computed from mask is consistent
-      with the mask itself
-    - Starting from positive (all valid positions selected), each iteration
-      removes positions whose predecessors' coverage overlaps them
-    - After k iterations, all coverage chains of length ≤ k have been resolved
-    - Since chains can be at most validLen long, validLen iterations suffice -/
+    Proof uses the wave-front argument: after k iterations, positions 0..k-1
+    have converged. Since positions ≥ validLen are always false (from positive),
+    after validLen iterations all positions are stable. -/
 private theorem mono_decreasing_stabilizes (winners : List Reduction.Winner) (validLen : Nat)
-    (_ : validLen ≤ winners.length) :
+    (h_bound : validLen ≤ winners.length) :
     iterStep winners validLen
       ((List.range validLen).foldl (fun m _ => iterStep winners validLen m)
         (mkPositive winners validLen)) =
