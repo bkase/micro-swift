@@ -150,7 +150,7 @@ struct LexPageTests {
     #expect(PackedToken.unpackLength(row) == 2)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func lexPageIntegratesPrefixedCandidatesWithOtherFastRules() throws {
     let runtime = try makePrefixedLexRuntime()
     let bytes = Array("//ab\n".utf8)

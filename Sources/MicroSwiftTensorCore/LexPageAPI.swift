@@ -1,3 +1,4 @@
+import MLX
 import MicroSwiftLexerGen
 
 public enum TensorLexer {
@@ -46,16 +47,19 @@ public enum TensorLexer {
     let classIDs = hostView.classIDs
 
     // Phase B: Per-rule candidate generation (using RuleBuckets)
-    let candidates = makeFastCandidates(
-      bytes: hostView.bytes,
-      classIDs: hostView.classIDs,
-      validMask: hostView.validMask,
+    let candidateBatch = makeFastCandidateBatch(
+      compiledPage: compiledPage,
+      hostView: hostView,
       validLen: Int32(boundedValidLen),
       artifact: artifact
     )
 
-    // Phase C: Hierarchical winner reduction
-    var winners = WinnerReduction.reduce(candidates: candidates, pageSize: hostView.bytes.count)
+    // Phase C: Device-resident winner reduction
+    let winnerTensors = WinnerReduction.reduce(
+      batch: candidateBatch,
+      pageSize: hostView.bytes.count
+    )
+    var winners = WinnerReduction.hostWinners(from: winnerTensors, pageSize: hostView.bytes.count)
 
     if options.runtimeProfile == .v1Fallback, let fallback = artifact.fallback {
       let fallbackResult = FallbackKernelRunner(fallback: fallback).evaluatePage(
@@ -87,13 +91,13 @@ public enum TensorLexer {
     mode == .skip ? 1 : 0
   }
 
-  fileprivate static func makeFastCandidates(
+  fileprivate static func makeFastCandidateBatch(
     compiledPage: CompiledPageInput,
     hostView: HostPageExecutionView,
     validLen: Int32,
     artifact: ArtifactRuntime
-  ) -> [WinnerReduction.RuleCandidate] {
-    makeFastCandidates(
+  ) -> WinnerReduction.RuleTensorBatch {
+    makeFastCandidateBatch(
       literalPage: compiledPage,
       bytes: hostView.bytes,
       classIDs: hostView.classIDs,
@@ -103,14 +107,14 @@ public enum TensorLexer {
     )
   }
 
-  fileprivate static func makeFastCandidates(
+  fileprivate static func makeFastCandidateBatch(
     bytes: [UInt8],
     classIDs: [UInt8],
     validMask: [Bool],
     validLen: Int32,
     artifact: ArtifactRuntime
-  ) -> [WinnerReduction.RuleCandidate] {
-    makeFastCandidates(
+  ) -> WinnerReduction.RuleTensorBatch {
+    makeFastCandidateBatch(
       literalPage: nil,
       bytes: bytes,
       classIDs: classIDs,
@@ -120,25 +124,72 @@ public enum TensorLexer {
     )
   }
 
-  private static func makeFastCandidates(
+  private static func makeFastCandidateBatch(
     literalPage: CompiledPageInput?,
     bytes: [UInt8],
     classIDs: [UInt8],
     validMask: [Bool],
     validLen: Int32,
     artifact: ArtifactRuntime
-  ) -> [WinnerReduction.RuleCandidate] {
+  ) -> WinnerReduction.RuleTensorBatch {
     let buckets = RuleBuckets.build(from: artifact.rules)
-    var candidates: [WinnerReduction.RuleCandidate] = []
-    candidates.reserveCapacity(artifact.rules.count)
+    var lengthRows: [MLXArray] = []
+    var priorityRows: [MLXArray] = []
+    var ruleRows: [MLXArray] = []
+    var tokenRows: [MLXArray] = []
+    var modeRows: [MLXArray] = []
+
+    let pageSize = bytes.count
+    let reserveCount = artifact.rules.count
+    lengthRows.reserveCapacity(reserveCount)
+    priorityRows.reserveCapacity(reserveCount)
+    ruleRows.reserveCapacity(reserveCount)
+    tokenRows.reserveCapacity(reserveCount)
+    modeRows.reserveCapacity(reserveCount)
+
+    func appendCandidateRow(
+      ruleID: UInt16,
+      tokenKindID: UInt16,
+      priorityRank: UInt16,
+      mode: UInt8,
+      candLenTensor: MLXArray
+    ) {
+      let normalizedCandLen = candLenTensor.asType(.uint16)
+      precondition(
+        Int(normalizedCandLen.shape[0]) == pageSize,
+        "candidate tensor width must equal page size"
+      )
+
+      lengthRows.append(normalizedCandLen)
+      priorityRows.append(mlxUInt16Filled(value: priorityRank, count: pageSize))
+      ruleRows.append(mlxUInt16Filled(value: ruleID, count: pageSize))
+      tokenRows.append(mlxUInt16Filled(value: tokenKindID, count: pageSize))
+      modeRows.append(mlxUInt8Filled(value: mode, count: pageSize))
+    }
+
+    func appendCandidateRow(
+      ruleID: UInt16,
+      tokenKindID: UInt16,
+      priorityRank: UInt16,
+      mode: UInt8,
+      candLenHost: [UInt16]
+    ) {
+      precondition(candLenHost.count == pageSize, "candidate host width must equal page size")
+      appendCandidateRow(
+        ruleID: ruleID,
+        tokenKindID: tokenKindID,
+        priorityRank: priorityRank,
+        mode: mode,
+        candLenTensor: mlxUInt16Tensor(candLenHost)
+      )
+    }
 
     for literalLength in buckets.literalBuckets.keys.sorted() {
       guard let rules = buckets.literalBuckets[literalLength] else { continue }
       for rule in rules {
         guard case .literal(let literalBytes) = rule.plan else { continue }
-        let candidate: WinnerReduction.RuleCandidate
         if let literalPage {
-          candidate = WinnerReduction.RuleCandidate(
+          appendCandidateRow(
             ruleID: rule.ruleID,
             tokenKindID: rule.tokenKindID,
             priorityRank: rule.priorityRank,
@@ -149,21 +200,18 @@ public enum TensorLexer {
             )
           )
         } else {
-          candidate = WinnerReduction.RuleCandidate(
+          appendCandidateRow(
             ruleID: rule.ruleID,
             tokenKindID: rule.tokenKindID,
             priorityRank: rule.priorityRank,
             mode: modeByte(rule.mode),
-            candLen: LiteralExecution.evaluateLiteral(
+            candLenHost: LiteralExecution.evaluateLiteral(
               bytes: bytes,
               validMask: validMask,
               literalBytes: literalBytes
             )
           )
         }
-        candidates.append(
-          candidate
-        )
       }
     }
 
@@ -176,14 +224,12 @@ public enum TensorLexer {
         minLength: minLength,
         classSetRuntime: artifact.classSetRuntime
       )
-      candidates.append(
-        WinnerReduction.RuleCandidate(
-          ruleID: rule.ruleID,
-          tokenKindID: rule.tokenKindID,
-          priorityRank: rule.priorityRank,
-          mode: modeByte(rule.mode),
-          candLen: candLen
-        )
+      appendCandidateRow(
+        ruleID: rule.ruleID,
+        tokenKindID: rule.tokenKindID,
+        priorityRank: rule.priorityRank,
+        mode: modeByte(rule.mode),
+        candLenHost: candLen
       )
     }
 
@@ -196,14 +242,12 @@ public enum TensorLexer {
         tailClassSetID: tailClassSetID,
         classSetRuntime: artifact.classSetRuntime
       )
-      candidates.append(
-        WinnerReduction.RuleCandidate(
-          ruleID: rule.ruleID,
-          tokenKindID: rule.tokenKindID,
-          priorityRank: rule.priorityRank,
-          mode: modeByte(rule.mode),
-          candLen: candLen
-        )
+      appendCandidateRow(
+        ruleID: rule.ruleID,
+        tokenKindID: rule.tokenKindID,
+        priorityRank: rule.priorityRank,
+        mode: modeByte(rule.mode),
+        candLenHost: candLen
       )
     }
 
@@ -247,18 +291,22 @@ public enum TensorLexer {
         classSetRuntime: artifact.classSetRuntime,
         nextStop: nextStop
       )
-      candidates.append(
-        WinnerReduction.RuleCandidate(
-          ruleID: rule.ruleID,
-          tokenKindID: rule.tokenKindID,
-          priorityRank: rule.priorityRank,
-          mode: modeByte(rule.mode),
-          candLen: candLen
-        )
+      appendCandidateRow(
+        ruleID: rule.ruleID,
+        tokenKindID: rule.tokenKindID,
+        priorityRank: rule.priorityRank,
+        mode: modeByte(rule.mode),
+        candLenHost: candLen
       )
     }
 
-    return candidates
+    return WinnerReduction.RuleTensorBatch(
+      candLenByRule: mlxStackRows(lengthRows, pageSize: pageSize, dtype: .uint16),
+      priorityRankByRule: mlxStackRows(priorityRows, pageSize: pageSize, dtype: .uint16),
+      ruleIDByRule: mlxStackRows(ruleRows, pageSize: pageSize, dtype: .uint16),
+      tokenKindIDByRule: mlxStackRows(tokenRows, pageSize: pageSize, dtype: .uint16),
+      modeByRule: mlxStackRows(modeRows, pageSize: pageSize, dtype: .uint8)
+    )
   }
 }
 
@@ -276,18 +324,40 @@ func executeFastFamilies(
   )
   let validMask = ByteClassifier.validityMask(
     pageSize: bytes.count, validLen: Int32(boundedValidLen))
-  let winners = WinnerReduction.reduce(
-    candidates: TensorLexer.makeFastCandidates(
-      bytes: bytes,
-      classIDs: narrowedClassIDs,
-      validMask: validMask,
-      validLen: Int32(boundedValidLen),
-      artifact: artifact
+  let winners = WinnerReduction.hostWinners(
+    from: WinnerReduction.reduce(
+      batch: TensorLexer.makeFastCandidateBatch(
+        bytes: bytes,
+        classIDs: narrowedClassIDs,
+        validMask: validMask,
+        validLen: Int32(boundedValidLen),
+        artifact: artifact
+      ),
+      pageSize: bytes.count
     ),
     pageSize: bytes.count
   )
 
   return winners.enumerated().map { position, winner in
     candidateWinner(from: winner, position: position)
+  }
+}
+
+private func mlxUInt16Tensor(_ values: [UInt16]) -> MLXArray {
+  withMLXCPU { MLXArray(values, [values.count]).asType(.uint16) }
+}
+
+private func mlxUInt16Filled(value: UInt16, count: Int) -> MLXArray {
+  withMLXCPU { MLXArray(Array(repeating: value, count: count), [count]).asType(.uint16) }
+}
+
+private func mlxUInt8Filled(value: UInt8, count: Int) -> MLXArray {
+  withMLXCPU { MLXArray(Array(repeating: value, count: count), [count]).asType(.uint8) }
+}
+
+private func mlxStackRows(_ rows: [MLXArray], pageSize: Int, dtype: DType) -> MLXArray {
+  withMLXCPU {
+    guard !rows.isEmpty else { return zeros([0, pageSize], dtype: dtype) }
+    return stacked(rows.map { $0.asType(dtype) }, axis: 0)
   }
 }

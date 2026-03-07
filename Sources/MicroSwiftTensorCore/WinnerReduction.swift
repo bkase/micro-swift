@@ -2,6 +2,63 @@ import MLX
 import MicroSwiftLexerGen
 
 public enum WinnerReduction {
+  /// Shared tensor layout for rule competition.
+  /// All tensors are shaped [ruleCount, pageSize].
+  public struct RuleTensorBatch {
+    public let candLenByRule: MLXArray
+    public let priorityRankByRule: MLXArray
+    public let ruleIDByRule: MLXArray
+    public let tokenKindIDByRule: MLXArray
+    public let modeByRule: MLXArray
+
+    public init(
+      candLenByRule: MLXArray,
+      priorityRankByRule: MLXArray,
+      ruleIDByRule: MLXArray,
+      tokenKindIDByRule: MLXArray,
+      modeByRule: MLXArray
+    ) {
+      self.candLenByRule = candLenByRule.asType(.uint16)
+      self.priorityRankByRule = priorityRankByRule.asType(.uint16)
+      self.ruleIDByRule = ruleIDByRule.asType(.uint16)
+      self.tokenKindIDByRule = tokenKindIDByRule.asType(.uint16)
+      self.modeByRule = modeByRule.asType(.uint8)
+    }
+
+    public var ruleCount: Int {
+      guard candLenByRule.ndim >= 1 else { return 0 }
+      return Int(candLenByRule.shape[0])
+    }
+
+    public var pageSize: Int {
+      guard candLenByRule.ndim >= 2 else { return 0 }
+      return Int(candLenByRule.shape[1])
+    }
+  }
+
+  /// Device-resident winner fields for one page.
+  public struct WinnerTensors {
+    public let len: MLXArray
+    public let priorityRank: MLXArray
+    public let ruleID: MLXArray
+    public let tokenKindID: MLXArray
+    public let mode: MLXArray
+
+    public init(
+      len: MLXArray,
+      priorityRank: MLXArray,
+      ruleID: MLXArray,
+      tokenKindID: MLXArray,
+      mode: MLXArray
+    ) {
+      self.len = len.asType(.uint16)
+      self.priorityRank = priorityRank.asType(.uint16)
+      self.ruleID = ruleID.asType(.uint16)
+      self.tokenKindID = tokenKindID.asType(.uint16)
+      self.mode = mode.asType(.uint8)
+    }
+  }
+
   /// Candidate from a single rule at all positions.
   public struct RuleCandidate {
     public let ruleID: UInt16
@@ -56,54 +113,142 @@ public enum WinnerReduction {
     }
   }
 
-  /// Reduce multiple rule candidates to one winner per position.
-  /// Uses hierarchical pairwise tree merge with the lexicographic comparator:
-  ///   1. longer length wins
-  ///   2. smaller priorityRank wins
-  ///   3. smaller ruleID wins
-  public static func reduce(candidates: [RuleCandidate], pageSize: Int) -> [WinnerTuple] {
+  /// Compatibility helper for tests/legacy paths.
+  /// Converts host-or-device candidates into a shared [rule, page] tensor batch.
+  public static func makeRuleTensorBatch(candidates: [RuleCandidate], pageSize: Int) -> RuleTensorBatch {
     precondition(pageSize >= 0, "pageSize must be non-negative")
 
-    if candidates.isEmpty {
-      return Array(repeating: .empty, count: pageSize)
+    let lengthRows = candidates.map { candidate in
+      candidate.candLenTensor?.asType(.uint16) ?? uint16Tensor(candidate.hostCandLen(pageSize: pageSize))
+    }
+    let priorityRows = candidates.map { candidate in
+      uint16Filled(value: candidate.priorityRank, count: pageSize)
+    }
+    let ruleRows = candidates.map { candidate in
+      uint16Filled(value: candidate.ruleID, count: pageSize)
+    }
+    let tokenRows = candidates.map { candidate in
+      uint16Filled(value: candidate.tokenKindID, count: pageSize)
+    }
+    let modeRows = candidates.map { candidate in
+      uint8Filled(value: candidate.mode, count: pageSize)
     }
 
-    var levels = candidates.map { candidate -> [WinnerTuple] in
-      candidate.hostCandLen(pageSize: pageSize).map { len in
-        if len == 0 {
-          return .empty
-        }
+    return RuleTensorBatch(
+      candLenByRule: stackRows(lengthRows, pageSize: pageSize, dtype: .uint16),
+      priorityRankByRule: stackRows(priorityRows, pageSize: pageSize, dtype: .uint16),
+      ruleIDByRule: stackRows(ruleRows, pageSize: pageSize, dtype: .uint16),
+      tokenKindIDByRule: stackRows(tokenRows, pageSize: pageSize, dtype: .uint16),
+      modeByRule: stackRows(modeRows, pageSize: pageSize, dtype: .uint8)
+    )
+  }
 
-        return WinnerTuple(
-          len: len,
-          priorityRank: candidate.priorityRank,
-          ruleID: candidate.ruleID,
-          tokenKindID: candidate.tokenKindID,
-          mode: candidate.mode
-        )
+  /// Production tensor reduction.
+  /// Tie-break order:
+  ///   1. longer length
+  ///   2. smaller priorityRank
+  ///   3. smaller ruleID
+  public static func reduce(batch: RuleTensorBatch, pageSize: Int) -> WinnerTensors {
+    precondition(pageSize >= 0, "pageSize must be non-negative")
+    precondition(batch.pageSize == pageSize, "batch.pageSize must match pageSize")
+
+    guard pageSize > 0 else {
+      return WinnerTensors(
+        len: zeros([0], dtype: .uint16),
+        priorityRank: zeros([0], dtype: .uint16),
+        ruleID: zeros([0], dtype: .uint16),
+        tokenKindID: zeros([0], dtype: .uint16),
+        mode: zeros([0], dtype: .uint8)
+      )
+    }
+
+    guard batch.ruleCount > 0 else {
+      return WinnerTensors(
+        len: zeros([pageSize], dtype: .uint16),
+        priorityRank: uint16Filled(value: WinnerTuple.empty.priorityRank, count: pageSize),
+        ruleID: uint16Filled(value: WinnerTuple.empty.ruleID, count: pageSize),
+        tokenKindID: zeros([pageSize], dtype: .uint16),
+        mode: zeros([pageSize], dtype: .uint8)
+      )
+    }
+
+    return withMLXCPU {
+      var bestLen = zeros([pageSize], dtype: .uint16)
+      var bestPriority = uint16Filled(value: WinnerTuple.empty.priorityRank, count: pageSize)
+      var bestRuleID = uint16Filled(value: WinnerTuple.empty.ruleID, count: pageSize)
+      var bestTokenKindID = zeros([pageSize], dtype: .uint16)
+      var bestMode = zeros([pageSize], dtype: .uint8)
+
+      for ruleIndex in 0..<batch.ruleCount {
+        let candLen = batch.candLenByRule[ruleIndex].asType(.uint16)
+        let candPriority = batch.priorityRankByRule[ruleIndex].asType(.uint16)
+        let candRuleID = batch.ruleIDByRule[ruleIndex].asType(.uint16)
+        let candTokenKindID = batch.tokenKindIDByRule[ruleIndex].asType(.uint16)
+        let candMode = batch.modeByRule[ruleIndex].asType(.uint8)
+
+        let longer = candLen .> bestLen
+        let sameLen = candLen .== bestLen
+        let positiveLen = candLen .> 0
+        let betterPriority = candPriority .< bestPriority
+        let samePriority = candPriority .== bestPriority
+        let betterRuleID = candRuleID .< bestRuleID
+        let tieBreak = sameLen .&& positiveLen .&& (betterPriority .|| (samePriority .&& betterRuleID))
+        let contenderWins = longer .|| tieBreak
+
+        bestLen = which(contenderWins, candLen, bestLen).asType(.uint16)
+        bestPriority = which(contenderWins, candPriority, bestPriority).asType(.uint16)
+        bestRuleID = which(contenderWins, candRuleID, bestRuleID).asType(.uint16)
+        bestTokenKindID = which(contenderWins, candTokenKindID, bestTokenKindID).asType(.uint16)
+        bestMode = which(contenderWins, candMode, bestMode).asType(.uint8)
       }
+
+      return WinnerTensors(
+        len: bestLen,
+        priorityRank: bestPriority,
+        ruleID: bestRuleID,
+        tokenKindID: bestTokenKindID,
+        mode: bestMode
+      )
     }
+  }
 
-    while levels.count > 1 {
-      var nextLevel: [[WinnerTuple]] = []
-      nextLevel.reserveCapacity((levels.count + 1) / 2)
+  /// Host conversion helper for tests and host-only selector paths.
+  public static func hostWinners(from tensors: WinnerTensors, pageSize: Int) -> [WinnerTuple] {
+    precondition(pageSize >= 0, "pageSize must be non-negative")
 
-      var index = 0
-      while index < levels.count {
-        let left = levels[index]
-        if index + 1 < levels.count {
-          let right = levels[index + 1]
-          nextLevel.append(pairwiseMerge(left, right))
-        } else {
-          nextLevel.append(left)
-        }
-        index += 2
+    let len = tensors.len.asType(.uint16).asArray(UInt16.self)
+    let priority = tensors.priorityRank.asType(.uint16).asArray(UInt16.self)
+    let ruleID = tensors.ruleID.asType(.uint16).asArray(UInt16.self)
+    let tokenKindID = tensors.tokenKindID.asType(.uint16).asArray(UInt16.self)
+    let mode = tensors.mode.asType(.uint8).asArray(UInt8.self)
+    precondition(
+      len.count == pageSize
+        && priority.count == pageSize
+        && ruleID.count == pageSize
+        && tokenKindID.count == pageSize
+        && mode.count == pageSize,
+      "winner tensor fields must all match pageSize"
+    )
+
+    return (0..<pageSize).map { index in
+      if len[index] == 0 {
+        return .empty
       }
-
-      levels = nextLevel
+      return WinnerTuple(
+        len: len[index],
+        priorityRank: priority[index],
+        ruleID: ruleID[index],
+        tokenKindID: tokenKindID[index],
+        mode: mode[index]
+      )
     }
+  }
 
-    return levels[0]
+  /// Compatibility reducer; routes through the tensor reducer.
+  public static func reduce(candidates: [RuleCandidate], pageSize: Int) -> [WinnerTuple] {
+    let batch = makeRuleTensorBatch(candidates: candidates, pageSize: pageSize)
+    let winnerTensors = reduce(batch: batch, pageSize: pageSize)
+    return hostWinners(from: winnerTensors, pageSize: pageSize)
   }
 
   /// Pairwise merge two winner arrays element-wise.
@@ -121,6 +266,26 @@ public enum WinnerReduction {
 
     return merged
   }
+}
+
+private func stackRows(_ rows: [MLXArray], pageSize: Int, dtype: DType) -> MLXArray {
+  withMLXCPU {
+    guard !rows.isEmpty else { return zeros([0, pageSize], dtype: dtype) }
+    let normalized = rows.map { $0.asType(dtype) }
+    return stacked(normalized, axis: 0)
+  }
+}
+
+private func uint16Tensor(_ values: [UInt16]) -> MLXArray {
+  withMLXCPU { MLXArray(values, [values.count]).asType(.uint16) }
+}
+
+private func uint16Filled(value: UInt16, count: Int) -> MLXArray {
+  withMLXCPU { MLXArray(Array(repeating: value, count: count), [count]).asType(.uint16) }
+}
+
+private func uint8Filled(value: UInt8, count: Int) -> MLXArray {
+  withMLXCPU { MLXArray(Array(repeating: value, count: count), [count]).asType(.uint8) }
 }
 
 public struct CandidateWinner: Sendable, Equatable {
