@@ -115,11 +115,14 @@ public enum WinnerReduction {
 
   /// Compatibility helper for tests/legacy paths.
   /// Converts host-or-device candidates into a shared [rule, page] tensor batch.
-  public static func makeRuleTensorBatch(candidates: [RuleCandidate], pageSize: Int) -> RuleTensorBatch {
+  public static func makeRuleTensorBatch(candidates: [RuleCandidate], pageSize: Int)
+    -> RuleTensorBatch
+  {
     precondition(pageSize >= 0, "pageSize must be non-negative")
 
     let lengthRows = candidates.map { candidate in
-      candidate.candLenTensor?.asType(.uint16) ?? uint16Tensor(candidate.hostCandLen(pageSize: pageSize))
+      candidate.candLenTensor?.asType(.uint16)
+        ?? uint16Tensor(candidate.hostCandLen(pageSize: pageSize))
     }
     let priorityRows = candidates.map { candidate in
       uint16Filled(value: candidate.priorityRank, count: pageSize)
@@ -192,7 +195,8 @@ public enum WinnerReduction {
         let betterPriority = candPriority .< bestPriority
         let samePriority = candPriority .== bestPriority
         let betterRuleID = candRuleID .< bestRuleID
-        let tieBreak = sameLen .&& positiveLen .&& (betterPriority .|| (samePriority .&& betterRuleID))
+        let tieBreak =
+          sameLen .&& positiveLen .&& (betterPriority .|| (samePriority .&& betterRuleID))
         let contenderWins = longer .|| tieBreak
 
         bestLen = which(contenderWins, candLen, bestLen).asType(.uint16)
