@@ -247,35 +247,27 @@ struct PrefixedExecutionTests {
     )
 
     let pageLen = bytes.count
-    let byteTensor = withMLXCPU { MLXArray(bytes, [pageLen]).asType(.uint8) }
-    let classIDTensor = withMLXCPU {
-      MLXArray(classIDs.map { UInt16($0) }, [pageLen]).asType(.uint16)
-    }
-    let validMaskTensor = withMLXCPU { MLXArray(validMask, [pageLen]).asType(.bool) }
+    let byteTensor = MLXArray(bytes, [pageLen]).asType(.uint8)
+    let classIDTensor = MLXArray(classIDs.map { UInt16($0) }, [pageLen]).asType(.uint16)
+    let validMaskTensor = MLXArray(validMask, [pageLen]).asType(.bool)
 
     // Precompute nextInvalidTensor
-    let indices = withMLXCPU { MLXArray(Int32(0)..<Int32(pageLen), [pageLen]) }
-    let sentinelFill = withMLXCPU {
-      MLXArray(Array(repeating: Int32(pageLen), count: pageLen), [pageLen])
-    }
-    let nextInvalidTensor = withMLXCPU {
-      let invalidIndices = which(.!validMaskTensor, indices, sentinelFill)
-      return cummin(invalidIndices, axis: 0, reverse: true)
-    }
+    let indices = MLXArray(Int32(0)..<Int32(pageLen), [pageLen])
+    let sentinelFill = MLXArray(Array(repeating: Int32(pageLen), count: pageLen), [pageLen])
+    let invalidIndices = which(.!validMaskTensor, indices, sentinelFill)
+    let nextInvalidTensor = cummin(invalidIndices, axis: 0, reverse: true)
 
     // Precompute nextStopTensor
     let nextStopTensor: MLXArray?
     if let stopSetID {
-      nextStopTensor = withMLXCPU {
-        let stopMember = MembershipKernels.membershipMaskTensor(
-          classIDTensor: classIDTensor,
-          setID: stopSetID,
-          classSetRuntime: runtime
-        )
-        let isStop = stopMember .&& validMaskTensor
-        let stopIndices = which(isStop, indices, sentinelFill)
-        return cummin(stopIndices, axis: 0, reverse: true)
-      }
+      let stopMember = MembershipKernels.membershipMaskTensor(
+        classIDTensor: classIDTensor,
+        setID: stopSetID,
+        classSetRuntime: runtime
+      )
+      let isStop = stopMember .&& validMaskTensor
+      let stopIndices = which(isStop, indices, sentinelFill)
+      nextStopTensor = cummin(stopIndices, axis: 0, reverse: true)
     } else {
       nextStopTensor = nil
     }

@@ -121,8 +121,7 @@ public enum LiteralExecution {
     shiftedBytes: (Int) -> MLXArray,
     shiftedMask: (Int) -> MLXArray
   ) -> MLXArray {
-    withMLXCPU {
-      guard pageLen > 0 else { return zeros([0], dtype: .uint16) }
+    guard pageLen > 0 else { return zeros([0], dtype: .uint16) }
 
       let literalLen = literalBytes.count
       guard literalLen > 0, literalLen <= pageLen else {
@@ -142,6 +141,5 @@ public enum LiteralExecution {
 
       let literalLenU16 = UInt16(min(literalLen, Int(UInt16.max)))
       return which(startMask, Int32(literalLenU16), 0).asType(.uint16)
-    }
   }
 }

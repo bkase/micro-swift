@@ -67,7 +67,7 @@ public struct ArtifactRuntime: Sendable {
 
   /// MLX-backed byte-to-class LUT for device execution. Created on demand.
   public func mlxByteToClassLUT() -> MLXArray {
-    withMLXCPU { MLXArray(hostByteToClassLUTStorage, [256]) }
+    MLXArray(hostByteToClassLUTStorage, [256])
   }
 
   public static func fromArtifact(_ artifact: LexerArtifact) throws -> ArtifactRuntime {

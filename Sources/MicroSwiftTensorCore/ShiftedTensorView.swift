@@ -15,9 +15,7 @@ enum ShiftedTensorView {
     guard offset > 0 else { return tensor }
 
     if offset >= count {
-      return withMLXCPU {
-        zeros([count], dtype: tensor.dtype)
-      }
+      return zeros([count], dtype: tensor.dtype)
     }
 
     precondition(
@@ -25,11 +23,9 @@ enum ShiftedTensorView {
       "only neutral padding is supported"
     )
 
-    return withMLXCPU {
-      let shiftedCore = tensor[offset..<count]
-      let tailPadding = zeros([offset], dtype: tensor.dtype)
-      return concatenated([shiftedCore, tailPadding], axis: 0)
-    }
+    let shiftedCore = tensor[offset..<count]
+    let tailPadding = zeros([offset], dtype: tensor.dtype)
+    return concatenated([shiftedCore, tailPadding], axis: 0)
   }
 
   static func forwardValidMask(_ mask: MLXArray, by offset: Int) -> MLXArray {
@@ -40,13 +36,11 @@ enum ShiftedTensorView {
     guard offset > 0 else { return mask }
 
     if offset >= count {
-      return withMLXCPU { zeros([count], dtype: .bool) }
+      return zeros([count], dtype: .bool)
     }
 
-    return withMLXCPU {
-      let shiftedCore = mask[offset..<count]
-      let tailPadding = zeros([offset], dtype: .bool)
-      return concatenated([shiftedCore, tailPadding], axis: 0)
-    }
+    let shiftedCore = mask[offset..<count]
+    let tailPadding = zeros([offset], dtype: .bool)
+    return concatenated([shiftedCore, tailPadding], axis: 0)
   }
 }

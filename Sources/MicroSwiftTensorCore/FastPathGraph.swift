@@ -97,10 +97,7 @@ public struct FastPathCompiledGraph: Sendable {
         remapTables: capturedRemapTables
       )
     }
-    self.candidateAndSelectGraph =
-      Self.shouldUseMLXCompile()
-      ? compile(rawGraph)
-      : rawGraph
+    self.candidateAndSelectGraph = compile(rawGraph)
   }
 
   public func execute(
@@ -330,17 +327,11 @@ public struct FastPathCompiledGraph: Sendable {
     ]
   }
 
-  private static func shouldUseMLXCompile() -> Bool {
-    let env = ProcessInfo.processInfo.environment
-    return env["MICROSWIFT_ENABLE_MLX_COMPILE"] == "1"
-  }
 }
 
 private func stackRowsInline(_ rows: [MLXArray], pageSize: Int, dtype: DType) -> MLXArray {
-  withMLXCPU {
-    guard !rows.isEmpty else { return zeros([0, pageSize], dtype: dtype) }
+  guard !rows.isEmpty else { return zeros([0, pageSize], dtype: dtype) }
     return stacked(rows.map { $0.asType(dtype) }, axis: 0)
-  }
 }
 
 private func mergeFastAndFallback(
@@ -349,8 +340,7 @@ private func mergeFastAndFallback(
   validMask: MLXArray,
   pageSize: Int
 ) -> WinnerReduction.WinnerTensors {
-  withMLXCPU {
-    let valid = validMask.asType(.bool)
+  let valid = validMask.asType(.bool)
     let zeroU16 = zeros([pageSize], dtype: .uint16)
     let zeroU8 = zeros([pageSize], dtype: .uint8)
 
@@ -390,15 +380,13 @@ private func mergeFastAndFallback(
       tokenKindID: which(fallbackWins, fallbackTokenKindID, fastTokenKindID).asType(.uint16),
       mode: which(fallbackWins, fallbackMode, fastMode).asType(.uint8)
     )
-  }
 }
 
 private func makeFallbackWinnerTensors(
   fallbackResult: FallbackPageResult,
   pageSize: Int
 ) -> WinnerReduction.WinnerTensors {
-  withMLXCPU {
-    WinnerReduction.WinnerTensors(
+  WinnerReduction.WinnerTensors(
       len: MLXArray(normalized(fallbackResult.fallbackLen, count: pageSize, fill: 0), [pageSize])
         .asType(.uint16),
       priorityRank: MLXArray(
@@ -416,7 +404,6 @@ private func makeFallbackWinnerTensors(
       mode: MLXArray(normalized(fallbackResult.fallbackMode, count: pageSize, fill: 0), [pageSize])
         .asType(.uint8)
     )
-  }
 }
 
 private func normalized<T>(_ values: [T], count: Int, fill: T) -> [T] {

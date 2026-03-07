@@ -166,12 +166,8 @@ struct HeadTailExecutionTests {
       tailClassSetID: tailClassSetID,
       classSetRuntime: runtime
     )
-    let classIDTensor = withMLXCPU {
-      MLXArray(classIDs.map { UInt16($0) }, [classIDs.count]).asType(.uint16)
-    }
-    let validMaskTensor = withMLXCPU {
-      MLXArray(validMask, [validMask.count]).asType(.bool)
-    }
+    let classIDTensor = MLXArray(classIDs.map { UInt16($0) }, [classIDs.count]).asType(.uint16)
+    let validMaskTensor = MLXArray(validMask, [validMask.count]).asType(.bool)
     let mlxResult = HeadTailExecution.evaluateHeadTailMLX(
       classIDTensor: classIDTensor,
       validMaskTensor: validMaskTensor,

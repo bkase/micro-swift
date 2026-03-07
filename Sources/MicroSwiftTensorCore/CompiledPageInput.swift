@@ -144,10 +144,8 @@ public struct CompiledPageInput {
   }
 
   public func deterministicTailZeroed(_ tensor: MLXArray) -> MLXArray {
-    return withMLXCPU {
-      let zerosTensor = zeros(like: tensor)
-      return which(validMaskTensor!, tensor, zerosTensor)
-    }
+    let zerosTensor = zeros(like: tensor)
+    return which(validMaskTensor!, tensor, zerosTensor)
   }
 
   public func validRangeMask(dtype: DType = .bool) -> MLXArray {

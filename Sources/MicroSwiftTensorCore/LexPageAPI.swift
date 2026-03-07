@@ -336,15 +336,11 @@ public enum TensorLexer {
       validMaskTensor = literalPage.validRangeMask(dtype: .bool)
       byteTensor =
         literalPage.byteTensor
-        ?? withMLXCPU {
-          MLXArray(bytes, [pageSize]).asType(.uint8)
-        }
-      nextInvalidTensor = withMLXCPU {
-        let indices = MLXArray(Int32(0)..<Int32(pageSize), [pageSize])
-        let sentinelFill = broadcast(MLXArray(Int32(pageSize)), to: [pageSize])
-        let invalidIndices = which(.!validMaskTensor!, indices, sentinelFill)
-        return cummin(invalidIndices, axis: 0, reverse: true)
-      }
+        ?? MLXArray(bytes, [pageSize]).asType(.uint8)
+      let niIndices = MLXArray(Int32(0)..<Int32(pageSize), [pageSize])
+      let niSentinelFill = broadcast(MLXArray(Int32(pageSize)), to: [pageSize])
+      let niInvalidIndices = which(.!validMaskTensor!, niIndices, niSentinelFill)
+      nextInvalidTensor = cummin(niInvalidIndices, axis: 0, reverse: true)
     } else {
       classIDTensor = nil
       validMaskTensor = nil
@@ -434,18 +430,16 @@ public enum TensorLexer {
           if let cached = nextStopTensorBySetID[stopClassSetID] {
             nextStopTensor = cached
           } else {
-            let computed = withMLXCPU { () -> MLXArray in
-              let indices = MLXArray(Int32(0)..<Int32(pageSize), [pageSize])
-              let sentinelFill = broadcast(MLXArray(Int32(pageSize)), to: [pageSize])
-              let stopMember = MembershipKernels.membershipMaskTensor(
-                classIDTensor: classIDTensor,
-                setID: stopClassSetID,
-                classSetRuntime: artifact.classSetRuntime
-              )
-              let isStop = stopMember .&& validMaskTensor
-              let stopIndices = which(isStop, indices, sentinelFill)
-              return cummin(stopIndices, axis: 0, reverse: true)
-            }
+            let nsIndices = MLXArray(Int32(0)..<Int32(pageSize), [pageSize])
+            let nsSentinelFill = broadcast(MLXArray(Int32(pageSize)), to: [pageSize])
+            let stopMember = MembershipKernels.membershipMaskTensor(
+              classIDTensor: classIDTensor,
+              setID: stopClassSetID,
+              classSetRuntime: artifact.classSetRuntime
+            )
+            let isStop = stopMember .&& validMaskTensor
+            let stopIndices = which(isStop, nsIndices, nsSentinelFill)
+            let computed = cummin(stopIndices, axis: 0, reverse: true)
             nextStopTensorBySetID[stopClassSetID] = computed
             nextStopTensor = computed
           }
@@ -559,20 +553,18 @@ func executeFastFamilies(
 }
 
 private func mlxUInt16Tensor(_ values: [UInt16]) -> MLXArray {
-  withMLXCPU { MLXArray(values, [values.count]).asType(.uint16) }
+  MLXArray(values, [values.count]).asType(.uint16)
 }
 
 private func mlxUInt16Filled(value: UInt16, count: Int) -> MLXArray {
-  withMLXCPU { broadcast(MLXArray(value).asType(.uint16), to: [count]) }
+  broadcast(MLXArray(value).asType(.uint16), to: [count])
 }
 
 private func mlxUInt8Filled(value: UInt8, count: Int) -> MLXArray {
-  withMLXCPU { broadcast(MLXArray(value).asType(.uint8), to: [count]) }
+  broadcast(MLXArray(value).asType(.uint8), to: [count])
 }
 
 private func mlxStackRows(_ rows: [MLXArray], pageSize: Int, dtype: DType) -> MLXArray {
-  withMLXCPU {
-    guard !rows.isEmpty else { return zeros([0, pageSize], dtype: dtype) }
+  guard !rows.isEmpty else { return zeros([0, pageSize], dtype: dtype) }
     return stacked(rows.map { $0.asType(dtype) }, axis: 0)
-  }
 }

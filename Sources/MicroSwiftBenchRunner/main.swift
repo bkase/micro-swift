@@ -109,36 +109,35 @@ func benchM4GPU(bytes: [UInt8], runtime: ArtifactRuntime, warmup: Int, measure: 
   let validLen = Int32(bytes.count)
   let gpuOptions = LexOptions(runtimeProfile: .v1Fallback, useGPUReduction: true)
 
-  mlxDefaultDevice = .gpu
-  defer { mlxDefaultDevice = .cpu }
+  return Device.withDefaultDevice(.gpu) {
+    for _ in 0..<warmup {
+      _ = TensorLexer.lexPage(
+        bytes: bytes, validLen: validLen, baseOffset: 0,
+        artifact: runtime, options: gpuOptions)
+    }
 
-  for _ in 0..<warmup {
-    _ = TensorLexer.lexPage(
-      bytes: bytes, validLen: validLen, baseOffset: 0,
-      artifact: runtime, options: gpuOptions)
+    let start = DispatchTime.now().uptimeNanoseconds
+    var tokenCount: Int32 = 0
+    for _ in 0..<measure {
+      let result = TensorLexer.lexPage(
+        bytes: bytes, validLen: validLen, baseOffset: 0,
+        artifact: runtime, options: gpuOptions)
+      tokenCount += result.rowCount
+    }
+    let elapsed = DispatchTime.now().uptimeNanoseconds - start
+
+    let totalBytes = bytes.count * measure
+    let bytesPerSec = Double(totalBytes) * 1_000_000_000 / Double(elapsed)
+
+    return BenchResult(
+      label: "M4 GPU (v1-fallback)",
+      inputBytes: bytes.count,
+      iterations: measure,
+      durationNanos: elapsed,
+      bytesPerSecond: bytesPerSec,
+      tokensPerIteration: Int(tokenCount) / max(1, measure)
+    )
   }
-
-  let start = DispatchTime.now().uptimeNanoseconds
-  var tokenCount: Int32 = 0
-  for _ in 0..<measure {
-    let result = TensorLexer.lexPage(
-      bytes: bytes, validLen: validLen, baseOffset: 0,
-      artifact: runtime, options: gpuOptions)
-    tokenCount += result.rowCount
-  }
-  let elapsed = DispatchTime.now().uptimeNanoseconds - start
-
-  let totalBytes = bytes.count * measure
-  let bytesPerSec = Double(totalBytes) * 1_000_000_000 / Double(elapsed)
-
-  return BenchResult(
-    label: "M4 GPU (v1-fallback)",
-    inputBytes: bytes.count,
-    iterations: measure,
-    durationNanos: elapsed,
-    bytesPerSecond: bytesPerSec,
-    tokensPerIteration: Int(tokenCount) / max(1, measure)
-  )
 }
 
 // --- M4 benchmark: Full TensorLexer.lexPage with v1Fallback ---

@@ -137,8 +137,7 @@ public enum PrefixedExecution {
     nextInvalidTensor: MLXArray,
     nextStopTensor: MLXArray?
   ) -> MLXArray {
-    withMLXCPU {
-      let pageLen = Int(byteTensor.shape[0])
+    let pageLen = Int(byteTensor.shape[0])
       guard pageLen > 0 else { return zeros([0], dtype: .uint16) }
 
       let prefixLen = prefix.count
@@ -235,7 +234,6 @@ public enum PrefixedExecution {
 
       // 6. Mask by prefix start positions
       return which(prefixStartMask, totalLen, zeros([pageLen], dtype: .uint16))
-    }
   }
 
   private static func normalizedNextStop(

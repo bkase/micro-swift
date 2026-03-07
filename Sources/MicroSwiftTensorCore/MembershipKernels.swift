@@ -29,9 +29,7 @@ public enum MembershipKernels {
     setID: UInt16,
     classSetRuntime: ClassSetRuntime
   ) -> MLXArray {
-    withMLXCPU {
-      let maskRow = classSetRuntime.mlxMask()[Int(setID)]
+    let maskRow = classSetRuntime.mlxMask()[Int(setID)]
       return maskRow.take(classIDTensor.asType(.int32)).asType(.bool)
-    }
   }
 }

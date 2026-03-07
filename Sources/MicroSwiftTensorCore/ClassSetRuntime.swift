@@ -18,7 +18,7 @@ public struct ClassSetRuntime: Sendable {
 
   /// MLX-backed mask for device execution. Created on demand.
   public func mlxMask() -> MLXArray {
-    withMLXCPU { MLXArray(hostMaskBytesStorage, [numClassSets, numByteClasses]) }
+    MLXArray(hostMaskBytesStorage, [numClassSets, numByteClasses])
   }
 
   public init(

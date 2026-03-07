@@ -34,8 +34,7 @@ public enum HeadTailExecution {
     tailClassSetID: UInt16,
     classSetRuntime: ClassSetRuntime
   ) -> MLXArray {
-    withMLXCPU {
-      let pageLen = Int(classIDTensor.shape[0])
+    let pageLen = Int(classIDTensor.shape[0])
       guard pageLen > 0 else { return zeros([0], dtype: .uint16) }
 
       let indices = MLXArray(Int32(0)..<Int32(pageLen), [pageLen])
@@ -84,7 +83,6 @@ public enum HeadTailExecution {
 
       // 8. candLen = where isStart, lengths, 0
       return which(isStart, lengths, zeros([pageLen], dtype: .uint16))
-    }
   }
 
   static func backendNameForTesting() -> String {

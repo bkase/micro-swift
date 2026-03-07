@@ -175,45 +175,43 @@ public enum WinnerReduction {
       )
     }
 
-    return withMLXCPU {
-      var bestLen = zeros([pageSize], dtype: .uint16)
-      var bestPriority = uint16Filled(value: WinnerTuple.empty.priorityRank, count: pageSize)
-      var bestRuleID = uint16Filled(value: WinnerTuple.empty.ruleID, count: pageSize)
-      var bestTokenKindID = zeros([pageSize], dtype: .uint16)
-      var bestMode = zeros([pageSize], dtype: .uint8)
+    var bestLen = zeros([pageSize], dtype: .uint16)
+    var bestPriority = uint16Filled(value: WinnerTuple.empty.priorityRank, count: pageSize)
+    var bestRuleID = uint16Filled(value: WinnerTuple.empty.ruleID, count: pageSize)
+    var bestTokenKindID = zeros([pageSize], dtype: .uint16)
+    var bestMode = zeros([pageSize], dtype: .uint8)
 
-      for ruleIndex in 0..<batch.ruleCount {
-        let candLen = batch.candLenByRule[ruleIndex].asType(.uint16)
-        let candPriority = batch.priorityRankByRule[ruleIndex].asType(.uint16)
-        let candRuleID = batch.ruleIDByRule[ruleIndex].asType(.uint16)
-        let candTokenKindID = batch.tokenKindIDByRule[ruleIndex].asType(.uint16)
-        let candMode = batch.modeByRule[ruleIndex].asType(.uint8)
+    for ruleIndex in 0..<batch.ruleCount {
+      let candLen = batch.candLenByRule[ruleIndex].asType(.uint16)
+      let candPriority = batch.priorityRankByRule[ruleIndex].asType(.uint16)
+      let candRuleID = batch.ruleIDByRule[ruleIndex].asType(.uint16)
+      let candTokenKindID = batch.tokenKindIDByRule[ruleIndex].asType(.uint16)
+      let candMode = batch.modeByRule[ruleIndex].asType(.uint8)
 
-        let longer = candLen .> bestLen
-        let sameLen = candLen .== bestLen
-        let positiveLen = candLen .> 0
-        let betterPriority = candPriority .< bestPriority
-        let samePriority = candPriority .== bestPriority
-        let betterRuleID = candRuleID .< bestRuleID
-        let tieBreak =
-          sameLen .&& positiveLen .&& (betterPriority .|| (samePriority .&& betterRuleID))
-        let contenderWins = longer .|| tieBreak
+      let longer = candLen .> bestLen
+      let sameLen = candLen .== bestLen
+      let positiveLen = candLen .> 0
+      let betterPriority = candPriority .< bestPriority
+      let samePriority = candPriority .== bestPriority
+      let betterRuleID = candRuleID .< bestRuleID
+      let tieBreak =
+        sameLen .&& positiveLen .&& (betterPriority .|| (samePriority .&& betterRuleID))
+      let contenderWins = longer .|| tieBreak
 
-        bestLen = which(contenderWins, candLen, bestLen).asType(.uint16)
-        bestPriority = which(contenderWins, candPriority, bestPriority).asType(.uint16)
-        bestRuleID = which(contenderWins, candRuleID, bestRuleID).asType(.uint16)
-        bestTokenKindID = which(contenderWins, candTokenKindID, bestTokenKindID).asType(.uint16)
-        bestMode = which(contenderWins, candMode, bestMode).asType(.uint8)
-      }
-
-      return WinnerTensors(
-        len: bestLen,
-        priorityRank: bestPriority,
-        ruleID: bestRuleID,
-        tokenKindID: bestTokenKindID,
-        mode: bestMode
-      )
+      bestLen = which(contenderWins, candLen, bestLen).asType(.uint16)
+      bestPriority = which(contenderWins, candPriority, bestPriority).asType(.uint16)
+      bestRuleID = which(contenderWins, candRuleID, bestRuleID).asType(.uint16)
+      bestTokenKindID = which(contenderWins, candTokenKindID, bestTokenKindID).asType(.uint16)
+      bestMode = which(contenderWins, candMode, bestMode).asType(.uint8)
     }
+
+    return WinnerTensors(
+      len: bestLen,
+      priorityRank: bestPriority,
+      ruleID: bestRuleID,
+      tokenKindID: bestTokenKindID,
+      mode: bestMode
+    )
   }
 
   /// GPU-friendly reduction using argMax on a composite score.
@@ -339,23 +337,21 @@ public enum WinnerReduction {
 }
 
 private func stackRows(_ rows: [MLXArray], pageSize: Int, dtype: DType) -> MLXArray {
-  withMLXCPU {
-    guard !rows.isEmpty else { return zeros([0, pageSize], dtype: dtype) }
+  guard !rows.isEmpty else { return zeros([0, pageSize], dtype: dtype) }
     let normalized = rows.map { $0.asType(dtype) }
     return stacked(normalized, axis: 0)
-  }
 }
 
 private func uint16Tensor(_ values: [UInt16]) -> MLXArray {
-  withMLXCPU { MLXArray(values, [values.count]).asType(.uint16) }
+  MLXArray(values, [values.count]).asType(.uint16)
 }
 
 private func uint16Filled(value: UInt16, count: Int) -> MLXArray {
-  withMLXCPU { broadcast(MLXArray(value).asType(.uint16), to: [count]) }
+  broadcast(MLXArray(value).asType(.uint16), to: [count])
 }
 
 private func uint8Filled(value: UInt8, count: Int) -> MLXArray {
-  withMLXCPU { broadcast(MLXArray(value).asType(.uint8), to: [count]) }
+  broadcast(MLXArray(value).asType(.uint8), to: [count])
 }
 
 public struct CandidateWinner: Sendable, Equatable {
@@ -431,61 +427,59 @@ public func integrateWithFallback(
     )
   }
 
-  return withMLXCPU {
-    let fallbackLen = MLXArray(
-      normalized(
-        fallbackResult.fallbackLen, count: pageWidth, fill: 0
-      ),
-      [pageWidth]
-    ).asType(.uint16)
-    let fallbackPriority = MLXArray(
-      normalized(
-        fallbackResult.fallbackPriorityRank, count: pageWidth, fill: 0
-      ),
-      [pageWidth]
-    ).asType(.uint16)
-    let fallbackRuleID = MLXArray(
-      normalized(
-        fallbackResult.fallbackRuleID, count: pageWidth, fill: 0
-      ),
-      [pageWidth]
-    ).asType(.uint16)
-    let fallbackTokenKindID = MLXArray(
-      normalized(
-        fallbackResult.fallbackTokenKindID, count: pageWidth, fill: 0
-      ),
-      [pageWidth]
-    ).asType(.uint16)
-    let fallbackMode = MLXArray(
-      normalized(
-        fallbackResult.fallbackMode, count: pageWidth, fill: 0
-      ),
-      [pageWidth]
-    ).asType(.uint8)
+  let fallbackLen = MLXArray(
+    normalized(
+      fallbackResult.fallbackLen, count: pageWidth, fill: 0
+    ),
+    [pageWidth]
+  ).asType(.uint16)
+  let fallbackPriority = MLXArray(
+    normalized(
+      fallbackResult.fallbackPriorityRank, count: pageWidth, fill: 0
+    ),
+    [pageWidth]
+  ).asType(.uint16)
+  let fallbackRuleID = MLXArray(
+    normalized(
+      fallbackResult.fallbackRuleID, count: pageWidth, fill: 0
+    ),
+    [pageWidth]
+  ).asType(.uint16)
+  let fallbackTokenKindID = MLXArray(
+    normalized(
+      fallbackResult.fallbackTokenKindID, count: pageWidth, fill: 0
+    ),
+    [pageWidth]
+  ).asType(.uint16)
+  let fallbackMode = MLXArray(
+    normalized(
+      fallbackResult.fallbackMode, count: pageWidth, fill: 0
+    ),
+    [pageWidth]
+  ).asType(.uint8)
 
-    let fastLen = fastWinners.len.asType(.uint16)
-    let fastPriority = fastWinners.priorityRank.asType(.uint16)
-    let fastRuleID = fastWinners.ruleID.asType(.uint16)
-    let fastTokenKindID = fastWinners.tokenKindID.asType(.uint16)
-    let fastMode = fastWinners.mode.asType(.uint8)
+  let fastLen = fastWinners.len.asType(.uint16)
+  let fastPriority = fastWinners.priorityRank.asType(.uint16)
+  let fastRuleID = fastWinners.ruleID.asType(.uint16)
+  let fastTokenKindID = fastWinners.tokenKindID.asType(.uint16)
+  let fastMode = fastWinners.mode.asType(.uint8)
 
-    let longer = fallbackLen .> fastLen
-    let sameLen = fallbackLen .== fastLen
-    let positiveLen = fallbackLen .> 0
-    let betterPriority = fallbackPriority .< fastPriority
-    let samePriority = fallbackPriority .== fastPriority
-    let betterRuleID = fallbackRuleID .< fastRuleID
-    let tieBreak = sameLen .&& positiveLen .&& (betterPriority .|| (samePriority .&& betterRuleID))
-    let fallbackWins = longer .|| tieBreak
+  let longer = fallbackLen .> fastLen
+  let sameLen = fallbackLen .== fastLen
+  let positiveLen = fallbackLen .> 0
+  let betterPriority = fallbackPriority .< fastPriority
+  let samePriority = fallbackPriority .== fastPriority
+  let betterRuleID = fallbackRuleID .< fastRuleID
+  let tieBreak = sameLen .&& positiveLen .&& (betterPriority .|| (samePriority .&& betterRuleID))
+  let fallbackWins = longer .|| tieBreak
 
-    return WinnerReduction.WinnerTensors(
-      len: which(fallbackWins, fallbackLen, fastLen).asType(.uint16),
-      priorityRank: which(fallbackWins, fallbackPriority, fastPriority).asType(.uint16),
-      ruleID: which(fallbackWins, fallbackRuleID, fastRuleID).asType(.uint16),
-      tokenKindID: which(fallbackWins, fallbackTokenKindID, fastTokenKindID).asType(.uint16),
-      mode: which(fallbackWins, fallbackMode, fastMode).asType(.uint8)
-    )
-  }
+  return WinnerReduction.WinnerTensors(
+    len: which(fallbackWins, fallbackLen, fastLen).asType(.uint16),
+    priorityRank: which(fallbackWins, fallbackPriority, fastPriority).asType(.uint16),
+    ruleID: which(fallbackWins, fallbackRuleID, fastRuleID).asType(.uint16),
+    tokenKindID: which(fallbackWins, fallbackTokenKindID, fastTokenKindID).asType(.uint16),
+    mode: which(fallbackWins, fallbackMode, fastMode).asType(.uint8)
+  )
 }
 
 public func integrateWithFallback(

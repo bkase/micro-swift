@@ -46,7 +46,7 @@ public struct PageLexResult: Sendable, Equatable {
 
   /// MLX-backed packed rows for device execution. Created on demand.
   public func mlxPackedRows() -> MLXArray {
-    withMLXCPU { MLXArray(hostPackedRowsStorage).asType(.uint64) }
+    MLXArray(hostPackedRowsStorage).asType(.uint64)
   }
 
   public static func == (lhs: PageLexResult, rhs: PageLexResult) -> Bool {

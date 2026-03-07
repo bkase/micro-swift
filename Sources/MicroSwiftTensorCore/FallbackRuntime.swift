@@ -71,20 +71,20 @@ public struct FallbackRuntime: Sendable {
   }
 
   // MLX-backed accessors for device execution. Created on demand.
-  public func mlxStepLo() -> MLXArray { withMLXCPU { MLXArray(hostStepLoStorage) } }
-  public func mlxStepHi() -> MLXArray { withMLXCPU { MLXArray(hostStepHiStorage) } }
-  public func mlxAcceptLoByRule() -> MLXArray { withMLXCPU { MLXArray(hostAcceptLoByRuleStorage) } }
-  public func mlxAcceptHiByRule() -> MLXArray { withMLXCPU { MLXArray(hostAcceptHiByRuleStorage) } }
+  public func mlxStepLo() -> MLXArray { MLXArray(hostStepLoStorage) }
+  public func mlxStepHi() -> MLXArray { MLXArray(hostStepHiStorage) }
+  public func mlxAcceptLoByRule() -> MLXArray { MLXArray(hostAcceptLoByRuleStorage) }
+  public func mlxAcceptHiByRule() -> MLXArray { MLXArray(hostAcceptHiByRuleStorage) }
   public func mlxGlobalRuleIDByFallbackRule() -> MLXArray {
-    withMLXCPU { MLXArray(hostGlobalRuleIDByFallbackRuleStorage) }
+    MLXArray(hostGlobalRuleIDByFallbackRuleStorage)
   }
   public func mlxPriorityRankByFallbackRule() -> MLXArray {
-    withMLXCPU { MLXArray(hostPriorityRankByFallbackRuleStorage) }
+    MLXArray(hostPriorityRankByFallbackRuleStorage)
   }
   public func mlxTokenKindIDByFallbackRule() -> MLXArray {
-    withMLXCPU { MLXArray(hostTokenKindIDByFallbackRuleStorage) }
+    MLXArray(hostTokenKindIDByFallbackRuleStorage)
   }
   public func mlxModeByFallbackRule() -> MLXArray {
-    withMLXCPU { MLXArray(hostModeByFallbackRuleStorage) }
+    MLXArray(hostModeByFallbackRuleStorage)
   }
 }

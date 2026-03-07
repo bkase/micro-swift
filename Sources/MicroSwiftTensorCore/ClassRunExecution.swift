@@ -34,8 +34,7 @@ public enum ClassRunExecution {
     minLength: UInt16,
     classSetRuntime: ClassSetRuntime
   ) -> MLXArray {
-    withMLXCPU {
-      let pageLen = Int(classIDTensor.shape[0])
+    let pageLen = Int(classIDTensor.shape[0])
       guard pageLen > 0 else { return zeros([0], dtype: .uint16) }
 
       let indices = MLXArray(Int32(0)..<Int32(pageLen), [pageLen])
@@ -81,7 +80,6 @@ public enum ClassRunExecution {
       }
       let minLenTensor = MLXArray(minLength)
       return which(candLen .>= minLenTensor, candLen, zeros([pageLen], dtype: .uint16))
-    }
   }
 
   public static func backendNameForTesting() -> String {
