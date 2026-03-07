@@ -8,11 +8,29 @@ public enum TensorLexer {
     artifact: ArtifactRuntime,
     options: LexOptions
   ) -> PageLexResult {
-    _ = baseOffset
     precondition(validLen >= 0, "validLen must be non-negative")
     precondition(Int(validLen) <= bytes.count, "validLen must be <= bytes.count")
 
-    let boundedValidLen = max(0, min(Int(validLen), bytes.count))
+    let selectedBucket =
+      PageBucket.bucket(for: Int32(bytes.count))
+      ?? PageBucket(byteCapacity: Int32(max(bytes.count, 1)))
+    let compiledPage = CompiledPageInput(
+      bytes: bytes,
+      validLen: validLen,
+      baseOffset: baseOffset,
+      bucket: selectedBucket,
+      artifact: artifact
+    )
+    return lexPage(compiledPage: compiledPage, artifact: artifact, options: options)
+  }
+
+  public static func lexPage(
+    compiledPage: CompiledPageInput,
+    artifact: ArtifactRuntime,
+    options: LexOptions
+  ) -> PageLexResult {
+    _ = compiledPage.baseOffset
+    let boundedValidLen = max(0, min(Int(compiledPage.validLen), compiledPage.byteCapacity))
     guard boundedValidLen > 0 else {
       return PageLexResult(
         packedRows: [],
@@ -22,16 +40,15 @@ public enum TensorLexer {
       )
     }
 
+    let hostView = compiledPage.extractHostExecutionView(at: .transitionalFamilyExecution)
+
     // Phase A: Byte classification
-    let classIDs = ByteClassifier.classify(
-      bytes: bytes,
-      byteToClassLUT: artifact.hostByteToClassLUT()
-    )
-    let validMask = ByteClassifier.validityMask(pageSize: bytes.count, validLen: validLen)
+    let classIDs = hostView.classIDs
+    let validMask = hostView.validMask
 
     // Phase B: Per-rule candidate generation (using RuleBuckets)
     let candidates = makeFastCandidates(
-      bytes: bytes,
+      bytes: hostView.bytes,
       classIDs: classIDs,
       validMask: validMask,
       validLen: Int32(boundedValidLen),
@@ -39,7 +56,7 @@ public enum TensorLexer {
     )
 
     // Phase C: Hierarchical winner reduction
-    var winners = WinnerReduction.reduce(candidates: candidates, pageSize: bytes.count)
+    var winners = WinnerReduction.reduce(candidates: candidates, pageSize: hostView.bytes.count)
 
     if options.runtimeProfile == .v1Fallback, let fallback = artifact.fallback {
       let fallbackResult = FallbackKernelRunner(fallback: fallback).evaluatePage(
@@ -49,7 +66,7 @@ public enum TensorLexer {
       winners = integrateWithFallback(
         fastWinners: winners,
         fallbackResult: fallbackResult,
-        pageWidth: bytes.count
+        pageWidth: hostView.bytes.count
       )
     }
 
@@ -59,7 +76,7 @@ public enum TensorLexer {
     // Phase E-G: Remap, coverage, emission via TransportEmitter
     return TransportEmitter.emit(
       selectedTokens: selected,
-      bytes: bytes,
+      bytes: hostView.bytes,
       validLen: Int32(boundedValidLen),
       remapTables: artifact.keywordRemaps,
       options: options,

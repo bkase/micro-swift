@@ -1,4 +1,5 @@
 public struct PageBucket: Sendable, Equatable {
+  public static let neutralPaddingByte: UInt8 = 0
   public let byteCapacity: Int32
 
   public init(byteCapacity: Int32) {

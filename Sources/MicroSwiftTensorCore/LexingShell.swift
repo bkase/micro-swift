@@ -42,9 +42,7 @@ public struct LexingShell: Sendable {
         (
           result: padResult(
             TensorLexer.lexPage(
-              bytes: page.byteSlice,
-              validLen: page.validLen,
-              baseOffset: page.baseOffset,
+              compiledPage: CompiledPageInput(preparedPage: page, artifact: artifact),
               artifact: artifact,
               options: options
             ),
