@@ -69,29 +69,7 @@ public enum TensorLexer {
     }
 
     let hostView = CompiledPageInput.hostExecutionViewForPipeline(compiledPage)
-
-    // Phase A/B: Byte classification + per-rule candidate generation
-    let candidateBatch = makeFastCandidateBatch(
-      compiledPage: compiledPage,
-      hostView: hostView,
-      validLen: Int32(boundedValidLen),
-      artifact: artifact
-    )
-
-    // Phase C: Device-resident winner reduction
-    let winnerTensors: WinnerReduction.WinnerTensors
-    if options.useGPUReduction {
-      winnerTensors = WinnerReduction.reduceGPU(
-        batch: candidateBatch,
-        pageSize: hostView.bytes.count
-      )
-    } else {
-      winnerTensors = WinnerReduction.reduce(
-        batch: candidateBatch,
-        pageSize: hostView.bytes.count
-      )
-    }
-    _ = WinnerReduction.hostWinners(from: winnerTensors, pageSize: hostView.bytes.count)
+    let pageSize = hostView.bytes.count
 
     let cacheKey = makeFastPathCacheKey(
       compiledPage: compiledPage,
@@ -104,7 +82,7 @@ public enum TensorLexer {
     do {
       cacheEntry = try fastPathKernelCache.getOrCreate(key: cacheKey, traceID: traceID) {
         try makeFastPathCacheEntry(
-          pageSize: hostView.bytes.count,
+          pageSize: pageSize,
           artifact: artifact,
           options: options
         )
@@ -120,26 +98,34 @@ public enum TensorLexer {
         validLen: Int32(boundedValidLen)
       )
     } else {
-      fallbackResult = emptyFallbackResult(pageWidth: hostView.bytes.count)
+      fallbackResult = emptyFallbackResult(pageWidth: pageSize)
     }
 
     guard let fastPathGraph = cacheEntry.fastPathGraph else {
       preconditionFailure("KernelCacheEntry missing fastPathGraph for fast-path execution")
     }
 
-    // Phase C/D: Compiled winner reduction + fallback merge + greedy selection.
-    let selectedTensors = fastPathGraph.execute(
-      candidateBatch: candidateBatch,
-      fallbackResult: fallbackResult,
-      validMaskTensor: compiledPage.validRangeMask(dtype: .bool)
-    )
-
-    // Phase E-G: Remap, coverage/error spans, and packed-row assembly.
+    // Build tensors for the compiled graph
     let byteTensor =
       compiledPage.byteTensor
       ?? withMLXCPU {
-        MLXArray(hostView.bytes, [hostView.bytes.count]).asType(.uint8)
+        MLXArray(hostView.bytes, [pageSize]).asType(.uint8)
       }
+    let classIDTensor =
+      compiledPage.classIDTensor
+      ?? withMLXCPU {
+        let byteIndices = byteTensor.asType(.int32)
+        return artifact.mlxByteToClassLUT().take(byteIndices).asType(.uint16)
+      }
+    let validMaskTensor = compiledPage.validRangeMask(dtype: .bool)
+
+    // Compiled candidate generation + winner reduction + fallback merge + greedy selection.
+    let selectedTensors = fastPathGraph.execute(
+      byteTensor: byteTensor,
+      classIDTensor: classIDTensor,
+      validMaskTensor: validMaskTensor,
+      fallbackResult: fallbackResult
+    )
     return TransportEmitter.emit(
       selectedTokenTensors: selectedTensors,
       byteTensor: byteTensor,
@@ -202,7 +188,7 @@ public enum TensorLexer {
 
     return KernelCacheEntry(
       fallbackRunner: fallbackRunner,
-      fastPathGraph: FastPathCompiledGraph(pageSize: pageSize),
+      fastPathGraph: FastPathCompiledGraph(pageSize: pageSize, artifact: artifact),
       runtimeMetadata: metadata,
       createdAt: Date()
     )

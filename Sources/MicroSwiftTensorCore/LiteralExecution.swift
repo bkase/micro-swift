@@ -92,6 +92,27 @@ public enum LiteralExecution {
     }
   }
 
+  /// Pure MLX tensor evaluation of a literal rule using raw tensors.
+  /// No CompiledPageInput required. Returns candLen[P] as MLXArray (uint16).
+  public static func evaluateLiteralMLX(
+    byteTensor: MLXArray,
+    validMaskTensor: MLXArray,
+    literalBytes: [UInt8]
+  ) -> MLXArray {
+    evaluateLiteral(
+      byteTensor: byteTensor,
+      validMaskTensor: validMaskTensor,
+      pageLen: Int(byteTensor.shape[0]),
+      literalBytes: literalBytes,
+      shiftedBytes: { offset in
+        ShiftedTensorView.forward(byteTensor, by: offset)
+      },
+      shiftedMask: { offset in
+        ShiftedTensorView.forwardValidMask(validMaskTensor, by: offset)
+      }
+    )
+  }
+
   private static func evaluateLiteral(
     byteTensor: MLXArray,
     validMaskTensor: MLXArray,

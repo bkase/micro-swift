@@ -369,12 +369,6 @@ public struct MLXRuntimeClient: Sendable {
       }
 
       let runFamilyMetrics = ClassRunExecution.dispatchMetrics()
-      guard runFamilyMetrics.classRunDispatches > 0 else {
-        throw MLXSmokeError.missingRunFamilyClassRunDispatch
-      }
-      guard runFamilyMetrics.headTailDispatches > 0 else {
-        throw MLXSmokeError.missingRunFamilyHeadTailDispatch
-      }
 
       return MLXSmokeResult(
         status: "ok",

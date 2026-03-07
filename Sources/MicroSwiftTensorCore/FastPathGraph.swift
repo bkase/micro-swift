@@ -1,5 +1,6 @@
 import Foundation
 import MLX
+import MicroSwiftLexerGen
 
 public struct FastPathGraphMetrics: Codable, Sendable, Equatable {
   public let compileCount: Int
@@ -22,39 +23,100 @@ public struct FastPathGraphMetrics: Codable, Sendable, Equatable {
 
 public struct FastPathCompiledGraph: Sendable {
   private let pageSize: Int
-  private let reduceAndSelectGraph: @Sendable ([MLXArray]) -> [MLXArray]
+  private let candidateAndSelectGraph: @Sendable ([MLXArray]) -> [MLXArray]
 
-  public init(pageSize: Int) {
+  public init(pageSize: Int, artifact: ArtifactRuntime) {
     precondition(pageSize >= 0, "pageSize must be non-negative")
     self.pageSize = pageSize
-    let rawGraph: @Sendable ([MLXArray]) -> [MLXArray] = { tensors in
-      Self.reduceAndSelectGraph(tensors: tensors, pageSize: pageSize)
+
+    let buckets = RuleBuckets.build(from: artifact.rules)
+    let classSetRuntime = artifact.classSetRuntime
+
+    let modeByte: (RuleMode) -> UInt8 = { $0 == .skip ? 1 : 0 }
+
+    var literalRules: [LiteralRuleInfo] = []
+    for literalLength in buckets.literalBuckets.keys.sorted() {
+      guard let rules = buckets.literalBuckets[literalLength] else { continue }
+      for rule in rules {
+        guard case .literal(let literalBytes) = rule.plan else { continue }
+        literalRules.append(
+          LiteralRuleInfo(
+            ruleID: rule.ruleID, tokenKindID: rule.tokenKindID,
+            priorityRank: rule.priorityRank, mode: modeByte(rule.mode),
+            literalBytes: literalBytes
+          ))
+      }
     }
-    self.reduceAndSelectGraph =
+
+    var classRunRules: [ClassRunRuleInfo] = []
+    for rule in buckets.classRunRules {
+      guard case .runClassRun(let bodyClassSetID, let minLength) = rule.plan else { continue }
+      classRunRules.append(
+        ClassRunRuleInfo(
+          ruleID: rule.ruleID, tokenKindID: rule.tokenKindID,
+          priorityRank: rule.priorityRank, mode: modeByte(rule.mode),
+          bodyClassSetID: bodyClassSetID, minLength: minLength
+        ))
+    }
+
+    var headTailRules: [HeadTailRuleInfo] = []
+    for rule in buckets.headTailRules {
+      guard case .runHeadTail(let headClassSetID, let tailClassSetID) = rule.plan else { continue }
+      headTailRules.append(
+        HeadTailRuleInfo(
+          ruleID: rule.ruleID, tokenKindID: rule.tokenKindID,
+          priorityRank: rule.priorityRank, mode: modeByte(rule.mode),
+          headClassSetID: headClassSetID, tailClassSetID: tailClassSetID
+        ))
+    }
+
+    var prefixedRules: [PrefixedRuleInfo] = []
+    for rule in buckets.prefixedRules {
+      guard case .runPrefixed(let prefix, let bodyClassSetID, let stopClassSetID) = rule.plan
+      else { continue }
+      prefixedRules.append(
+        PrefixedRuleInfo(
+          ruleID: rule.ruleID, tokenKindID: rule.tokenKindID,
+          priorityRank: rule.priorityRank, mode: modeByte(rule.mode),
+          prefix: prefix, bodyClassSetID: bodyClassSetID, stopClassSetID: stopClassSetID
+        ))
+    }
+
+    let capturedLiteralRules = literalRules
+    let capturedClassRunRules = classRunRules
+    let capturedHeadTailRules = headTailRules
+    let capturedPrefixedRules = prefixedRules
+    let rawGraph: @Sendable ([MLXArray]) -> [MLXArray] = { tensors in
+      Self.candidateAndSelectGraph(
+        tensors: tensors, pageSize: pageSize,
+        literalRules: capturedLiteralRules, classRunRules: capturedClassRunRules,
+        headTailRules: capturedHeadTailRules, prefixedRules: capturedPrefixedRules,
+        classSetRuntime: classSetRuntime
+      )
+    }
+    self.candidateAndSelectGraph =
       Self.shouldUseMLXCompile()
       ? compile(rawGraph)
       : rawGraph
   }
 
   public func execute(
-    candidateBatch: WinnerReduction.RuleTensorBatch,
-    fallbackResult: FallbackPageResult,
-    validMaskTensor: MLXArray
+    byteTensor: MLXArray,
+    classIDTensor: MLXArray,
+    validMaskTensor: MLXArray,
+    fallbackResult: FallbackPageResult
   ) -> GreedySelector.SelectedTokenTensors {
     let fallbackWinners = makeFallbackWinnerTensors(
       fallbackResult: fallbackResult, pageSize: pageSize)
-    let outputs = reduceAndSelectGraph([
-      candidateBatch.candLenByRule,
-      candidateBatch.priorityRankByRule,
-      candidateBatch.ruleIDByRule,
-      candidateBatch.tokenKindIDByRule,
-      candidateBatch.modeByRule,
+    let outputs = candidateAndSelectGraph([
+      byteTensor.asType(.uint8),
+      classIDTensor.asType(.uint16),
+      validMaskTensor.asType(.bool),
       fallbackWinners.len,
       fallbackWinners.priorityRank,
       fallbackWinners.ruleID,
       fallbackWinners.tokenKindID,
       fallbackWinners.mode,
-      validMaskTensor.asType(.bool),
     ])
 
     precondition(outputs.count == 6, "compiled fast-path graph must return 6 outputs")
@@ -68,25 +130,175 @@ public struct FastPathCompiledGraph: Sendable {
     )
   }
 
-  private static func reduceAndSelectGraph(tensors: [MLXArray], pageSize: Int) -> [MLXArray] {
-    precondition(tensors.count == 11, "compiled fast-path graph expects 11 inputs")
+  private struct LiteralRuleInfo: Sendable {
+    let ruleID: UInt16
+    let tokenKindID: UInt16
+    let priorityRank: UInt16
+    let mode: UInt8
+    let literalBytes: [UInt8]
+  }
+  private struct ClassRunRuleInfo: Sendable {
+    let ruleID: UInt16
+    let tokenKindID: UInt16
+    let priorityRank: UInt16
+    let mode: UInt8
+    let bodyClassSetID: UInt16
+    let minLength: UInt16
+  }
+  private struct HeadTailRuleInfo: Sendable {
+    let ruleID: UInt16
+    let tokenKindID: UInt16
+    let priorityRank: UInt16
+    let mode: UInt8
+    let headClassSetID: UInt16
+    let tailClassSetID: UInt16
+  }
+  private struct PrefixedRuleInfo: Sendable {
+    let ruleID: UInt16
+    let tokenKindID: UInt16
+    let priorityRank: UInt16
+    let mode: UInt8
+    let prefix: [UInt8]
+    let bodyClassSetID: UInt16
+    let stopClassSetID: UInt16?
+  }
 
-    let batch = WinnerReduction.RuleTensorBatch(
-      candLenByRule: tensors[0],
-      priorityRankByRule: tensors[1],
-      ruleIDByRule: tensors[2],
-      tokenKindIDByRule: tensors[3],
-      modeByRule: tensors[4]
-    )
+  private static func candidateAndSelectGraph(
+    tensors: [MLXArray],
+    pageSize: Int,
+    literalRules: [LiteralRuleInfo],
+    classRunRules: [ClassRunRuleInfo],
+    headTailRules: [HeadTailRuleInfo],
+    prefixedRules: [PrefixedRuleInfo],
+    classSetRuntime: ClassSetRuntime
+  ) -> [MLXArray] {
+    precondition(tensors.count == 8, "compiled fast-path graph expects 8 inputs")
+
+    let byteTensor = tensors[0].asType(.uint8)
+    let classIDTensor = tensors[1].asType(.uint16)
+    let validMask = tensors[2].asType(.bool)
     let fallbackWinners = WinnerReduction.WinnerTensors(
-      len: tensors[5],
-      priorityRank: tensors[6],
-      ruleID: tensors[7],
-      tokenKindID: tensors[8],
-      mode: tensors[9]
+      len: tensors[3],
+      priorityRank: tensors[4],
+      ruleID: tensors[5],
+      tokenKindID: tensors[6],
+      mode: tensors[7]
     )
-    let validMask = tensors[10].asType(.bool)
 
+    // Precompute shared tensor resources
+    let indices = MLXArray(Int32(0)..<Int32(pageSize), [pageSize])
+    let sentinelFill = broadcast(MLXArray(Int32(pageSize)), to: [pageSize])
+    let invalidIndices = which(.!validMask, indices, sentinelFill)
+    let nextInvalidTensor = cummin(invalidIndices, axis: 0, reverse: true)
+
+    var lengthRows: [MLXArray] = []
+    var priorityRows: [MLXArray] = []
+    var ruleRows: [MLXArray] = []
+    var tokenRows: [MLXArray] = []
+    var modeRows: [MLXArray] = []
+
+    let totalRules =
+      literalRules.count + classRunRules.count + headTailRules.count + prefixedRules.count
+    lengthRows.reserveCapacity(totalRules)
+    priorityRows.reserveCapacity(totalRules)
+    ruleRows.reserveCapacity(totalRules)
+    tokenRows.reserveCapacity(totalRules)
+    modeRows.reserveCapacity(totalRules)
+
+    func appendRow(
+      ruleID: UInt16, tokenKindID: UInt16, priorityRank: UInt16, mode: UInt8, candLen: MLXArray
+    ) {
+      lengthRows.append(candLen.asType(.uint16))
+      priorityRows.append(broadcast(MLXArray(priorityRank).asType(.uint16), to: [pageSize]))
+      ruleRows.append(broadcast(MLXArray(ruleID).asType(.uint16), to: [pageSize]))
+      tokenRows.append(broadcast(MLXArray(tokenKindID).asType(.uint16), to: [pageSize]))
+      modeRows.append(broadcast(MLXArray(mode).asType(.uint8), to: [pageSize]))
+    }
+
+    // Literal rules
+    for rule in literalRules {
+      appendRow(
+        ruleID: rule.ruleID, tokenKindID: rule.tokenKindID,
+        priorityRank: rule.priorityRank, mode: rule.mode,
+        candLen: LiteralExecution.evaluateLiteralMLX(
+          byteTensor: byteTensor, validMaskTensor: validMask,
+          literalBytes: rule.literalBytes
+        )
+      )
+    }
+
+    // ClassRun rules
+    for rule in classRunRules {
+      appendRow(
+        ruleID: rule.ruleID, tokenKindID: rule.tokenKindID,
+        priorityRank: rule.priorityRank, mode: rule.mode,
+        candLen: ClassRunExecution.evaluateClassRunMLX(
+          classIDTensor: classIDTensor, validMaskTensor: validMask,
+          bodyClassSetID: rule.bodyClassSetID, minLength: rule.minLength,
+          classSetRuntime: classSetRuntime
+        )
+      )
+    }
+
+    // HeadTail rules
+    for rule in headTailRules {
+      appendRow(
+        ruleID: rule.ruleID, tokenKindID: rule.tokenKindID,
+        priorityRank: rule.priorityRank, mode: rule.mode,
+        candLen: HeadTailExecution.evaluateHeadTailMLX(
+          classIDTensor: classIDTensor, validMaskTensor: validMask,
+          headClassSetID: rule.headClassSetID, tailClassSetID: rule.tailClassSetID,
+          classSetRuntime: classSetRuntime
+        )
+      )
+    }
+
+    // Prefixed rules (with shared nextStop caching)
+    var nextStopTensorBySetID: [UInt16: MLXArray] = [:]
+    for rule in prefixedRules {
+      let nextStopTensor: MLXArray?
+      if let stopClassSetID = rule.stopClassSetID {
+        if let cached = nextStopTensorBySetID[stopClassSetID] {
+          nextStopTensor = cached
+        } else {
+          let stopMember = MembershipKernels.membershipMaskTensor(
+            classIDTensor: classIDTensor, setID: stopClassSetID,
+            classSetRuntime: classSetRuntime
+          )
+          let isStop = stopMember .&& validMask
+          let stopIndices = which(isStop, indices, sentinelFill)
+          let computed = cummin(stopIndices, axis: 0, reverse: true)
+          nextStopTensorBySetID[stopClassSetID] = computed
+          nextStopTensor = computed
+        }
+      } else {
+        nextStopTensor = nil
+      }
+
+      appendRow(
+        ruleID: rule.ruleID, tokenKindID: rule.tokenKindID,
+        priorityRank: rule.priorityRank, mode: rule.mode,
+        candLen: PrefixedExecution.evaluatePrefixedMLX(
+          byteTensor: byteTensor, classIDTensor: classIDTensor,
+          validMaskTensor: validMask, prefix: rule.prefix,
+          bodyClassSetID: rule.bodyClassSetID,
+          classSetRuntime: classSetRuntime,
+          nextInvalidTensor: nextInvalidTensor,
+          nextStopTensor: nextStopTensor
+        )
+      )
+    }
+
+    // Stack into batch
+    let batch = WinnerReduction.RuleTensorBatch(
+      candLenByRule: stackRowsInline(lengthRows, pageSize: pageSize, dtype: .uint16),
+      priorityRankByRule: stackRowsInline(priorityRows, pageSize: pageSize, dtype: .uint16),
+      ruleIDByRule: stackRowsInline(ruleRows, pageSize: pageSize, dtype: .uint16),
+      tokenKindIDByRule: stackRowsInline(tokenRows, pageSize: pageSize, dtype: .uint16),
+      modeByRule: stackRowsInline(modeRows, pageSize: pageSize, dtype: .uint8)
+    )
+
+    // Reduce → merge with fallback → greedy select
     let fastWinners = WinnerReduction.reduce(batch: batch, pageSize: pageSize)
     let merged = mergeFastAndFallback(
       fastWinners: fastWinners,
@@ -109,6 +321,13 @@ public struct FastPathCompiledGraph: Sendable {
   private static func shouldUseMLXCompile() -> Bool {
     let env = ProcessInfo.processInfo.environment
     return env["MICROSWIFT_ENABLE_MLX_COMPILE"] == "1"
+  }
+}
+
+private func stackRowsInline(_ rows: [MLXArray], pageSize: Int, dtype: DType) -> MLXArray {
+  withMLXCPU {
+    guard !rows.isEmpty else { return zeros([0, pageSize], dtype: dtype) }
+    return stacked(rows.map { $0.asType(dtype) }, axis: 0)
   }
 }
 

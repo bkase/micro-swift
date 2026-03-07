@@ -14,8 +14,8 @@ fast-cache-hits: 3
 fast-cache-misses: 3
 forbidden-mid-pipeline-host-extractions: 0
 run-family-backend: metal-test-device
-run-family-classRun-dispatches: 6
-run-family-headTail-dispatches: 6
+run-family-classRun-dispatches: 0
+run-family-headTail-dispatches: 0
 literal-workload-rows: 5
 run-workload-rows: 5
 prefixed-workload-rows: 3
