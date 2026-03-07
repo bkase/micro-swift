@@ -1,7 +1,34 @@
+import Foundation
 import MLX
 import MicroSwiftLexerGen
 
 public enum TensorLexer {
+  private static let fastPathCacheEventPrefix = "fast-path-graph-cache"
+  private static let fastPathDefaultDeviceID = "mlx-cpu"
+  private static let fastPathCacheLogSink = KernelCacheLogSink()
+  private static let fastPathKernelCache = KernelCache(
+    eventPrefix: fastPathCacheEventPrefix,
+    logSink: fastPathCacheLogSink.record
+  )
+
+  public static func resetFastPathGraphCache() {
+    fastPathKernelCache.clear()
+    fastPathCacheLogSink.clear()
+  }
+
+  public static func fastPathGraphMetrics() -> FastPathGraphMetrics {
+    let events = fastPathCacheLogSink.decodedRecords()
+    let compileCount = events.filter { $0.event == "\(fastPathCacheEventPrefix)-store" }.count
+    let cacheHits = events.filter { $0.event == "\(fastPathCacheEventPrefix)-hit" }.count
+    let cacheMisses = events.filter { $0.event == "\(fastPathCacheEventPrefix)-miss" }.count
+    return FastPathGraphMetrics(
+      compileCount: compileCount,
+      cacheHits: cacheHits,
+      cacheMisses: cacheMisses,
+      cacheEvents: events
+    )
+  }
+
   public static func lexPage(
     bytes: [UInt8],
     validLen: Int32,
@@ -51,29 +78,48 @@ public enum TensorLexer {
       artifact: artifact
     )
 
-    // Phase C: Device-resident winner reduction and fallback merge
-    var winnerTensors = WinnerReduction.reduce(
-      batch: candidateBatch,
-      pageSize: hostView.bytes.count
+    let cacheKey = makeFastPathCacheKey(
+      compiledPage: compiledPage,
+      artifact: artifact,
+      options: options
     )
+    let traceID = "fast-path-\(UUID().uuidString)"
 
-    if options.runtimeProfile == .v1Fallback, let fallback = artifact.fallback {
-      let fallbackResult = FallbackKernelRunner(fallback: fallback).evaluatePage(
+    let cacheEntry: KernelCacheEntry
+    do {
+      cacheEntry = try fastPathKernelCache.getOrCreate(key: cacheKey, traceID: traceID) {
+        try makeFastPathCacheEntry(
+          pageSize: hostView.bytes.count,
+          artifact: artifact,
+          options: options
+        )
+      }
+    } catch {
+      preconditionFailure("Fast-path graph cache resource creation failed: \(error)")
+    }
+
+    let fallbackResult: FallbackPageResult
+    if options.runtimeProfile == .v1Fallback, let fallbackRunner = cacheEntry.fallbackRunner {
+      fallbackResult = fallbackRunner.evaluatePage(
         classIDs: hostView.classIDs.map(UInt16.init),
         validLen: Int32(boundedValidLen)
       )
-      winnerTensors = integrateWithFallback(
-        fastWinners: winnerTensors,
-        fallbackResult: fallbackResult,
-        pageWidth: hostView.bytes.count
-      )
+    } else {
+      fallbackResult = emptyFallbackResult(pageWidth: hostView.bytes.count)
     }
 
-    // Phase D-G: Greedy selection, remap, coverage/error spans, and packed-row assembly.
-    let selectedTensors = GreedySelector.select(
-      winnerTensors: winnerTensors,
-      validLen: Int32(boundedValidLen)
+    guard let fastPathGraph = cacheEntry.fastPathGraph else {
+      preconditionFailure("KernelCacheEntry missing fastPathGraph for fast-path execution")
+    }
+
+    // Phase C/D: Compiled winner reduction + fallback merge + greedy selection.
+    let selectedTensors = fastPathGraph.execute(
+      candidateBatch: candidateBatch,
+      fallbackResult: fallbackResult,
+      validMaskTensor: compiledPage.validRangeMask(dtype: .bool)
     )
+
+    // Phase E-G: Remap, coverage/error spans, and packed-row assembly.
     let byteTensor =
       compiledPage.byteTensor
       ?? withMLXCPU {
@@ -86,6 +132,74 @@ public enum TensorLexer {
       remapTables: artifact.keywordRemaps,
       options: options,
       maxRowCapacity: Int32(boundedValidLen)
+    )
+  }
+
+  private static func makeFastPathCacheKey(
+    compiledPage: CompiledPageInput,
+    artifact: ArtifactRuntime,
+    options: LexOptions
+  ) -> KernelCacheKey {
+    KernelCacheKey(
+      deviceID: fastPathDefaultDeviceID,
+      artifactHash: artifactRuntimeHash(artifact),
+      pageBucket: compiledPage.byteCapacity,
+      inputDType:
+        "\(compiledPage.byteTensorDType)-\(compiledPage.classIDTensorDType)-\(compiledPage.validMaskTensorDType)",
+      runtimeProfile: options.runtimeProfile.rawValue,
+      layoutSignature: "fast-path-candidate-batch-v1"
+    )
+  }
+
+  private static func makeFastPathCacheEntry(
+    pageSize: Int,
+    artifact: ArtifactRuntime,
+    options: LexOptions
+  ) throws -> KernelCacheEntry {
+    let fallbackRunner: FallbackKernelRunner?
+    var constantTableByteCount = 0
+    var fallbackRuleCount = 0
+    var backend = "mlx"
+    var deviceID = fastPathDefaultDeviceID
+
+    if options.runtimeProfile == .v1Fallback, let fallback = artifact.fallback {
+      let compiledFallback = try FallbackMetalExecutorProvider.shared.compileKernel(
+        fallback: fallback)
+      fallbackRunner = FallbackKernelRunner(fallback: fallback, compiledKernel: compiledFallback)
+      constantTableByteCount = compiledFallback.metadata.constantTableByteCount
+      fallbackRuleCount = compiledFallback.metadata.fallbackRuleCount
+      backend = "\(backend)+\(compiledFallback.metadata.backend)"
+      deviceID = compiledFallback.metadata.deviceID
+    } else {
+      fallbackRunner = nil
+    }
+
+    let classCount = Set(artifact.hostByteToClassLUT()).count
+    let metadata = KernelCacheRuntimeMetadata(
+      backend: backend,
+      deviceID: deviceID,
+      pipelineFunction: "fastPathPageGraph",
+      constantTableByteCount: constantTableByteCount,
+      fallbackRuleCount: fallbackRuleCount,
+      stepStride: Int(artifact.runtimeHints.maxBoundedRuleWidth),
+      maxClassCount: classCount
+    )
+
+    return KernelCacheEntry(
+      fallbackRunner: fallbackRunner,
+      fastPathGraph: FastPathCompiledGraph(pageSize: pageSize),
+      runtimeMetadata: metadata,
+      createdAt: Date()
+    )
+  }
+
+  private static func emptyFallbackResult(pageWidth: Int) -> FallbackPageResult {
+    FallbackPageResult(
+      fallbackLen: Array(repeating: 0, count: pageWidth),
+      fallbackPriorityRank: Array(repeating: 0, count: pageWidth),
+      fallbackRuleID: Array(repeating: 0, count: pageWidth),
+      fallbackTokenKindID: Array(repeating: 0, count: pageWidth),
+      fallbackMode: Array(repeating: 0, count: pageWidth)
     )
   }
 

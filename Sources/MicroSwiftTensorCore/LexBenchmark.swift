@@ -43,6 +43,7 @@ public enum LexBenchmark {
   ) -> LexBenchmarkResult {
     precondition(iterations > 0, "iterations must be > 0")
 
+    let baselineMetrics = TensorLexer.fastPathGraphMetrics()
     let pagingShell = PagingShell()
     let pages = pagingShell.planAndPreparePages(source: source)
     let distribution = bucketDistribution(from: pages)
@@ -61,6 +62,7 @@ public enum LexBenchmark {
     }
     let durationNanos = DispatchTime.now().uptimeNanoseconds - start
     let totalBytes = Int64(source.bytes.count) * Int64(iterations)
+    let finalMetrics = TensorLexer.fastPathGraphMetrics()
 
     return LexBenchmarkResult(
       mode: "cold",
@@ -70,7 +72,7 @@ public enum LexBenchmark {
       bytesPerSecond: rate(count: Double(totalBytes), durationNanos: durationNanos),
       tokensPerSecond: rate(count: Double(totalTokens), durationNanos: durationNanos),
       errorSpansPerSecond: rate(count: Double(totalErrorSpans), durationNanos: durationNanos),
-      graphCompilationCount: 0,
+      graphCompilationCount: max(0, finalMetrics.compileCount - baselineMetrics.compileCount),
       pageBucketDistribution: distribution
     )
   }
@@ -84,6 +86,7 @@ public enum LexBenchmark {
     precondition(warmupIterations >= 0, "warmupIterations must be >= 0")
     precondition(measureIterations > 0, "measureIterations must be > 0")
 
+    let baselineMetrics = TensorLexer.fastPathGraphMetrics()
     let pagingShell = PagingShell()
     let shell = LexingShell(pagingShell: pagingShell)
     let distribution = bucketDistribution(from: pagingShell.planAndPreparePages(source: source))
@@ -102,6 +105,7 @@ public enum LexBenchmark {
     let totalBytes = Int64(source.bytes.count)
     let totalTokens = measured.tokenTape.tokens.count
     let errorSpanCount = measured.tokenTape.errorSpans.count
+    let finalMetrics = TensorLexer.fastPathGraphMetrics()
 
     return LexBenchmarkResult(
       mode: "warm",
@@ -111,7 +115,7 @@ public enum LexBenchmark {
       bytesPerSecond: rate(count: Double(totalBytes), durationNanos: durationNanos),
       tokensPerSecond: rate(count: Double(totalTokens), durationNanos: durationNanos),
       errorSpansPerSecond: rate(count: Double(errorSpanCount), durationNanos: durationNanos),
-      graphCompilationCount: 0,
+      graphCompilationCount: max(0, finalMetrics.compileCount - baselineMetrics.compileCount),
       pageBucketDistribution: distribution
     )
   }
@@ -123,6 +127,7 @@ public enum LexBenchmark {
   ) -> LexBenchmarkResult {
     precondition(iterations > 0, "iterations must be > 0")
 
+    let baselineMetrics = TensorLexer.fastPathGraphMetrics()
     let pagingShell = PagingShell()
     let shell = LexingShell(pagingShell: pagingShell)
     let distribution = bucketDistribution(from: pagingShell.planAndPreparePages(source: source))
@@ -137,6 +142,7 @@ public enum LexBenchmark {
     }
     let durationNanos = DispatchTime.now().uptimeNanoseconds - start
     let totalBytes = Int64(source.bytes.count) * Int64(iterations)
+    let finalMetrics = TensorLexer.fastPathGraphMetrics()
 
     return LexBenchmarkResult(
       mode: "error",
@@ -146,7 +152,7 @@ public enum LexBenchmark {
       bytesPerSecond: rate(count: Double(totalBytes), durationNanos: durationNanos),
       tokensPerSecond: rate(count: Double(totalTokens), durationNanos: durationNanos),
       errorSpansPerSecond: rate(count: Double(totalErrorSpans), durationNanos: durationNanos),
-      graphCompilationCount: 0,
+      graphCompilationCount: max(0, finalMetrics.compileCount - baselineMetrics.compileCount),
       pageBucketDistribution: distribution
     )
   }

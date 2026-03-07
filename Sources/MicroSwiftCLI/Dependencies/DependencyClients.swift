@@ -232,6 +232,30 @@ public struct MLXRuntimeClient: Sendable {
       let artifact = try buildFallbackSmokeArtifact()
       let runtime = try ArtifactRuntime.fromArtifact(artifact)
       let smokeInputBytes = try makeFallbackHeavySmokeInput(runtime: runtime)
+
+      TensorLexer.resetFastPathGraphCache()
+      _ = TensorLexer.lexPage(
+        bytes: smokeInputBytes,
+        validLen: Int32(smokeInputBytes.count),
+        baseOffset: 0,
+        artifact: runtime,
+        options: LexOptions(runtimeProfile: .v1Fallback)
+      )
+      _ = TensorLexer.lexPage(
+        bytes: smokeInputBytes,
+        validLen: Int32(smokeInputBytes.count),
+        baseOffset: 0,
+        artifact: runtime,
+        options: LexOptions(runtimeProfile: .v1Fallback)
+      )
+      let fastPathMetrics = TensorLexer.fastPathGraphMetrics()
+      guard fastPathMetrics.compileCount == 1 else {
+        throw MLXSmokeError.missingFastPathWarmReuse
+      }
+      guard fastPathMetrics.cacheHits > 0 else {
+        throw MLXSmokeError.missingFastPathWarmReuse
+      }
+
       let benchmark = runBenchmark(
         bytes: smokeInputBytes,
         artifact: runtime,
@@ -278,6 +302,7 @@ public struct MLXRuntimeClient: Sendable {
     case noFallbackPositionsEntered
     case noFallbackKernelDispatch
     case missingRuntimeMetadata
+    case missingFastPathWarmReuse
     case unexpectedBackend(String)
     case unexpectedPipeline(String)
   }

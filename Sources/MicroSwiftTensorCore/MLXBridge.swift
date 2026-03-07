@@ -4,10 +4,12 @@ import MLX
 
 private let mlxTestBootstrap: Void = {
   let env = ProcessInfo.processInfo.environment
+  let processName = ProcessInfo.processInfo.processName.lowercased()
   let isTestProcess =
     env["XCTestConfigurationFilePath"] != nil
     || env["SWIFT_TESTING"] != nil
     || env["MS_TEST"] != nil
+    || processName.contains("test")
   guard isTestProcess else { return }
 
   var cpu = mlx_device_new_type(MLX_CPU, 0)

@@ -103,7 +103,7 @@ public func runBenchmark(
   let logSink = BenchmarkLogSink()
   let cache = KernelCache(logSink: logSink.record)
 
-  let artifactHash = makeArtifactHash(artifact: artifact)
+  let artifactHash = artifactRuntimeHash(artifact)
 
   var observability = FallbackObservability()
 
@@ -134,16 +134,20 @@ public func runBenchmark(
         preconditionFailure("Kernel cache resource creation failed: \(error)")
       }
 
+      guard let fallbackRunner = entry.fallbackRunner else {
+        preconditionFailure("Kernel cache entry missing fallback runner")
+      }
+
       if recordMetrics {
         var runObservability = FallbackObservability()
-        fallbackResult = entry.fallbackRunner.evaluatePage(
+        fallbackResult = fallbackRunner.evaluatePage(
           classIDs: classIDs,
           validLen: Int32(validLen),
           observability: &runObservability
         )
         observability.merge(runObservability)
       } else {
-        fallbackResult = entry.fallbackRunner.evaluatePage(
+        fallbackResult = fallbackRunner.evaluatePage(
           classIDs: classIDs, validLen: Int32(validLen))
       }
     } else {
@@ -246,110 +250,6 @@ private final class BenchmarkLogSink: @unchecked Sendable {
     let decoder = JSONDecoder()
     return snapshot.compactMap { try? decoder.decode(KernelCacheLog.self, from: Data($0.utf8)) }
   }
-}
-
-private struct StableHash {
-  private var value: UInt64 = 0xcbf2_9ce4_8422_2325
-
-  mutating func combine<T: FixedWidthInteger>(_ number: T) {
-    var littleEndian = number.littleEndian
-    withUnsafeBytes(of: &littleEndian) { bytes in
-      for byte in bytes {
-        value ^= UInt64(byte)
-        value &*= 0x100_0000_01b3
-      }
-    }
-  }
-
-  mutating func combineBytes<S: Sequence>(_ bytes: S) where S.Element == UInt8 {
-    for byte in bytes {
-      value ^= UInt64(byte)
-      value &*= 0x100_0000_01b3
-    }
-  }
-
-  mutating func combineString(_ value: String) {
-    combineBytes(value.utf8)
-    combine(UInt8(0xFF))
-  }
-
-  func hexDigest() -> String {
-    String(format: "%016llx", value)
-  }
-}
-
-private func makeArtifactHash(artifact: ArtifactRuntime) -> String {
-  var hasher = StableHash()
-  hasher.combineString(artifact.specName)
-  hasher.combine(UInt64(artifact.ruleCount))
-  hasher.combine(UInt16(artifact.runtimeHints.maxLiteralLength))
-  hasher.combine(UInt16(artifact.runtimeHints.maxBoundedRuleWidth))
-  hasher.combine(UInt16(artifact.runtimeHints.maxDeterministicLookaheadBytes))
-
-  let byteToClass = artifact.hostByteToClassLUT()
-  hasher.combine(UInt64(byteToClass.count))
-  for classID in byteToClass {
-    hasher.combine(classID)
-  }
-
-  if let fallback = artifact.fallback {
-    hasher.combine(UInt16(fallback.numStatesUsed))
-    hasher.combine(UInt16(fallback.maxWidth))
-    hasher.combine(UInt64(fallback.startMaskLo))
-    hasher.combine(UInt64(fallback.startMaskHi))
-    hasher.combine(UInt64(fallback.startClassMaskLo))
-    hasher.combine(UInt64(fallback.startClassMaskHi))
-
-    let stepLo = fallback.hostStepLo()
-    hasher.combine(UInt64(stepLo.count))
-    for value in stepLo {
-      hasher.combine(value)
-    }
-
-    let stepHi = fallback.hostStepHi()
-    hasher.combine(UInt64(stepHi.count))
-    for value in stepHi {
-      hasher.combine(value)
-    }
-
-    let acceptLoByRule = fallback.hostAcceptLoByRule()
-    hasher.combine(UInt64(acceptLoByRule.count))
-    for value in acceptLoByRule {
-      hasher.combine(value)
-    }
-
-    let acceptHiByRule = fallback.hostAcceptHiByRule()
-    hasher.combine(UInt64(acceptHiByRule.count))
-    for value in acceptHiByRule {
-      hasher.combine(value)
-    }
-
-    let globalRuleIDByFallbackRule = fallback.hostGlobalRuleIDByFallbackRule()
-    hasher.combine(UInt64(globalRuleIDByFallbackRule.count))
-    for value in globalRuleIDByFallbackRule {
-      hasher.combine(value)
-    }
-
-    let priorityRankByFallbackRule = fallback.hostPriorityRankByFallbackRule()
-    hasher.combine(UInt64(priorityRankByFallbackRule.count))
-    for value in priorityRankByFallbackRule {
-      hasher.combine(value)
-    }
-
-    let tokenKindIDByFallbackRule = fallback.hostTokenKindIDByFallbackRule()
-    hasher.combine(UInt64(tokenKindIDByFallbackRule.count))
-    for value in tokenKindIDByFallbackRule {
-      hasher.combine(value)
-    }
-
-    let modeByFallbackRule = fallback.hostModeByFallbackRule()
-    hasher.combine(UInt64(modeByFallbackRule.count))
-    hasher.combineBytes(modeByFallbackRule)
-  } else {
-    hasher.combine(UInt8(0))
-  }
-
-  return hasher.hexDigest()
 }
 
 private func pageBucketSize(for length: Int) -> Int {

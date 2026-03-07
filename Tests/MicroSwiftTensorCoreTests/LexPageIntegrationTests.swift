@@ -29,7 +29,7 @@ struct LexPageIntegrationTests {
     #expect(result.errorSpans.isEmpty)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func lexPageRejectsLiteralThatWouldReadPastValidLen() throws {
     let runtime = try makeMicroSwiftRuntime()
     let bytes = Array("==".utf8)

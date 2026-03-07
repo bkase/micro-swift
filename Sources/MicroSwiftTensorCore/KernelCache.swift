@@ -5,12 +5,23 @@ public struct KernelCacheKey: Hashable, Sendable {
   public let artifactHash: String
   public let pageBucket: Int
   public let inputDType: String
+  public let runtimeProfile: String
+  public let layoutSignature: String
 
-  public init(deviceID: String, artifactHash: String, pageBucket: Int, inputDType: String) {
+  public init(
+    deviceID: String,
+    artifactHash: String,
+    pageBucket: Int,
+    inputDType: String,
+    runtimeProfile: String = "v1-fallback",
+    layoutSignature: String = "v1"
+  ) {
     self.deviceID = deviceID
     self.artifactHash = artifactHash
     self.pageBucket = pageBucket
     self.inputDType = inputDType
+    self.runtimeProfile = runtimeProfile
+    self.layoutSignature = layoutSignature
   }
 }
 
@@ -43,16 +54,23 @@ public struct KernelCacheRuntimeMetadata: Codable, Sendable, Equatable {
 }
 
 public struct KernelCacheEntry: Sendable {
-  public let fallbackRunner: FallbackKernelRunner
+  public let fallbackRunner: FallbackKernelRunner?
+  public let fastPathGraph: FastPathCompiledGraph?
   public let runtimeMetadata: KernelCacheRuntimeMetadata
   public let createdAt: Date
 
   public init(
-    fallbackRunner: FallbackKernelRunner,
+    fallbackRunner: FallbackKernelRunner? = nil,
+    fastPathGraph: FastPathCompiledGraph? = nil,
     runtimeMetadata: KernelCacheRuntimeMetadata,
     createdAt: Date
   ) {
+    precondition(
+      fallbackRunner != nil || fastPathGraph != nil,
+      "KernelCacheEntry requires at least one runtime resource"
+    )
     self.fallbackRunner = fallbackRunner
+    self.fastPathGraph = fastPathGraph
     self.runtimeMetadata = runtimeMetadata
     self.createdAt = createdAt
   }
@@ -65,6 +83,8 @@ public struct KernelCacheLog: Codable, Sendable, Equatable {
   public let pageBucket: Int
   public let deviceID: String
   public let inputDType: String
+  public let runtimeProfile: String
+  public let layoutSignature: String
   public let runtimeMetadata: KernelCacheRuntimeMetadata?
   public let failureReason: String?
 
@@ -75,6 +95,8 @@ public struct KernelCacheLog: Codable, Sendable, Equatable {
     pageBucket: Int,
     deviceID: String,
     inputDType: String,
+    runtimeProfile: String,
+    layoutSignature: String,
     runtimeMetadata: KernelCacheRuntimeMetadata? = nil,
     failureReason: String? = nil
   ) {
@@ -84,6 +106,8 @@ public struct KernelCacheLog: Codable, Sendable, Equatable {
     self.pageBucket = pageBucket
     self.deviceID = deviceID
     self.inputDType = inputDType
+    self.runtimeProfile = runtimeProfile
+    self.layoutSignature = layoutSignature
     self.runtimeMetadata = runtimeMetadata
     self.failureReason = failureReason
   }
@@ -92,10 +116,15 @@ public struct KernelCacheLog: Codable, Sendable, Equatable {
 public final class KernelCache: @unchecked Sendable {
   private var entries: [KernelCacheKey: KernelCacheEntry] = [:]
   private let lock = NSLock()
+  private let eventPrefix: String
   private let logSink: @Sendable (String) -> Void
   private let jsonEncoder: JSONEncoder
 
-  public init(logSink: @escaping @Sendable (String) -> Void = { _ in }) {
+  public init(
+    eventPrefix: String = "fallback-kernel-cache",
+    logSink: @escaping @Sendable (String) -> Void = { _ in }
+  ) {
+    self.eventPrefix = eventPrefix
     self.logSink = logSink
 
     let encoder = JSONEncoder()
@@ -112,11 +141,13 @@ public final class KernelCache: @unchecked Sendable {
       emitLocked(
         KernelCacheLog(
           traceID: traceID,
-          event: "fallback-kernel-cache-hit",
+          event: "\(eventPrefix)-hit",
           artifactHash: key.artifactHash,
           pageBucket: key.pageBucket,
           deviceID: key.deviceID,
           inputDType: key.inputDType,
+          runtimeProfile: key.runtimeProfile,
+          layoutSignature: key.layoutSignature,
           runtimeMetadata: entry.runtimeMetadata
         ))
       return entry
@@ -125,11 +156,13 @@ public final class KernelCache: @unchecked Sendable {
     emitLocked(
       KernelCacheLog(
         traceID: traceID,
-        event: "fallback-kernel-cache-miss",
+        event: "\(eventPrefix)-miss",
         artifactHash: key.artifactHash,
         pageBucket: key.pageBucket,
         deviceID: key.deviceID,
-        inputDType: key.inputDType
+        inputDType: key.inputDType,
+        runtimeProfile: key.runtimeProfile,
+        layoutSignature: key.layoutSignature
       ))
 
     return nil
@@ -145,11 +178,13 @@ public final class KernelCache: @unchecked Sendable {
     emitLocked(
       KernelCacheLog(
         traceID: traceID,
-        event: "fallback-kernel-cache-store",
+        event: "\(eventPrefix)-store",
         artifactHash: key.artifactHash,
         pageBucket: key.pageBucket,
         deviceID: key.deviceID,
         inputDType: key.inputDType,
+        runtimeProfile: key.runtimeProfile,
+        layoutSignature: key.layoutSignature,
         runtimeMetadata: entry.runtimeMetadata
       ))
   }
@@ -164,11 +199,13 @@ public final class KernelCache: @unchecked Sendable {
       emitLocked(
         KernelCacheLog(
           traceID: traceID,
-          event: "fallback-kernel-cache-hit",
+          event: "\(eventPrefix)-hit",
           artifactHash: key.artifactHash,
           pageBucket: key.pageBucket,
           deviceID: key.deviceID,
           inputDType: key.inputDType,
+          runtimeProfile: key.runtimeProfile,
+          layoutSignature: key.layoutSignature,
           runtimeMetadata: entry.runtimeMetadata
         ))
       lock.unlock()
@@ -178,11 +215,13 @@ public final class KernelCache: @unchecked Sendable {
     emitLocked(
       KernelCacheLog(
         traceID: traceID,
-        event: "fallback-kernel-cache-miss",
+        event: "\(eventPrefix)-miss",
         artifactHash: key.artifactHash,
         pageBucket: key.pageBucket,
         deviceID: key.deviceID,
-        inputDType: key.inputDType
+        inputDType: key.inputDType,
+        runtimeProfile: key.runtimeProfile,
+        layoutSignature: key.layoutSignature
       ))
     lock.unlock()
 
@@ -194,11 +233,13 @@ public final class KernelCache: @unchecked Sendable {
       emitLocked(
         KernelCacheLog(
           traceID: traceID,
-          event: "fallback-kernel-cache-store",
+          event: "\(eventPrefix)-store",
           artifactHash: key.artifactHash,
           pageBucket: key.pageBucket,
           deviceID: key.deviceID,
           inputDType: key.inputDType,
+          runtimeProfile: key.runtimeProfile,
+          layoutSignature: key.layoutSignature,
           runtimeMetadata: entry.runtimeMetadata
         ))
       lock.unlock()
@@ -208,11 +249,13 @@ public final class KernelCache: @unchecked Sendable {
       emitLocked(
         KernelCacheLog(
           traceID: traceID,
-          event: "fallback-kernel-cache-create-failure",
+          event: "\(eventPrefix)-create-failure",
           artifactHash: key.artifactHash,
           pageBucket: key.pageBucket,
           deviceID: key.deviceID,
           inputDType: key.inputDType,
+          runtimeProfile: key.runtimeProfile,
+          layoutSignature: key.layoutSignature,
           failureReason: String(describing: error)
         ))
       lock.unlock()
@@ -227,5 +270,11 @@ public final class KernelCache: @unchecked Sendable {
       return
     }
     logSink(json)
+  }
+
+  public func clear() {
+    lock.lock()
+    entries.removeAll(keepingCapacity: true)
+    lock.unlock()
   }
 }
