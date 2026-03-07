@@ -102,6 +102,15 @@ final class FallbackMetalExecutor: @unchecked Sendable {
   private let commandQueue: MTLCommandQueue
   private let pipelineState: MTLComputePipelineState
 
+  // Buffer pool: reuse per-page GPU buffers across evaluate calls
+  private let executionLock = NSLock()
+  private var pooledClassIDsBuffer: MTLBuffer?
+  private var pooledOutLenBuffer: MTLBuffer?
+  private var pooledOutPriorityBuffer: MTLBuffer?
+  private var pooledOutRuleIDBuffer: MTLBuffer?
+  private var pooledOutTokenKindBuffer: MTLBuffer?
+  private var pooledOutModeBuffer: MTLBuffer?
+
   init() throws {
     guard let device = MTLCreateSystemDefaultDevice() else {
       throw FallbackMetalExecutorError.noSystemDevice
@@ -218,21 +227,48 @@ final class FallbackMetalExecutor: @unchecked Sendable {
   ) throws -> FallbackPageResult {
     let pageWidth = classIDs.count
 
-    var fallbackLen = Array(repeating: UInt16(0), count: pageWidth)
-    var fallbackPriorityRank = Array(repeating: UInt16(0), count: pageWidth)
-    var fallbackRuleID = Array(repeating: UInt16(0), count: pageWidth)
-    var fallbackTokenKindID = Array(repeating: UInt16(0), count: pageWidth)
-    var fallbackMode = Array(repeating: UInt8(0), count: pageWidth)
-
     guard pageWidth > 0 else {
       return FallbackPageResult(
-        fallbackLen: fallbackLen,
-        fallbackPriorityRank: fallbackPriorityRank,
-        fallbackRuleID: fallbackRuleID,
-        fallbackTokenKindID: fallbackTokenKindID,
-        fallbackMode: fallbackMode
+        fallbackLen: Array(repeating: 0, count: pageWidth),
+        fallbackPriorityRank: Array(repeating: 0, count: pageWidth),
+        fallbackRuleID: Array(repeating: 0, count: pageWidth),
+        fallbackTokenKindID: Array(repeating: 0, count: pageWidth),
+        fallbackMode: Array(repeating: 0, count: pageWidth)
       )
     }
+
+    executionLock.lock()
+    defer { executionLock.unlock() }
+
+    // Ensure pooled buffers have sufficient capacity, reallocating only when needed
+    let classIDsByteCount = pageWidth * MemoryLayout<UInt16>.stride
+    let outU16ByteCount = pageWidth * MemoryLayout<UInt16>.stride
+    let outU8ByteCount = pageWidth * MemoryLayout<UInt8>.stride
+
+    pooledClassIDsBuffer = try ensureBuffer(
+      pooledClassIDsBuffer, minBytes: classIDsByteCount, name: "classIDs")
+    pooledOutLenBuffer = try ensureBuffer(
+      pooledOutLenBuffer, minBytes: outU16ByteCount, name: "outLen")
+    pooledOutPriorityBuffer = try ensureBuffer(
+      pooledOutPriorityBuffer, minBytes: outU16ByteCount, name: "outPriorityRank")
+    pooledOutRuleIDBuffer = try ensureBuffer(
+      pooledOutRuleIDBuffer, minBytes: outU16ByteCount, name: "outRuleID")
+    pooledOutTokenKindBuffer = try ensureBuffer(
+      pooledOutTokenKindBuffer, minBytes: outU16ByteCount, name: "outTokenKindID")
+    pooledOutModeBuffer = try ensureBuffer(
+      pooledOutModeBuffer, minBytes: outU8ByteCount, name: "outMode")
+
+    // Copy input data into pooled buffer
+    classIDs.withUnsafeBytes { bytes in
+      pooledClassIDsBuffer!.contents().copyMemory(from: bytes.baseAddress!, byteCount: bytes.count)
+    }
+
+    // Zero output buffers
+    memset(pooledOutLenBuffer!.contents(), 0, outU16ByteCount)
+    memset(pooledOutPriorityBuffer!.contents(), 0, outU16ByteCount)
+    memset(pooledOutRuleIDBuffer!.contents(), 0, outU16ByteCount)
+    memset(pooledOutTokenKindBuffer!.contents(), 0, outU16ByteCount)
+    memset(pooledOutModeBuffer!.contents(), 0, outU8ByteCount)
 
     var config = compiledKernel.staticConfig
     config.validLen = UInt32(boundedValidLen)
@@ -245,17 +281,8 @@ final class FallbackMetalExecutor: @unchecked Sendable {
       throw FallbackMetalExecutorError.commandEncoderCreationFailed
     }
 
-    let classIDsBuffer = try makeBuffer(classIDs, name: "classIDs")
-    let outLenBuffer = try makeWritableBuffer(UInt16.self, count: pageWidth, name: "outLen")
-    let outPriorityBuffer = try makeWritableBuffer(
-      UInt16.self, count: pageWidth, name: "outPriorityRank")
-    let outRuleIDBuffer = try makeWritableBuffer(UInt16.self, count: pageWidth, name: "outRuleID")
-    let outTokenKindBuffer = try makeWritableBuffer(
-      UInt16.self, count: pageWidth, name: "outTokenKindID")
-    let outModeBuffer = try makeWritableBuffer(UInt8.self, count: pageWidth, name: "outMode")
-
     encoder.setComputePipelineState(compiledKernel.pipelineState)
-    encoder.setBuffer(classIDsBuffer, offset: 0, index: 0)
+    encoder.setBuffer(pooledClassIDsBuffer!, offset: 0, index: 0)
     encoder.setBuffer(compiledKernel.stepLoBuffer, offset: 0, index: 1)
     encoder.setBuffer(compiledKernel.stepHiBuffer, offset: 0, index: 2)
     encoder.setBuffer(compiledKernel.acceptLoBuffer, offset: 0, index: 3)
@@ -264,11 +291,11 @@ final class FallbackMetalExecutor: @unchecked Sendable {
     encoder.setBuffer(compiledKernel.priorityRankBuffer, offset: 0, index: 6)
     encoder.setBuffer(compiledKernel.tokenKindIDBuffer, offset: 0, index: 7)
     encoder.setBuffer(compiledKernel.modeBuffer, offset: 0, index: 8)
-    encoder.setBuffer(outLenBuffer, offset: 0, index: 9)
-    encoder.setBuffer(outPriorityBuffer, offset: 0, index: 10)
-    encoder.setBuffer(outRuleIDBuffer, offset: 0, index: 11)
-    encoder.setBuffer(outTokenKindBuffer, offset: 0, index: 12)
-    encoder.setBuffer(outModeBuffer, offset: 0, index: 13)
+    encoder.setBuffer(pooledOutLenBuffer!, offset: 0, index: 9)
+    encoder.setBuffer(pooledOutPriorityBuffer!, offset: 0, index: 10)
+    encoder.setBuffer(pooledOutRuleIDBuffer!, offset: 0, index: 11)
+    encoder.setBuffer(pooledOutTokenKindBuffer!, offset: 0, index: 12)
+    encoder.setBuffer(pooledOutModeBuffer!, offset: 0, index: 13)
     encoder.setBytes(&config, length: MemoryLayout<FallbackKernelConfig>.stride, index: 14)
 
     let threadExecutionWidth = max(1, compiledKernel.pipelineState.threadExecutionWidth)
@@ -284,11 +311,13 @@ final class FallbackMetalExecutor: @unchecked Sendable {
       throw FallbackMetalExecutorError.backendExecutionFailed(commandBuffer.status)
     }
 
-    fallbackLen = copyArray(UInt16.self, from: outLenBuffer, count: pageWidth)
-    fallbackPriorityRank = copyArray(UInt16.self, from: outPriorityBuffer, count: pageWidth)
-    fallbackRuleID = copyArray(UInt16.self, from: outRuleIDBuffer, count: pageWidth)
-    fallbackTokenKindID = copyArray(UInt16.self, from: outTokenKindBuffer, count: pageWidth)
-    fallbackMode = copyArray(UInt8.self, from: outModeBuffer, count: pageWidth)
+    let fallbackLen = copyArray(UInt16.self, from: pooledOutLenBuffer!, count: pageWidth)
+    let fallbackPriorityRank = copyArray(
+      UInt16.self, from: pooledOutPriorityBuffer!, count: pageWidth)
+    let fallbackRuleID = copyArray(UInt16.self, from: pooledOutRuleIDBuffer!, count: pageWidth)
+    let fallbackTokenKindID = copyArray(
+      UInt16.self, from: pooledOutTokenKindBuffer!, count: pageWidth)
+    let fallbackMode = copyArray(UInt8.self, from: pooledOutModeBuffer!, count: pageWidth)
 
     return FallbackPageResult(
       fallbackLen: fallbackLen,
@@ -297,6 +326,17 @@ final class FallbackMetalExecutor: @unchecked Sendable {
       fallbackTokenKindID: fallbackTokenKindID,
       fallbackMode: fallbackMode
     )
+  }
+
+  private func ensureBuffer(
+    _ existing: MTLBuffer?, minBytes: Int, name: String
+  ) throws -> MTLBuffer {
+    let needed = max(1, minBytes)
+    if let buffer = existing, buffer.length >= needed { return buffer }
+    guard let buffer = device.makeBuffer(length: needed, options: .storageModeShared) else {
+      throw FallbackMetalExecutorError.bufferCreationFailed(name)
+    }
+    return buffer
   }
 
   private func makeBuffer<T>(_ values: [T], name: String) throws -> MTLBuffer {
