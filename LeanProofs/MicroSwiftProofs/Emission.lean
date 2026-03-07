@@ -99,6 +99,74 @@ def filterSkipTokens (tokens : List Selection.SelectedToken) (emitSkip : Bool)
 
 /-! ## Equivalence -/
 
+/-- Helper: getD of zipWith or = OR of getDs (when lists have equal length) -/
+private theorem getD_zipWith_or (a b : List Bool) (i : Nat) (h_len : a.length = b.length) :
+    (List.zipWith or a b).getD i false = (a.getD i false || b.getD i false) := by
+  simp only [List.getD, List.getElem?_zipWith]
+  cases ha : a[i]? with
+  | none =>
+    have hb : b[i]? = none := by
+      rw [List.getElem?_eq_none_iff] at ha ⊢; omega
+    simp [hb]
+  | some va =>
+    have hi : i < a.length := by
+      simp only [List.getElem?_eq_some_iff] at ha; exact ha.1
+    cases hb : b[i]? with
+    | none =>
+      exfalso; rw [List.getElem?_eq_none_iff] at hb; omega
+    | some vb => simp
+
+/-- The vectorized coverage mask correctly computes coverage:
+    position p is covered iff some selected position s has s ≤ p < s + lengths[s].
+    This is the semantic correctness theorem for the vectorized algorithm. -/
+theorem coverage_vectorized_correct (selectedMask : List Bool) (lengths : List Nat) (pageSize : Nat)
+    (h_aligned : selectedMask.length = pageSize) (h_lengths : lengths.length = pageSize)
+    (p : Nat) (hp : p < pageSize) :
+    (vectorizedCoverageMask selectedMask lengths pageSize).getD p false =
+    (List.range pageSize).any (fun s =>
+      (match selectedMask[s]? with | some true => true | _ => false) &&
+      decide (p ≥ s ∧ p < s + (match lengths[s]? with | some l => l | none => 0))) := by
+  simp only [vectorizedCoverageMask, arange, MLX.arange]
+  -- Prove by induction: the fold OR-ing range masks computes the any predicate
+  suffices h : ∀ (init : List Bool) (positions : List Nat),
+      init.length = pageSize →
+      (positions.foldl (fun covered startPos =>
+        if !(match selectedMask[startPos]? with | some true => true | _ => false) then covered
+        else
+          List.zipWith or covered
+            ((List.range pageSize).map fun q =>
+              decide (q ≥ startPos ∧ q < startPos +
+                (match lengths[startPos]? with | some l => l | none => 0))))
+      init).getD p false =
+      (init.getD p false || positions.any (fun s =>
+        (match selectedMask[s]? with | some true => true | _ => false) &&
+        decide (p ≥ s ∧ p < s + (match lengths[s]? with | some l => l | none => 0)))) by
+    rw [h (List.replicate pageSize false) (List.range pageSize) (by simp)]
+    simp only [List.getD, List.getElem?_replicate, hp, ite_true, Option.getD, Bool.false_or]
+  intro init positions h_init
+  induction positions generalizing init with
+  | nil => simp
+  | cons s rest ih =>
+    simp only [List.foldl, List.any_cons]
+    by_cases h_sel : (match selectedMask[s]? with | some true => true | _ => false) = true
+    · -- Selected position: fold ORs in the range mask
+      simp only [h_sel, Bool.not_true, Bool.false_eq_true, ite_false, Bool.true_and]
+      rw [ih _ (by simp [List.length_zipWith, h_init, List.length_map, List.length_range])]
+      rw [getD_zipWith_or _ _ _ (by simp [List.length_zipWith, h_init, List.length_map, List.length_range])]
+      rw [Bool.or_assoc]
+      congr 1; congr 1
+      -- Range mask at index p = decide(p ≥ s ∧ p < s + len)
+      simp only [List.getD, List.getElem?_map, List.getElem?_range, hp, ite_true, Option.map_some']
+      simp
+    · -- Not selected: skip
+      have h_false : (match selectedMask[s]? with | some true => true | _ => false) = false := by
+        cases h : selectedMask[s]? with
+        | none => rfl
+        | some v => cases v <;> simp_all
+      simp only [h_false, Bool.not_false, ite_true]
+      rw [ih init h_init]
+      simp only [h_false, Bool.false_and, Bool.false_or]
+
 theorem coverage_equiv (tokens : List (Nat × Nat)) (selectedMask : List Bool)
     (lengths : List Nat) (pageSize : Nat)
     (h_aligned : selectedMask.length = pageSize)

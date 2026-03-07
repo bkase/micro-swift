@@ -1,4 +1,5 @@
 import Mathlib.Data.List.Basic
+import Mathlib.Data.List.Scan
 import MicroSwiftProofs.MLXPrimitives
 import MicroSwiftProofs.Reduction
 
@@ -697,18 +698,375 @@ private theorem extractSelected_ext (winners : List Reduction.Winner)
     simp only [List.getD, List.getElem?_eq_getElem h1, List.getElem?_eq_getElem h2] at h_eq
     simpa using h_eq
 
-/-- The scalar greedy mask satisfies the iterStep fixpoint equation at each position.
-    Proof strategy: Show that coveredUntil from the scalar walk at position i
-    equals coveredBefore(mask, i) from iterStep. Both compute
-    max{j + winners[j].len : j < i, mask[j] = true} ∪ {0}.
-    Then unfold iterStep to see mask[i] = positive[i] && (i >= coveredBefore),
-    which is exactly the scalar greedy criterion. -/
+/-- scalarGreedyMaskAux processes a prefix then a suffix. -/
+private theorem scalarGreedyMaskAux_append (winners : List Reduction.Winner) (validLen : Nat)
+    (ps1 ps2 : List Nat) (cu : Nat) (mask : List Bool) :
+    scalarGreedyMaskAux winners validLen (ps1 ++ ps2) cu mask =
+    let r := scalarGreedyMaskAux winners validLen ps1 cu mask
+    scalarGreedyMaskAux winners validLen ps2 r.1 r.2 := by
+  induction ps1 generalizing cu mask with
+  | nil => simp [scalarGreedyMaskAux]
+  | cons p rest ih =>
+    simp only [List.cons_append]
+    dsimp only [scalarGreedyMaskAux]
+    cases hw : winners[p]? with
+    | none => exact ih cu mask
+    | some w =>
+      simp only [hw]
+      split
+      · exact ih (p + w.len) (mask.set p true)
+      · exact ih cu mask
+
+/-- Positions not in the position list are unchanged by scalarGreedyMaskAux. -/
+private theorem scalarGreedyMaskAux_unchanged (winners : List Reduction.Winner) (validLen : Nat)
+    (positions : List Nat) (cu : Nat) (mask : List Bool) (j : Nat)
+    (hj : j ∉ positions) :
+    (scalarGreedyMaskAux winners validLen positions cu mask).2.getD j false = mask.getD j false := by
+  induction positions generalizing cu mask with
+  | nil => simp [scalarGreedyMaskAux]
+  | cons p rest ih =>
+    simp only [List.mem_cons, not_or] at hj
+    dsimp only [scalarGreedyMaskAux]
+    cases hw : winners[p]? with
+    | none => exact ih cu mask hj.2
+    | some w =>
+      simp only [hw]
+      split
+      · have h1 := ih (p + w.len) (mask.set p true) hj.2
+        rw [h1]
+        simp only [List.getD, List.getElem?_set]
+        split
+        · rename_i heq; exact absurd heq.symm hj.1
+        · rfl
+      · exact ih cu mask hj.2
+
+/-- scalarGreedyMask[i] is false initially in the replicate mask. -/
+private theorem replicate_getD_false (n i : Nat) :
+    (List.replicate n false).getD i false = false := by
+  simp [List.getD, List.getElem?_replicate]
+  split <;> simp
+
+/-- Recursive definition of "coverage before position i" given a mask and winners.
+    coveredBeforeRec(mask, winners, k) = max{j + winners[j].len : j < k, mask[j]} ∪ {0} -/
+private def coveredBeforeRec (mask : List Bool) (winners : List Reduction.Winner) : Nat → Nat
+  | 0 => 0
+  | i + 1 => max (coveredBeforeRec mask winners i)
+    (if mask.getD i false then i + (match winners[i]? with | some w => w.len | none => 0) else 0)
+
+/-- The key connection between the vectorized coveredBefore and coveredBeforeRec.
+    The (0 :: cummaxFwd(selectedEnds).take(n-1)) array at index i equals coveredBeforeRec. -/
+private theorem coveredBefore_getD_eq (mask : List Bool) (winners : List Reduction.Winner)
+    (h_len : mask.length = winners.length) (i : Nat) (hi : i < winners.length) :
+    let se := List.zipWith (fun sel e => if sel then e else 0) mask (mkEndExclusive winners)
+    let cb := 0 :: (cummaxFwd se).take (winners.length - 1)
+    cb.getD i 0 = coveredBeforeRec mask winners i := by
+  set se := List.zipWith (fun sel e => if sel then e else 0) mask (mkEndExclusive winners)
+  have h_se_len : se.length = winners.length := by
+    simp [se, List.length_zipWith, h_len, mkEndExclusive_length]
+  have h_se_getD : ∀ k, k < winners.length →
+      se.getD k 0 = (if mask.getD k false then k + (match winners[k]? with | some w => w.len | none => 0) else 0) := by
+    intro k hk
+    -- se[k]? = (mask[k]?.bind fun a => (mkEndExclusive winners)[k]?.map fun b => if a then b else 0)
+    simp only [se, List.getD, List.getElem?_zipWith]
+    -- mask[k]? and endExcl[k]? are both some since k < length
+    have hm : k < mask.length := by omega
+    have he : k < (mkEndExclusive winners).length := by rw [mkEndExclusive_length]; omega
+    -- Compute endExcl[k]
+    have h_ee : (mkEndExclusive winners)[k]? = some (k + winners[k].len) := by
+      rw [List.getElem?_eq_getElem he]
+      congr 1
+      simp only [mkEndExclusive, arange, MLX.arange]
+      simp only [List.getElem_zipWith, List.getElem_range, List.getElem_map]
+    simp only [List.getElem?_eq_getElem hm, h_ee, Option.some_bind, Option.map_some', Option.getD]
+    -- Now: if mask[k] then k + winners[k].len else 0
+    --    = if mask.getD k false then k + (match winners[k]? with ...) else 0
+    -- The LHS has mask[k] (Bool), the RHS has mask.getD k false which = mask[k] when k < length
+    -- But after simp, mask.getD should already be resolved. Let's just split on mask[k]
+    cases mask[k] <;> simp [List.getElem?_eq_getElem (show k < winners.length by omega)]
+  have h_scanl : ∀ k, k ≤ winners.length →
+      (se.scanl max 0).getD k 0 = coveredBeforeRec mask winners k := by
+    intro k
+    induction k with
+    | zero => intro _; simp [coveredBeforeRec]
+    | succ k ih_k =>
+      intro hk
+      have hk' : k < se.length := by rw [h_se_len]; omega
+      have h_prev := ih_k (by omega)
+      -- (se.scanl max 0).getD (k+1) 0 = coveredBeforeRec(k+1)
+      -- = max (coveredBeforeRec k) (if mask.getD k false then ... else 0)
+      -- Use the fact that scanl[k+1] = max(scanl[k], se[k])
+      have h_scanl_len : (se.scanl max 0).length = se.length + 1 := length_scanl' _ _ _
+      have h_in : k + 1 < (se.scanl max 0).length := by rw [h_scanl_len]; omega
+      have h_in' : k < (se.scanl max 0).length := by omega
+      simp only [List.getD, List.getElem?_eq_getElem h_in, Option.getD]
+      -- Use getElem_succ_scanl
+      rw [List.getElem_succ_scanl]
+      simp only [coveredBeforeRec]
+      congr 1
+      · -- scanl[k] = coveredBeforeRec k
+        simp only [List.getD, List.getElem?_eq_getElem h_in', Option.getD] at h_prev
+        exact h_prev
+      · -- se[k] = the conditional expression
+        have := h_se_getD k (by omega)
+        simp only [se, List.getD, List.getElem?_eq_getElem hk', Option.getD] at this ⊢
+        convert this using 1
+  cases i with
+  | zero => simp [coveredBeforeRec]
+  | succ i =>
+    simp only [List.getD, List.getElem?_cons_succ]
+    have hi' : i < winners.length - 1 := by omega
+    rw [List.getElem?_take, if_pos hi']
+    simp only [cummaxFwd, MLX.cummaxFwd]
+    rw [List.getElem?_drop]
+    rw [show 1 + i = i + 1 from by omega]
+    have h := h_scanl (i + 1) (by omega)
+    simp only [List.getD] at h
+    have h_scanl_len : (se.scanl max 0).length = se.length + 1 := length_scanl' _ _ _
+    have h_in : i + 1 < (se.scanl max 0).length := by rw [h_scanl_len, h_se_len]; omega
+    rw [List.getElem?_eq_getElem h_in]
+    rw [List.getElem?_eq_getElem h_in] at h
+    simp at h
+    simp [h]
+
+/-- The iterStep result at position i equals positive[i] && decide(i >= coveredBeforeRec). -/
+private theorem iterStep_getD_eq' (winners : List Reduction.Winner) (validLen : Nat)
+    (mask : List Bool) (i : Nat) (hi : i < winners.length)
+    (h_len : mask.length = winners.length) :
+    (iterStep winners validLen mask).getD i false =
+    ((mkPositive winners validLen).getD i false &&
+     decide (i ≥ coveredBeforeRec mask winners i)) := by
+  unfold iterStep selectionIteration
+  rw [getD_zipWith_and]
+  congr 1
+  rw [getD_zipWith_nat_bool]
+  have h_pos : (arange winners.length)[i]? = some i := by
+    simp [arange, MLX.arange, List.getElem?_range, hi]
+  rw [h_pos]
+  set se := List.zipWith (fun sel e => if sel then e else 0) mask (mkEndExclusive winners)
+  set cb := 0 :: (cummaxFwd se).take (winners.length - 1)
+  have h_cb := coveredBefore_getD_eq mask winners h_len i hi
+  have h_cb_len : cb.length = winners.length := by
+    simp only [cb, List.length_cons, List.length_take,
+      cummaxFwd, MLX.cummaxFwd, List.length_drop, length_scanl',
+      List.length_zipWith, h_len, mkEndExclusive_length, se]
+    omega
+  have h_in : i < cb.length := by rw [h_cb_len]; exact hi
+  suffices h_val : cb[i]? = some (coveredBeforeRec mask winners i) by
+    rw [h_val]
+  -- h_cb : cb.getD i 0 = coveredBeforeRec mask winners i
+  -- goal : cb[i]? = some (coveredBeforeRec mask winners i)
+  rw [List.getElem?_eq_getElem h_in]
+  -- goal : some cb[i] = some (coveredBeforeRec ...)
+  congr 1
+  -- goal : cb[i] = coveredBeforeRec ...
+  -- h_cb is getD form, convert
+  have : cb.getD i 0 = cb[i] := by
+    simp [List.getD, List.getElem?_eq_getElem h_in]
+  rw [← this]
+  exact h_cb
+
+/-- Helper: decompose range n into range k ++ [k] ++ rest for k < n. -/
+private theorem range_decompose_at (n k : Nat) (hk : k < n) :
+    List.range n = List.range k ++ ([k] ++ (List.range (n - k - 1)).map (· + (k + 1))) := by
+  conv_lhs => rw [show n = (k + 1) + (n - k - 1) from by omega]
+  rw [List.range_add, List.range_succ, List.append_assoc]
+  congr 1; congr 1
+  ext x; simp [Nat.add_comm]
+
+/-- Decompose scalarGreedyMask to extract the contribution at position k. -/
+private theorem scalarGreedyMask_at_k (winners : List Reduction.Winner) (validLen : Nat)
+    (k : Nat) (hk : k < winners.length) :
+    let prev := scalarGreedyMaskAux winners validLen (List.range k) 0
+      (List.replicate winners.length false)
+    (scalarGreedyMask winners validLen).getD k false =
+      (scalarGreedyMaskAux winners validLen [k] prev.1 prev.2).2.getD k false := by
+  simp only [scalarGreedyMask]
+  rw [range_decompose_at winners.length k hk]
+  rw [scalarGreedyMaskAux_append, scalarGreedyMaskAux_append]
+  set prev := scalarGreedyMaskAux winners validLen (List.range k) 0
+    (List.replicate winners.length false)
+  set step := scalarGreedyMaskAux winners validLen [k] prev.1 prev.2
+  have h_not_mem : k ∉ (List.range (winners.length - k - 1)).map (· + (k + 1)) := by
+    simp [List.mem_map]; intro a _ ha; omega
+  exact scalarGreedyMaskAux_unchanged _ _ _ _ _ k h_not_mem
+
+private theorem scalarGreedyMaskAux_length' (winners : List Reduction.Winner) (validLen : Nat)
+    (positions : List Nat) (coveredUntil : Nat) (mask : List Bool)
+    (h_mask : mask.length = winners.length)
+    (h_pos : ∀ p ∈ positions, p < winners.length) :
+    (scalarGreedyMaskAux winners validLen positions coveredUntil mask).2.length = winners.length := by
+  induction positions generalizing coveredUntil mask with
+  | nil => exact h_mask
+  | cons i rest ih =>
+    have hi : i < winners.length := h_pos i (by simp)
+    have h_rest : ∀ p ∈ rest, p < winners.length := fun p hp => h_pos p (by simp [hp])
+    simp only [scalarGreedyMaskAux]
+    cases hw : winners[i]? with
+    | none =>
+      simp only [hw]
+      exact ih coveredUntil mask h_mask h_rest
+    | some w =>
+      simp only [hw]
+      by_cases hcond : w.len > 0 ∧ i ≥ coveredUntil ∧ i < validLen
+      · simp only [hcond, and_self, decide_true, ite_true]
+        exact ih (i + w.len) (mask.set i true) (by simp [List.length_set, h_mask]) h_rest
+      · simp only [show ¬(w.len > 0 ∧ i ≥ coveredUntil ∧ i < validLen) from hcond, ite_false]
+        exact ih coveredUntil mask h_mask h_rest
+
+private theorem prev_mask_length (winners : List Reduction.Winner) (validLen : Nat) (k : Nat)
+    (hk : k ≤ winners.length) :
+    (scalarGreedyMaskAux winners validLen (List.range k) 0
+      (List.replicate winners.length false)).2.length = winners.length := by
+  apply scalarGreedyMaskAux_length'
+  · simp
+  · intro p hp; simp [List.mem_range] at hp; omega
+
+/-- The scalar walk's state after processing range(0..k) matches coveredBeforeRec
+    and the mask agrees with scalarGreedyMask on positions < k. -/
+private theorem scalarGreedyMask_characterize (winners : List Reduction.Winner) (validLen : Nat)
+    (h_valid : validLen ≤ winners.length) :
+    ∀ k, k ≤ winners.length →
+    let state := scalarGreedyMaskAux winners validLen (List.range k) 0
+      (List.replicate winners.length false)
+    state.1 = coveredBeforeRec (scalarGreedyMask winners validLen) winners k ∧
+    (∀ j, j < k → state.2.getD j false = (scalarGreedyMask winners validLen).getD j false) := by
+  intro k
+  induction k with
+  | zero => intro _; simp [scalarGreedyMaskAux, coveredBeforeRec]
+  | succ k ih =>
+    intro hk
+    obtain ⟨ih_cu, ih_mask⟩ := ih (by omega)
+    rw [show List.range (k + 1) = List.range k ++ [k] from List.range_succ]
+    rw [scalarGreedyMaskAux_append]
+    set prev := scalarGreedyMaskAux winners validLen (List.range k) 0
+      (List.replicate winners.length false)
+    have hk_lt : k < winners.length := by omega
+    -- Get scalarGreedyMask[k] via decomposition
+    have h_sgm_at_k := scalarGreedyMask_at_k winners validLen k hk_lt
+    -- Unfold scalarGreedyMaskAux on [k]
+    unfold scalarGreedyMaskAux
+    cases hw : winners[k]? with
+    | none => exfalso; simp [List.getElem?_eq_none_iff] at hw; omega
+    | some w =>
+      simp only [hw, scalarGreedyMaskAux]
+      -- Determine scalarGreedyMask[k] from the decomposition
+      have h_sgm_val : (scalarGreedyMask winners validLen).getD k false =
+          (if w.len > 0 ∧ k ≥ prev.1 ∧ k < validLen then true else false) := by
+        rw [h_sgm_at_k]
+        unfold scalarGreedyMaskAux
+        simp only [hw, scalarGreedyMaskAux]
+        split
+        · -- condition holds => mask.set k true, getD k = true
+          have h_prev_len := prev_mask_length winners validLen k (by omega)
+          simp only [List.getD, List.getElem?_set, show k = k from rfl, ite_true, h_prev_len, hk_lt]
+          rfl
+        · -- condition false => prev.2.getD k = false
+          rename_i hcond
+          have hk_not : k ∉ List.range k := by simp
+          rw [scalarGreedyMaskAux_unchanged _ _ _ _ _ k hk_not]
+          exact replicate_getD_false _ _
+      split
+      · -- condition holds: selected
+        rename_i hcond
+        constructor
+        · -- coveredUntil = k + w.len = coveredBeforeRec(sgm, k+1)
+          simp only [coveredBeforeRec, ← ih_cu]
+          rw [h_sgm_val, if_pos hcond]
+          simp [hw]
+          have : prev.1 ≤ k := hcond.2.1; omega
+        · intro j hj
+          by_cases hjk : j = k
+          · subst hjk
+            -- After subst, k is gone and j is used everywhere
+            rw [h_sgm_val, if_pos hcond]
+            have h_prev_len2 := prev_mask_length winners validLen j (by omega)
+            have hj_lt_prev : j < prev.2.length := by rw [h_prev_len2]; exact hk_lt
+            simp [List.getD, List.getElem?_set, hj_lt_prev]
+          · have hj' : j < k := by omega
+            simp only [List.getD, List.getElem?_set]
+            split
+            · rename_i heq; exact absurd heq (Ne.symm hjk)
+            · exact ih_mask j hj'
+      · -- condition false: not selected
+        rename_i hcond
+        constructor
+        · simp only [coveredBeforeRec, ← ih_cu]
+          rw [h_sgm_val, if_neg hcond]; simp [hw]
+        · intro j hj
+          by_cases hjk : j < k
+          · exact ih_mask j hjk
+          · have hjk_eq : j = k := by omega
+            subst hjk_eq
+            rw [h_sgm_val, if_neg hcond]
+            have hj_not : j ∉ List.range j := by simp
+            rw [scalarGreedyMaskAux_unchanged _ _ _ _ _ j hj_not]
+            exact replicate_getD_false _ _
+
+/-- scalarGreedyMask[i] = positive[i] && decide(i >= coveredBeforeRec(scalarGreedyMask, i)). -/
+private theorem scalarGreedyMask_getD_eq (winners : List Reduction.Winner) (validLen : Nat)
+    (h_valid : validLen ≤ winners.length) (i : Nat) (hi : i < winners.length) :
+    (scalarGreedyMask winners validLen).getD i false =
+    ((mkPositive winners validLen).getD i false &&
+     decide (i ≥ coveredBeforeRec (scalarGreedyMask winners validLen) winners i)) := by
+  have ⟨h_cu, _⟩ := scalarGreedyMask_characterize winners validLen h_valid i (by omega)
+  set prev := scalarGreedyMaskAux winners validLen (List.range i) 0
+    (List.replicate winners.length false)
+  have h_decomp := scalarGreedyMask_at_k winners validLen i hi
+  rw [h_decomp, ← h_cu]
+  -- Analyze scalarGreedyMaskAux on [i]
+  unfold scalarGreedyMaskAux
+  cases hw : winners[i]? with
+  | none => exfalso; simp [List.getElem?_eq_none_iff] at hw; omega
+  | some w =>
+    simp only [hw, scalarGreedyMaskAux]
+    have h_pos : (mkPositive winners validLen).getD i false =
+        (decide (w.len > 0) && decide (i < validLen)) := by
+      simp only [mkPositive, arange, MLX.arange]
+      rw [getD_zipWith_and]
+      congr 1
+      · simp only [List.getD, List.getElem?_map, hw, Option.map_some]; rfl
+      · simp only [List.getD, List.getElem?_map, List.getElem?_range hi, Option.map_some]; rfl
+    rw [h_pos]
+    split
+    · -- condition holds
+      rename_i hcond
+      have h_prev_len3 := prev_mask_length winners validLen i (by omega)
+      simp only [List.getD, List.getElem?_set, show i = i from rfl, ite_true, h_prev_len3, hi]
+      simp [hcond.1, hcond.2.2]
+      exact hcond.2.1
+    · -- condition false
+      rename_i hcond
+      have hi_not : i ∉ List.range i := by simp
+      rw [scalarGreedyMaskAux_unchanged _ _ _ _ _ i hi_not]
+      rw [replicate_getD_false]
+      -- hcond : ¬(w.len > 0 ∧ i ≥ prev.fst ∧ i < validLen)
+      -- goal: false = decide(w.len > 0) && decide(i < validLen) && decide(i ≥ coveredBeforeRec...)
+      -- Since condition is false, at least one of the three must fail
+      by_cases hw0 : w.len > 0
+      · by_cases hv : i < validLen
+        · -- Both w.len > 0 and i < validLen hold, so i < prev.fst
+          have h_not_ge : ¬(i ≥ prev.fst) := fun h_ge => hcond ⟨hw0, h_ge, hv⟩
+          simp [hw0, hv]
+          omega
+        · simp [hv]
+      · simp [hw0]
+
+private theorem scalarGreedyMask_length' (winners : List Reduction.Winner) (validLen : Nat) :
+    (scalarGreedyMask winners validLen).length = winners.length := by
+  unfold scalarGreedyMask
+  apply scalarGreedyMaskAux_length'
+  · simp
+  · intro p hp; simp [List.mem_range] at hp; exact hp
+
+/-- The scalar greedy mask satisfies the iterStep fixpoint equation at each position. -/
 private theorem scalarGreedyMask_is_fixpoint (winners : List Reduction.Winner) (validLen : Nat)
     (h_valid : validLen ≤ winners.length) :
     ∀ i, i < winners.length →
       (scalarGreedyMask winners validLen).getD i false =
       (iterStep winners validLen (scalarGreedyMask winners validLen)).getD i false := by
-  sorry
+  intro i hi
+  rw [scalarGreedyMask_getD_eq winners validLen h_valid i hi]
+  rw [iterStep_getD_eq' winners validLen _ i hi (scalarGreedyMask_length' winners validLen)]
 
 private theorem scalarGreedyMaskAux_length (winners : List Reduction.Winner) (validLen : Nat)
     (positions : List Nat) (coveredUntil : Nat) (mask : List Bool)
@@ -781,16 +1139,290 @@ private theorem scalarGreedyMask_false_beyond (winners : List Reduction.Winner) 
     simp only [List.getD, List.getElem?_replicate]
     split <;> simp
 
-/-- extractSelected on the scalar greedy mask gives the same list as scalarSelect.
-    Proof strategy: Both iterate over positions 0..n-1. extractSelected filters by
-    mask[i]=true and maps to SelectedToken. scalarSelect folds with coveredUntil state,
-    appending when w.len > 0 ∧ i ≥ coveredUntil. Since scalarGreedyMask marks exactly
-    the positions the scalar walk selects (by construction), the filtered lists agree. -/
+/-- Absorb filterMap into foldl. -/
+private theorem filterMap_foldl_eq {α β γ : Type*} (f : α → Option β)
+    (g : γ → β → γ) (init : γ) (l : List α) :
+    (l.filterMap f).foldl g init =
+    l.foldl (fun acc a => match f a with | some b => g acc b | none => acc) init := by
+  induction l generalizing init with
+  | nil => simp
+  | cons a rest ih =>
+    simp only [List.filterMap_cons]
+    cases hfa : f a with
+    | none => simp [hfa, ih]
+    | some b => simp [hfa, ih]
+
+/-- scalarGreedyMaskAux is identity for positions ≥ validLen. -/
+private theorem scalarGreedyMaskAux_all_ge_validLen
+    (winners : List Reduction.Winner) (validLen : Nat)
+    (positions : List Nat) (cu : Nat) (mask : List Bool)
+    (h_ge : ∀ p ∈ positions, p ≥ validLen) :
+    scalarGreedyMaskAux winners validLen positions cu mask = (cu, mask) := by
+  induction positions generalizing cu mask with
+  | nil => simp [scalarGreedyMaskAux]
+  | cons p rest ih =>
+    have hp := h_ge p (.head rest)
+    simp only [scalarGreedyMaskAux]
+    cases hw : winners[p]? with
+    | none => exact ih cu mask (fun q hq => h_ge q (.tail p hq))
+    | some w =>
+      simp only [hw]
+      have : ¬(w.len > 0 ∧ p ≥ cu ∧ p < validLen) := by omega
+      simp only [this, ite_false]
+      exact ih cu mask (fun q hq => h_ge q (.tail p hq))
+
+/-- Generalized zip-filterMap equivalence with offset. -/
+private theorem zip_filterMap_offset
+    (winners : List Reduction.Winner) (mask : List Bool) (offset : Nat)
+    (h_len : mask.length = winners.length) :
+    (List.zip ((List.range winners.length).map (· + offset)) (List.zip mask winners)).filterMap
+      (fun ⟨i, sel, w⟩ => if sel then
+        some (SelectedToken.mk i w.len w.ruleID w.tokenKindID w.mode) else none) =
+    (List.range winners.length).filterMap (fun j =>
+      if mask.getD j false then
+        match winners[j]? with
+        | some w => some (SelectedToken.mk (j + offset) w.len w.ruleID w.tokenKindID w.mode)
+        | none => none
+      else none) := by
+  induction winners generalizing mask offset with
+  | nil => simp
+  | cons w ws ih =>
+    cases mask with
+    | nil => simp at h_len
+    | cons sel rest =>
+      simp only [List.length_cons] at h_len ⊢
+      have h_rest : rest.length = ws.length := by omega
+      rw [List.range_succ_eq_map]
+      simp only [List.map_cons, List.map_map, List.zip_cons_cons,
+        List.filterMap_cons, List.getD, List.getElem?_cons_zero, Option.getD, Nat.zero_add]
+      cases sel <;> simp <;> {
+        have h_ih := ih rest (offset + 1) h_rest
+        have h_map : List.map ((· + offset) ∘ Nat.succ) (List.range ws.length) =
+            List.map (· + (offset + 1)) (List.range ws.length) := by
+          apply List.map_congr_left; intro x _
+          show Nat.succ x + offset = x + (offset + 1); omega
+        rw [h_map, h_ih]
+        apply List.filterMap_congr; intro j _
+        simp only [Function.comp, List.getElem?_cons_succ, List.getD]
+        have : Nat.succ j + offset = j + (offset + 1) := by omega
+        simp only [this, Option.getD]
+      }
+
+/-- Convert extractSelected from zip form to range-based filterMap. -/
+private theorem extractSelected_eq_range_filterMap
+    (winners : List Reduction.Winner) (mask : List Bool)
+    (h_len : mask.length = winners.length) :
+    extractSelected winners mask =
+    (List.range winners.length).filterMap (fun i =>
+      if mask.getD i false then
+        match winners[i]? with
+        | some w => some (SelectedToken.mk i w.len w.ruleID w.tokenKindID w.mode)
+        | none => none
+      else none) := by
+  simp only [extractSelected]
+  have h := zip_filterMap_offset winners mask 0 h_len
+  simp only [Nat.add_zero, List.map_id'] at h
+  exact h
+
+/-- The joint induction: scalarSelect's fold tracks coveredBeforeRec and produces
+    the same tokens as filterMap on the mask. -/
+private theorem scalarSelectFold_matches
+    (winners : List Reduction.Winner) (validLen : Nat)
+    (h_valid : validLen ≤ winners.length) :
+    ∀ k, k ≤ validLen →
+    let fold_result := (List.range k).foldl (fun (acc : Nat × List SelectedToken) (i : Nat) =>
+      match winners[i]? with
+      | some w =>
+        if w.len > 0 && decide (i ≥ acc.1) then
+          (i + w.len, acc.2 ++ [SelectedToken.mk i w.len w.ruleID w.tokenKindID w.mode])
+        else acc
+      | none => acc
+    ) (0, [])
+    -- (A) cu matches coveredBeforeRec
+    fold_result.1 = coveredBeforeRec (scalarGreedyMask winners validLen) winners k ∧
+    -- (B) tokens match filterMap on mask
+    fold_result.2 = (List.range k).filterMap (fun i =>
+      if (scalarGreedyMask winners validLen).getD i false then
+        match winners[i]? with
+        | some w => some (SelectedToken.mk i w.len w.ruleID w.tokenKindID w.mode)
+        | none => none
+      else none) := by
+  intro k
+  induction k with
+  | zero => intro _; simp [coveredBeforeRec]
+  | succ k ih =>
+    intro hk
+    have hk' : k ≤ validLen := by omega
+    have hk_lt : k < validLen := by omega
+    have hk_lt_n : k < winners.length := by omega
+    obtain ⟨ih_cu, ih_tokens⟩ := ih hk'
+    rw [show List.range (k + 1) = List.range k ++ [k] from List.range_succ]
+    simp only [List.foldl_append, List.foldl_cons, List.foldl_nil]
+    set fold_k := (List.range k).foldl (fun (acc : Nat × List SelectedToken) (i : Nat) =>
+      match winners[i]? with
+      | some w =>
+        if w.len > 0 && decide (i ≥ acc.1) then
+          (i + w.len, acc.2 ++ [SelectedToken.mk i w.len w.ruleID w.tokenKindID w.mode])
+        else acc
+      | none => acc
+    ) (0, [])
+    have hw : winners[k]? = some winners[k] := List.getElem?_eq_getElem hk_lt_n
+    simp only [hw]
+    -- Get mask characterization at k
+    have h_sgm := scalarGreedyMask_getD_eq winners validLen h_valid k hk_lt_n
+    have h_pos_k : (mkPositive winners validLen).getD k false =
+        (decide (winners[k].len > 0) && decide (k < validLen)) := by
+      simp only [mkPositive, arange, MLX.arange]
+      rw [getD_zipWith_and]
+      congr 1
+      · simp only [List.getD, List.map_map, Function.comp, List.getElem?_map, hw, Option.map_some,
+          Option.getD_some]
+      · simp only [List.getD, List.getElem?_map, List.getElem?_range hk_lt_n, Option.map_some,
+          Option.getD_some]
+    rw [h_pos_k] at h_sgm
+    simp only [show decide (k < validLen) = true from decide_eq_true hk_lt, Bool.and_true] at h_sgm
+    -- h_sgm now : sgm.getD k false = decide(winners[k].len > 0) && decide(k ≥ coveredBeforeRec(...))
+    by_cases h_sel : (decide (winners[k].len > 0) && decide (k ≥ coveredBeforeRec (scalarGreedyMask winners validLen) winners k)) = true
+    · -- Selected
+      have h_sgm_true : (scalarGreedyMask winners validLen).getD k false = true := by
+        rw [h_sgm]; exact h_sel
+      have h_fold_cond : (winners[k].len > 0 && decide (k ≥ fold_k.1)) = true := by
+        rw [ih_cu]; exact h_sel
+      -- Reduce the fold step
+      have h_step : (if (winners[k].len > 0 && decide (k ≥ fold_k.fst)) = true then
+          (k + winners[k].len, fold_k.snd ++ [SelectedToken.mk k winners[k].len winners[k].ruleID
+            winners[k].tokenKindID winners[k].mode])
+          else fold_k) =
+        (k + winners[k].len, fold_k.snd ++ [SelectedToken.mk k winners[k].len winners[k].ruleID
+            winners[k].tokenKindID winners[k].mode]) := if_pos h_fold_cond
+      simp only [h_step]
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at h_sel
+      constructor
+      · -- cu = coveredBeforeRec at k+1
+        have h_cbr : coveredBeforeRec (scalarGreedyMask winners validLen) winners (k + 1) =
+            Nat.max (coveredBeforeRec (scalarGreedyMask winners validLen) winners k)
+              (k + winners[k].len) := by
+          simp only [coveredBeforeRec, h_sgm_true, hw]; simp
+        rw [h_cbr]
+        have : coveredBeforeRec (scalarGreedyMask winners validLen) winners k ≤ k + winners[k].len := by
+          have := h_sel.2; omega
+        exact (max_eq_right this).symm
+      · rw [ih_tokens, List.filterMap_append, List.filterMap_cons, List.filterMap_nil]
+        simp only [List.getD] at h_sgm_true
+        simp [h_sgm_true, hw]
+    · -- Not selected
+      have h_sgm_false : (scalarGreedyMask winners validLen).getD k false = false := by
+        rw [h_sgm]; simp only [Bool.not_eq_true] at h_sel; exact h_sel
+      have h_fold_cond : (winners[k].len > 0 && decide (k ≥ fold_k.1)) = false := by
+        rw [ih_cu]; simp only [Bool.not_eq_true] at h_sel; exact h_sel
+      -- Reduce the fold step
+      have h_step : (if (winners[k].len > 0 && decide (k ≥ fold_k.fst)) = true then
+          (k + winners[k].len, fold_k.snd ++ [SelectedToken.mk k winners[k].len winners[k].ruleID
+            winners[k].tokenKindID winners[k].mode])
+          else fold_k) = fold_k := by simp [h_fold_cond]
+      simp only [h_step]
+      constructor
+      · rw [ih_cu]
+        have h_cbr : coveredBeforeRec (scalarGreedyMask winners validLen) winners (k + 1) =
+            coveredBeforeRec (scalarGreedyMask winners validLen) winners k := by
+          simp only [coveredBeforeRec, h_sgm_false]; simp
+        rw [h_cbr]
+      · rw [ih_tokens, List.filterMap_append, List.filterMap_cons, List.filterMap_nil]
+        simp only [List.getD] at h_sgm_false
+        simp [h_sgm_false]
+
+/-- Positions ≥ validLen contribute nothing to filterMap when mask is false there. -/
+private theorem range_filterMap_beyond_empty
+    (winners : List Reduction.Winner) (validLen : Nat)
+    (h_valid : validLen ≤ winners.length)
+    (mask : List Bool) (h_beyond : ∀ i, i ≥ validLen → mask.getD i false = false) :
+    ((List.range (winners.length - validLen)).map (· + validLen)).filterMap (fun i =>
+      if mask.getD i false then
+        match winners[i]? with
+        | some w => some (SelectedToken.mk i w.len w.ruleID w.tokenKindID w.mode)
+        | none => none
+      else none) = [] := by
+  suffices h : ∀ (ps : List Nat), (∀ p ∈ ps, p ≥ validLen) →
+      ps.filterMap (fun i =>
+        if mask.getD i false then
+          match winners[i]? with
+          | some w => some (SelectedToken.mk i w.len w.ruleID w.tokenKindID w.mode)
+          | none => none
+        else none) = [] by
+    apply h
+    intro p hp
+    simp only [List.mem_map, List.mem_range] at hp
+    obtain ⟨j, _, rfl⟩ := hp; omega
+  intro ps hps
+  induction ps with
+  | nil => simp
+  | cons p rest ih =>
+    have hp : mask.getD p false = false := h_beyond _ (hps p (.head rest))
+    have h_rest := ih (fun q hq => hps q (.tail p hq))
+    simp only [List.filterMap_cons, hp, Bool.false_eq_true, ↓reduceIte]
+    exact h_rest
+
+/-- Trimming: filterMap on range n = filterMap on range m when f i = none for i ≥ m. -/
+private theorem filterMap_range_eq_of_none_beyond {α : Type*} (f : Nat → Option α)
+    (n m : Nat) (h : m ≤ n)
+    (h_beyond : ∀ i, m ≤ i → i < n → f i = none) :
+    (List.range n).filterMap f = (List.range m).filterMap f := by
+  induction n with
+  | zero => simp; omega
+  | succ n ih =>
+    by_cases hn : m = n + 1
+    · subst hn; rfl
+    · have hm_le_n : m ≤ n := by omega
+      have hfn : f n = none := h_beyond n (by omega) (by omega)
+      simp only [List.range_succ, List.filterMap_append, List.filterMap_cons,
+        List.filterMap_nil, hfn, List.append_nil]
+      exact ih hm_le_n (fun i hi1 hi2 => h_beyond i hi1 (by omega))
+
+/-- Bridge: the filterMap-then-foldl form of scalarSelect equals the direct foldl form. -/
+private theorem scalarSelect_fold_bridge (winners : List Reduction.Winner) (l : List Nat)
+    (init : Nat × List SelectedToken) :
+    ((l.filterMap (fun i =>
+      match winners[i]? with
+      | some w => some (i, w)
+      | none => none)).foldl (fun (acc : Nat × List SelectedToken) (iw : Nat × Reduction.Winner) =>
+      let (coveredUntil, selected) := acc
+      let (i, w) := iw
+      if w.len > 0 && i ≥ coveredUntil then
+        (i + w.len, selected ++ [SelectedToken.mk i w.len w.ruleID w.tokenKindID w.mode])
+      else (coveredUntil, selected)) init) =
+    (l.foldl (fun (acc : Nat × List SelectedToken) (i : Nat) =>
+      match winners[i]? with
+      | some w =>
+        if w.len > 0 && decide (i ≥ acc.1) then
+          (i + w.len, acc.2 ++ [SelectedToken.mk i w.len w.ruleID w.tokenKindID w.mode])
+        else acc
+      | none => acc) init) := by
+  induction l generalizing init with
+  | nil => simp
+  | cons a rest ih =>
+    simp only [List.filterMap_cons]
+    cases ha : winners[a]? with
+    | none => simp only [ha, List.foldl_cons]; exact ih init
+    | some w => simp only [ha, List.foldl_cons]; exact ih _
+
+/-- extractSelected on the scalar greedy mask gives the same list as scalarSelect. -/
 private theorem extractSelected_scalarGreedyMask (winners : List Reduction.Winner) (validLen : Nat)
     (h_valid : validLen ≤ winners.length) :
     extractSelected winners (scalarGreedyMask winners validLen) =
     scalarSelect winners validLen := by
-  sorry
+  -- Step 1: Convert extractSelected to range-based filterMap
+  rw [extractSelected_eq_range_filterMap _ _ (scalarGreedyMask_length winners validLen)]
+  -- Step 2: Trim range(n) to range(validLen) since mask is false beyond
+  rw [filterMap_range_eq_of_none_beyond _ _ _ h_valid]
+  · -- Step 3: Use scalarSelectFold_matches and bridge
+    have ⟨_, h_tokens⟩ := scalarSelectFold_matches winners validLen h_valid validLen le_rfl
+    simp only [scalarSelect]
+    rw [scalarSelect_fold_bridge]
+    exact h_tokens.symm
+  · intro i hi _
+    have hf := scalarGreedyMask_false_beyond winners validLen h_valid i hi
+    simp only [List.getD] at hf
+    simp [hf]
 
 theorem selection_equiv (winners : List Reduction.Winner) (validLen : Nat)
     (h_valid : validLen ≤ winners.length) :
