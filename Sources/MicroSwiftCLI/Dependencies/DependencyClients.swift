@@ -193,6 +193,19 @@ public struct MLXRuntimeClient: Sendable {
     public let fallbackPositionsSkippedByStartMask: Int
     public let fallbackKernelExecutionCount: Int
     public let artifactHash: String
+    public let fastPathBackendIdentifier: String
+    public let fastPathDeviceIdentifier: String
+    public let fastPathPipelineIdentifier: String
+    public let fastPathGraphCompileCount: Int
+    public let fastPathGraphCacheHitCount: Int
+    public let fastPathGraphCacheMissCount: Int
+    public let forbiddenMidPipelineHostExtractionCount: Int
+    public let runFamilyBackendIdentifier: String
+    public let runFamilyClassRunDispatchCount: Int
+    public let runFamilyHeadTailDispatchCount: Int
+    public let literalWorkloadRowCount: Int
+    public let runWorkloadRowCount: Int
+    public let prefixedWorkloadRowCount: Int
     public let fixtureIdentifier: String
 
     public init(
@@ -205,6 +218,19 @@ public struct MLXRuntimeClient: Sendable {
       fallbackPositionsSkippedByStartMask: Int,
       fallbackKernelExecutionCount: Int,
       artifactHash: String,
+      fastPathBackendIdentifier: String,
+      fastPathDeviceIdentifier: String,
+      fastPathPipelineIdentifier: String,
+      fastPathGraphCompileCount: Int,
+      fastPathGraphCacheHitCount: Int,
+      fastPathGraphCacheMissCount: Int,
+      forbiddenMidPipelineHostExtractionCount: Int,
+      runFamilyBackendIdentifier: String,
+      runFamilyClassRunDispatchCount: Int,
+      runFamilyHeadTailDispatchCount: Int,
+      literalWorkloadRowCount: Int,
+      runWorkloadRowCount: Int,
+      prefixedWorkloadRowCount: Int,
       fixtureIdentifier: String
     ) {
       self.status = status
@@ -216,6 +242,19 @@ public struct MLXRuntimeClient: Sendable {
       self.fallbackPositionsSkippedByStartMask = fallbackPositionsSkippedByStartMask
       self.fallbackKernelExecutionCount = fallbackKernelExecutionCount
       self.artifactHash = artifactHash
+      self.fastPathBackendIdentifier = fastPathBackendIdentifier
+      self.fastPathDeviceIdentifier = fastPathDeviceIdentifier
+      self.fastPathPipelineIdentifier = fastPathPipelineIdentifier
+      self.fastPathGraphCompileCount = fastPathGraphCompileCount
+      self.fastPathGraphCacheHitCount = fastPathGraphCacheHitCount
+      self.fastPathGraphCacheMissCount = fastPathGraphCacheMissCount
+      self.forbiddenMidPipelineHostExtractionCount = forbiddenMidPipelineHostExtractionCount
+      self.runFamilyBackendIdentifier = runFamilyBackendIdentifier
+      self.runFamilyClassRunDispatchCount = runFamilyClassRunDispatchCount
+      self.runFamilyHeadTailDispatchCount = runFamilyHeadTailDispatchCount
+      self.literalWorkloadRowCount = literalWorkloadRowCount
+      self.runWorkloadRowCount = runWorkloadRowCount
+      self.prefixedWorkloadRowCount = prefixedWorkloadRowCount
       self.fixtureIdentifier = fixtureIdentifier
     }
   }
@@ -228,37 +267,14 @@ public struct MLXRuntimeClient: Sendable {
 
   public static func live() -> Self {
     Self {
-      let fixtureIdentifier = "mlx-smoke-fallback-alt-ab-cd-v1"
-      let artifact = try buildFallbackSmokeArtifact()
-      let runtime = try ArtifactRuntime.fromArtifact(artifact)
-      let smokeInputBytes = try makeFallbackHeavySmokeInput(runtime: runtime)
-
-      TensorLexer.resetFastPathGraphCache()
-      _ = TensorLexer.lexPage(
-        bytes: smokeInputBytes,
-        validLen: Int32(smokeInputBytes.count),
-        baseOffset: 0,
-        artifact: runtime,
-        options: LexOptions(runtimeProfile: .v1Fallback)
-      )
-      _ = TensorLexer.lexPage(
-        bytes: smokeInputBytes,
-        validLen: Int32(smokeInputBytes.count),
-        baseOffset: 0,
-        artifact: runtime,
-        options: LexOptions(runtimeProfile: .v1Fallback)
-      )
-      let fastPathMetrics = TensorLexer.fastPathGraphMetrics()
-      guard fastPathMetrics.compileCount == 1 else {
-        throw MLXSmokeError.missingFastPathWarmReuse
-      }
-      guard fastPathMetrics.cacheHits > 0 else {
-        throw MLXSmokeError.missingFastPathWarmReuse
-      }
+      let fixtureIdentifier = "mlx-smoke-proof-literal-run-prefixed-v1"
+      let fallbackArtifact = try buildFallbackSmokeArtifact()
+      let fallbackRuntime = try ArtifactRuntime.fromArtifact(fallbackArtifact)
+      let smokeInputBytes = try makeFallbackHeavySmokeInput(runtime: fallbackRuntime)
 
       let benchmark = runBenchmark(
         bytes: smokeInputBytes,
-        artifact: runtime,
+        artifact: fallbackRuntime,
         config: BenchmarkConfig(mode: .warm, iterations: 2, seed: 0x5EED)
       )
 
@@ -283,6 +299,83 @@ public struct MLXRuntimeClient: Sendable {
         throw MLXSmokeError.unexpectedPipeline(metadata.pipelineFunction)
       }
 
+      let fastLiteralArtifact = try buildFastLiteralSmokeArtifact()
+      let fastRunArtifact = try buildFastRunSmokeArtifact()
+      let fastPrefixedArtifact = try buildFastPrefixedSmokeArtifact()
+      let fastLiteralRuntime = try ArtifactRuntime.fromArtifact(fastLiteralArtifact)
+      let fastRunRuntime = try ArtifactRuntime.fromArtifact(fastRunArtifact)
+      let fastPrefixedRuntime = try ArtifactRuntime.fromArtifact(fastPrefixedArtifact)
+
+      let literalInput = Array("aaaaaaaaaaaa".utf8)
+      let runInput = Array("alpha beta gamma42 delta99 _omega123".utf8)
+      let prefixedInput = Array("//aaaa\n//bbbb\n//cccc\n".utf8)
+
+      TensorLexer.resetFastPathGraphCache()
+      CompiledPageInput.resetHostExtractionCounts()
+      ClassRunExecution.resetDispatchMetrics()
+
+      let literalRows = try runFastPathProofWorkload(
+        bytes: literalInput,
+        runtime: fastLiteralRuntime
+      )
+      let runRows = try runFastPathProofWorkload(
+        bytes: runInput,
+        runtime: fastRunRuntime
+      )
+      let prefixedRows = try runFastPathProofWorkload(
+        bytes: prefixedInput,
+        runtime: fastPrefixedRuntime
+      )
+
+      guard literalRows > 0 else {
+        throw MLXSmokeError.missingLiteralWorkloadCoverage
+      }
+      guard runRows > 0 else {
+        throw MLXSmokeError.missingRunWorkloadCoverage
+      }
+      guard prefixedRows > 0 else {
+        throw MLXSmokeError.missingPrefixedWorkloadCoverage
+      }
+
+      let fastPathMetrics = TensorLexer.fastPathGraphMetrics()
+      guard fastPathMetrics.compileCount == 3 else {
+        throw MLXSmokeError.missingFastPathWarmReuse
+      }
+      guard fastPathMetrics.cacheMisses == 3 else {
+        throw MLXSmokeError.missingFastPathWarmReuse
+      }
+      guard fastPathMetrics.cacheHits >= 3 else {
+        throw MLXSmokeError.missingFastPathWarmReuse
+      }
+
+      let fastPathStoreEvent = fastPathMetrics.cacheEvents.first {
+        ($0.event == "fast-path-graph-cache-store" || $0.event == "fast-path-graph-cache-hit")
+          && $0.runtimeMetadata != nil
+      }
+      guard let fastPathMetadata = fastPathStoreEvent?.runtimeMetadata else {
+        throw MLXSmokeError.missingFastPathRuntimeMetadata
+      }
+      guard fastPathMetadata.backend.hasPrefix("mlx") else {
+        throw MLXSmokeError.unexpectedBackend(fastPathMetadata.backend)
+      }
+      guard fastPathMetadata.pipelineFunction == "fastPathPageGraph" else {
+        throw MLXSmokeError.unexpectedPipeline(fastPathMetadata.pipelineFunction)
+      }
+
+      let hostExtractionCounts = CompiledPageInput.hostExtractionCounts()
+      guard hostExtractionCounts.transitionalFamilyExecution == 0 else {
+        throw MLXSmokeError.forbiddenMidPipelineHostExtraction(
+          hostExtractionCounts.transitionalFamilyExecution)
+      }
+
+      let runFamilyMetrics = ClassRunExecution.dispatchMetrics()
+      guard runFamilyMetrics.classRunDispatches > 0 else {
+        throw MLXSmokeError.missingRunFamilyClassRunDispatch
+      }
+      guard runFamilyMetrics.headTailDispatches > 0 else {
+        throw MLXSmokeError.missingRunFamilyHeadTailDispatch
+      }
+
       return MLXSmokeResult(
         status: "ok",
         runtimeProfile: "fallback-benchmark-warm",
@@ -293,6 +386,19 @@ public struct MLXRuntimeClient: Sendable {
         fallbackPositionsSkippedByStartMask: benchmark.fallbackPositionsSkippedByStartMask,
         fallbackKernelExecutionCount: benchmark.fallbackKernelBackendDispatches,
         artifactHash: cacheEvent?.artifactHash ?? "unknown",
+        fastPathBackendIdentifier: fastPathMetadata.backend,
+        fastPathDeviceIdentifier: fastPathMetadata.deviceID,
+        fastPathPipelineIdentifier: fastPathMetadata.pipelineFunction,
+        fastPathGraphCompileCount: fastPathMetrics.compileCount,
+        fastPathGraphCacheHitCount: fastPathMetrics.cacheHits,
+        fastPathGraphCacheMissCount: fastPathMetrics.cacheMisses,
+        forbiddenMidPipelineHostExtractionCount: hostExtractionCounts.transitionalFamilyExecution,
+        runFamilyBackendIdentifier: ClassRunExecution.backendNameForTesting(),
+        runFamilyClassRunDispatchCount: runFamilyMetrics.classRunDispatches,
+        runFamilyHeadTailDispatchCount: runFamilyMetrics.headTailDispatches,
+        literalWorkloadRowCount: literalRows,
+        runWorkloadRowCount: runRows,
+        prefixedWorkloadRowCount: prefixedRows,
         fixtureIdentifier: fixtureIdentifier
       )
     }
@@ -302,7 +408,14 @@ public struct MLXRuntimeClient: Sendable {
     case noFallbackPositionsEntered
     case noFallbackKernelDispatch
     case missingRuntimeMetadata
+    case missingFastPathRuntimeMetadata
     case missingFastPathWarmReuse
+    case forbiddenMidPipelineHostExtraction(Int)
+    case missingRunFamilyClassRunDispatch
+    case missingRunFamilyHeadTailDispatch
+    case missingLiteralWorkloadCoverage
+    case missingRunWorkloadCoverage
+    case missingPrefixedWorkloadCoverage
     case unexpectedBackend(String)
     case unexpectedPipeline(String)
   }
@@ -318,11 +431,47 @@ public struct MLXRuntimeClient: Sendable {
       fallbackPositionsSkippedByStartMask: 8,
       fallbackKernelExecutionCount: 2,
       artifactHash: "deadbeefcafebabe",
-      fixtureIdentifier: "mlx-smoke-fallback-alt-ab-cd-v1"
+      fastPathBackendIdentifier: "mlx",
+      fastPathDeviceIdentifier: "mlx-cpu",
+      fastPathPipelineIdentifier: "fastPathPageGraph",
+      fastPathGraphCompileCount: 3,
+      fastPathGraphCacheHitCount: 3,
+      fastPathGraphCacheMissCount: 3,
+      forbiddenMidPipelineHostExtractionCount: 0,
+      runFamilyBackendIdentifier: "metal-test-device",
+      runFamilyClassRunDispatchCount: 6,
+      runFamilyHeadTailDispatchCount: 6,
+      literalWorkloadRowCount: 5,
+      runWorkloadRowCount: 5,
+      prefixedWorkloadRowCount: 3,
+      fixtureIdentifier: "mlx-smoke-proof-literal-run-prefixed-v1"
     )
   ) -> Self {
     Self { result }
   }
+}
+
+private func runFastPathProofWorkload(bytes: [UInt8], runtime: ArtifactRuntime) throws -> Int {
+  guard !bytes.isEmpty else { return 0 }
+  let options = LexOptions(runtimeProfile: .v0)
+  let first = TensorLexer.lexPage(
+    bytes: bytes,
+    validLen: Int32(bytes.count),
+    baseOffset: 0,
+    artifact: runtime,
+    options: options
+  )
+  let second = TensorLexer.lexPage(
+    bytes: bytes,
+    validLen: Int32(bytes.count),
+    baseOffset: 0,
+    artifact: runtime,
+    options: options
+  )
+  guard first == second else {
+    throw MLXRuntimeClient.MLXSmokeError.missingFastPathWarmReuse
+  }
+  return Int(second.rowCount)
 }
 
 private func makeFallbackHeavySmokeInput(runtime: ArtifactRuntime) throws -> [UInt8] {
@@ -399,6 +548,72 @@ private func buildFallbackSmokeArtifact() throws -> LexerArtifact {
     byteClasses: byteClasses,
     classSets: classSets,
     generatorVersion: "micro-swift-cli-fallback-smoke"
+  )
+}
+
+private func buildFastLiteralSmokeArtifact() throws -> LexerArtifact {
+  let spec = LexerSpec(name: "mlx.smoke.fast.literal") {
+    token("letterA", literal("a"))
+  }
+  let declared = spec.declare()
+  let normalized = DeclaredSpec.normalize(declared)
+  let validated = try NormalizedSpec.validate(normalized)
+  let byteClasses = validated.buildByteClasses()
+  let classSets = validated.buildClassSets(using: byteClasses)
+  let classified = try validated.classifyRules(
+    byteClasses: byteClasses,
+    classSets: classSets
+  )
+  return try ArtifactSerializer.build(
+    classified: classified,
+    byteClasses: byteClasses,
+    classSets: classSets,
+    generatorVersion: "micro-swift-cli-fast-literal-smoke"
+  )
+}
+
+private func buildFastRunSmokeArtifact() throws -> LexerArtifact {
+  let spec = LexerSpec(name: "mlx.smoke.fast.run") {
+    token("ident", .byteClass(.asciiIdentStart) <> zeroOrMore(.byteClass(.asciiIdentContinue)))
+    token("int", oneOrMore(.byteClass(.asciiDigit)))
+    skip("ws", oneOrMore(.byteClass(.asciiWhitespace)))
+  }
+  let declared = spec.declare()
+  let normalized = DeclaredSpec.normalize(declared)
+  let validated = try NormalizedSpec.validate(normalized)
+  let byteClasses = validated.buildByteClasses()
+  let classSets = validated.buildClassSets(using: byteClasses)
+  let classified = try validated.classifyRules(
+    byteClasses: byteClasses,
+    classSets: classSets
+  )
+  return try ArtifactSerializer.build(
+    classified: classified,
+    byteClasses: byteClasses,
+    classSets: classSets,
+    generatorVersion: "micro-swift-cli-fast-run-smoke"
+  )
+}
+
+private func buildFastPrefixedSmokeArtifact() throws -> LexerArtifact {
+  let spec = LexerSpec(name: "mlx.smoke.fast.prefixed") {
+    token("lineComment", literal("//") <> zeroOrMore(not(.newline)))
+    token("newline", literal("\n"))
+  }
+  let declared = spec.declare()
+  let normalized = DeclaredSpec.normalize(declared)
+  let validated = try NormalizedSpec.validate(normalized)
+  let byteClasses = validated.buildByteClasses()
+  let classSets = validated.buildClassSets(using: byteClasses)
+  let classified = try validated.classifyRules(
+    byteClasses: byteClasses,
+    classSets: classSets
+  )
+  return try ArtifactSerializer.build(
+    classified: classified,
+    byteClasses: byteClasses,
+    classSets: classSets,
+    generatorVersion: "micro-swift-cli-fast-prefixed-smoke"
   )
 }
 

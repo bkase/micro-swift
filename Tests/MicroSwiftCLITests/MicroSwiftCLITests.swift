@@ -31,7 +31,20 @@ private func withTestDependencies(
         fallbackPositionsSkippedByStartMask: 4,
         fallbackKernelExecutionCount: 2,
         artifactHash: "deadbeefcafebabe",
-        fixtureIdentifier: "mlx-smoke-fallback-alt-ab-cd-v1")
+        fastPathBackendIdentifier: "mlx",
+        fastPathDeviceIdentifier: "mlx-cpu",
+        fastPathPipelineIdentifier: "fastPathPageGraph",
+        fastPathGraphCompileCount: 3,
+        fastPathGraphCacheHitCount: 3,
+        fastPathGraphCacheMissCount: 3,
+        forbiddenMidPipelineHostExtractionCount: 0,
+        runFamilyBackendIdentifier: "metal-test-device",
+        runFamilyClassRunDispatchCount: 6,
+        runFamilyHeadTailDispatchCount: 6,
+        literalWorkloadRowCount: 5,
+        runWorkloadRowCount: 5,
+        prefixedWorkloadRowCount: 3,
+        fixtureIdentifier: "mlx-smoke-proof-literal-run-prefixed-v1")
     )
     extraDeps(&$0)
   } operation: {

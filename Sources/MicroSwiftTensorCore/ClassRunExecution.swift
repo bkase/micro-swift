@@ -23,7 +23,15 @@ public enum ClassRunExecution {
     }
   }
 
-  static func backendNameForTesting() -> String {
+  public static func backendNameForTesting() -> String {
     RunFamilyMetalExecutorProvider.shared.backendName
+  }
+
+  public static func resetDispatchMetrics() {
+    RunFamilyMetalExecutorProvider.resetDispatchMetrics()
+  }
+
+  public static func dispatchMetrics() -> RunFamilyDispatchMetrics {
+    RunFamilyMetalExecutorProvider.dispatchMetrics()
   }
 }

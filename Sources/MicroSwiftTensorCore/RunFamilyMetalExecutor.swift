@@ -57,9 +57,31 @@ enum RunFamilyMetalExecutorProvider {
       preconditionFailure("Unable to initialize run-family Metal executor: \(error)")
     }
   }()
+
+  static func resetDispatchMetrics() {
+    shared.resetDispatchMetrics()
+  }
+
+  static func dispatchMetrics() -> RunFamilyDispatchMetrics {
+    shared.dispatchMetrics()
+  }
+}
+
+public struct RunFamilyDispatchMetrics: Sendable, Equatable {
+  public let classRunDispatches: Int
+  public let headTailDispatches: Int
+
+  public init(classRunDispatches: Int, headTailDispatches: Int) {
+    self.classRunDispatches = classRunDispatches
+    self.headTailDispatches = headTailDispatches
+  }
 }
 
 final class RunFamilyMetalExecutor: @unchecked Sendable {
+  private let metricsLock = NSLock()
+  private var classRunDispatchCount: Int = 0
+  private var headTailDispatchCount: Int = 0
+
   private let device: MTLDevice
   private let commandQueue: MTLCommandQueue
   private let classRunPipelineState: MTLComputePipelineState
@@ -104,6 +126,23 @@ final class RunFamilyMetalExecutor: @unchecked Sendable {
 
   var backendName: String {
     "metal-\(device.registryID)"
+  }
+
+  func resetDispatchMetrics() {
+    metricsLock.lock()
+    classRunDispatchCount = 0
+    headTailDispatchCount = 0
+    metricsLock.unlock()
+  }
+
+  func dispatchMetrics() -> RunFamilyDispatchMetrics {
+    metricsLock.lock()
+    let metrics = RunFamilyDispatchMetrics(
+      classRunDispatches: classRunDispatchCount,
+      headTailDispatches: headTailDispatchCount
+    )
+    metricsLock.unlock()
+    return metrics
   }
 
   func evaluateClassRun(
@@ -160,6 +199,10 @@ final class RunFamilyMetalExecutor: @unchecked Sendable {
     guard commandBuffer.status == .completed else {
       throw RunFamilyMetalExecutorError.backendExecutionFailed(commandBuffer.status)
     }
+
+    metricsLock.lock()
+    classRunDispatchCount += 1
+    metricsLock.unlock()
 
     candidateLengths = copyArray(UInt16.self, from: outLenBuffer, count: pageWidth)
     return candidateLengths
@@ -219,6 +262,10 @@ final class RunFamilyMetalExecutor: @unchecked Sendable {
     guard commandBuffer.status == .completed else {
       throw RunFamilyMetalExecutorError.backendExecutionFailed(commandBuffer.status)
     }
+
+    metricsLock.lock()
+    headTailDispatchCount += 1
+    metricsLock.unlock()
 
     candidateLengths = copyArray(UInt16.self, from: outLenBuffer, count: pageWidth)
     return candidateLengths

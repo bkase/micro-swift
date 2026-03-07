@@ -7,6 +7,18 @@ public enum HostExtractionBoundary: Sendable {
   case transitionalFamilyExecution
 }
 
+public struct HostExtractionCounts: Sendable, Equatable {
+  public let finalPackedRows: Int
+  public let testInspection: Int
+  public let transitionalFamilyExecution: Int
+
+  public init(finalPackedRows: Int, testInspection: Int, transitionalFamilyExecution: Int) {
+    self.finalPackedRows = finalPackedRows
+    self.testInspection = testInspection
+    self.transitionalFamilyExecution = transitionalFamilyExecution
+  }
+}
+
 public struct HostPageExecutionView: Sendable {
   public let bytes: [UInt8]
   public let classIDs: [UInt8]
@@ -20,6 +32,8 @@ public struct HostPageExecutionView: Sendable {
 }
 
 public struct CompiledPageInput {
+  private static let hostExtractionCounter = HostExtractionCounter()
+
   public let bucket: PageBucket
   public let validLen: Int32
   public let baseOffset: Int64
@@ -161,7 +175,7 @@ public struct CompiledPageInput {
 
   public func extractHostExecutionView(at boundary: HostExtractionBoundary) -> HostPageExecutionView
   {
-    _ = boundary
+    Self.recordHostExtraction(boundary)
     return HostPageExecutionView(
       bytes: hostPaddedBytesStorage,
       classIDs: hostClassIDsStorage,
@@ -173,8 +187,59 @@ public struct CompiledPageInput {
     hostPaddedBytesStorage
   }
 
+  static func hostExecutionViewForPipeline(_ page: CompiledPageInput) -> HostPageExecutionView {
+    HostPageExecutionView(
+      bytes: page.hostPaddedBytesStorage,
+      classIDs: page.hostClassIDsStorage,
+      validMask: page.hostValidMaskStorage
+    )
+  }
+
+  public static func resetHostExtractionCounts() {
+    hostExtractionCounter.reset()
+  }
+
+  public static func hostExtractionCounts() -> HostExtractionCounts {
+    let finalPackedRows = hostExtractionCounter.count(for: .finalPackedRows)
+    let testInspection = hostExtractionCounter.count(for: .testInspection)
+    let transitionalFamilyExecution = hostExtractionCounter.count(for: .transitionalFamilyExecution)
+    return HostExtractionCounts(
+      finalPackedRows: finalPackedRows,
+      testInspection: testInspection,
+      transitionalFamilyExecution: transitionalFamilyExecution
+    )
+  }
+
   private static func shouldUseHostClassificationFallback() -> Bool {
     let processInfo = ProcessInfo.processInfo
     return processInfo.environment["MICROSWIFT_ENABLE_DEVICE_CLASSIFICATION"] != "1"
+  }
+
+  private static func recordHostExtraction(_ boundary: HostExtractionBoundary) {
+    hostExtractionCounter.record(boundary)
+  }
+}
+
+private final class HostExtractionCounter: @unchecked Sendable {
+  private let lock = NSLock()
+  private var counts: [HostExtractionBoundary: Int] = [:]
+
+  func reset() {
+    lock.lock()
+    counts.removeAll(keepingCapacity: true)
+    lock.unlock()
+  }
+
+  func record(_ boundary: HostExtractionBoundary) {
+    lock.lock()
+    counts[boundary, default: 0] += 1
+    lock.unlock()
+  }
+
+  func count(for boundary: HostExtractionBoundary) -> Int {
+    lock.lock()
+    let value = counts[boundary] ?? 0
+    lock.unlock()
+    return value
   }
 }

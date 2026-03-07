@@ -68,7 +68,7 @@ public enum TensorLexer {
       )
     }
 
-    let hostView = compiledPage.extractHostExecutionView(at: .transitionalFamilyExecution)
+    let hostView = CompiledPageInput.hostExecutionViewForPipeline(compiledPage)
 
     // Phase A/B: Byte classification + per-rule candidate generation
     let candidateBatch = makeFastCandidateBatch(
