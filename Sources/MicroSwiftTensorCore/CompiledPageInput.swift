@@ -1,5 +1,5 @@
-import MLX
 import Foundation
+import MLX
 
 public enum HostExtractionBoundary: Sendable {
   case finalPackedRows
@@ -159,7 +159,8 @@ public struct CompiledPageInput {
     return validMaskTensor.asType(dtype)
   }
 
-  public func extractHostExecutionView(at boundary: HostExtractionBoundary) -> HostPageExecutionView {
+  public func extractHostExecutionView(at boundary: HostExtractionBoundary) -> HostPageExecutionView
+  {
     _ = boundary
     return HostPageExecutionView(
       bytes: hostPaddedBytesStorage,

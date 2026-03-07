@@ -1,5 +1,5 @@
-import Testing
 import MicroSwiftLexerGen
+import Testing
 
 @testable import MicroSwiftTensorCore
 
@@ -83,7 +83,7 @@ struct LiteralExecutionTests {
     #expect(result == [2, 2, 0])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func compiledPageLiteralMasksOutTailBeyondValidLen() throws {
     let artifact = try makeLiteralArtifactRuntime()
     let bytes = Array("abc==".utf8)
@@ -104,7 +104,7 @@ struct LiteralExecutionTests {
     #expect(tensor.asArray(UInt16.self) == [0, 0, 0, 0, 0])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func shiftedByteTensorPadsWithNeutralTail() throws {
     let artifact = try makeLiteralArtifactRuntime()
     let bytes = Array("abcd".utf8)
@@ -121,7 +121,7 @@ struct LiteralExecutionTests {
     #expect(shifted == [UInt8(ascii: "c"), UInt8(ascii: "d"), 0, 0])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func literalBucketTensorPreservesRuleOrdering() throws {
     let artifact = try makeLiteralArtifactRuntime()
     let bytes = Array("==!=".utf8)

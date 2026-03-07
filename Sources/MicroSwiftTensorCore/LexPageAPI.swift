@@ -47,8 +47,9 @@ public enum TensorLexer {
 
     // Phase B: Per-rule candidate generation (using RuleBuckets)
     let candidates = makeFastCandidates(
-      compiledPage: compiledPage,
-      hostView: hostView,
+      bytes: hostView.bytes,
+      classIDs: hostView.classIDs,
+      validMask: hostView.validMask,
       validLen: Int32(boundedValidLen),
       artifact: artifact
     )

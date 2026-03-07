@@ -7,7 +7,7 @@ import Testing
 
 @Suite
 struct LexBenchmarkTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func coldBenchmarkProducesValidResult() throws {
     let runtime = try makeMicroSwiftRuntime()
     let source = makeSource(repeating: "let x = 42\n", count: 10)
@@ -23,7 +23,7 @@ struct LexBenchmarkTests {
     #expect(!result.pageBucketDistribution.isEmpty)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func warmBenchmarkShowsConsistentTiming() throws {
     let runtime = try makeMicroSwiftRuntime()
     let source = makeSource(repeating: "func foo() -> Int { return 1 }\n", count: 10)
