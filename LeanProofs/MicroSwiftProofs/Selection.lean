@@ -368,6 +368,35 @@ private theorem maskAfter_false_beyond (winners : List Reduction.Winner) (validL
     rw [maskAfter_succ]
     exact iterStep_false_beyond_validLen winners validLen _ i hi
 
+private theorem mkPositive_length (winners : List Reduction.Winner) (validLen : Nat) :
+    (mkPositive winners validLen).length = winners.length := by
+  simp [mkPositive, arange, MLX.arange, List.length_zipWith, List.length_map, List.length_range]
+
+private theorem mkEndExclusive_length (winners : List Reduction.Winner) :
+    (mkEndExclusive winners).length = winners.length := by
+  simp [mkEndExclusive, arange, MLX.arange, List.length_zipWith, List.length_map, List.length_range]
+
+private theorem length_scanl {α β : Type*} (f : β → α → β) (b : β) (l : List α) :
+    (l.scanl f b).length = l.length + 1 := by
+  induction l generalizing b with
+  | nil => simp [List.scanl]
+  | cons x xs ih => simp [List.scanl, ih]
+
+private theorem iterStep_length (winners : List Reduction.Winner) (validLen : Nat)
+    (mask : List Bool) (h_len : mask.length = winners.length) :
+    (iterStep winners validLen mask).length = winners.length := by
+  unfold iterStep selectionIteration
+  simp only [List.length_zipWith, mkPositive_length, List.length_cons, List.length_take,
+    cummaxFwd, MLX.cummaxFwd, List.length_drop, arange, MLX.arange,
+    List.length_range, mkEndExclusive_length, length_scanl, h_len]
+  omega
+
+private theorem maskAfter_length (winners : List Reduction.Winner) (validLen k : Nat) :
+    (maskAfter winners validLen k).length = winners.length := by
+  induction k with
+  | zero => simp [maskAfter, mkPositive_length]
+  | succ k ih => rw [maskAfter_succ]; exact iterStep_length winners validLen _ ih
+
 private theorem mono_decreasing_stabilizes (winners : List Reduction.Winner) (validLen : Nat)
     (h_bound : validLen ≤ winners.length) :
     iterStep winners validLen
@@ -379,7 +408,33 @@ private theorem mono_decreasing_stabilizes (winners : List Reduction.Winner) (va
   change iterStep winners validLen (maskAfter winners validLen validLen) =
     maskAfter winners validLen validLen
   rw [← maskAfter_succ]
-  sorry
+  -- Prove maskAfter(validLen+1) = maskAfter(validLen) via List.ext_getElem
+  apply List.ext_getElem
+  · -- Length equality
+    rw [maskAfter_length, maskAfter_length]
+  · -- Pointwise equality
+    intro i h1 h2
+    -- Convert getElem to getD
+    have h1' : i < winners.length := by rw [← maskAfter_length winners validLen (validLen + 1)]; exact h1
+    by_cases hi : i < validLen
+    · -- Position in valid range: both converged to maskAfter(i+1)[i]
+      have hg1 := mask_converges_at winners validLen i (by omega) (validLen + 1) (by omega)
+      have hg2 := mask_converges_at winners validLen i (by omega) validLen (by omega)
+      -- getD i false = [i]?.getD false. Since i < length, [i]? = some [i], so getD = [i]
+      have hl1 := maskAfter_length winners validLen (validLen + 1)
+      have hl2 := maskAfter_length winners validLen validLen
+      simp only [List.getD, List.getElem?_eq_getElem (by omega : i < (maskAfter winners validLen (validLen + 1)).length)] at hg1
+      simp only [List.getD, List.getElem?_eq_getElem (by omega : i < (maskAfter winners validLen validLen).length)] at hg2
+      simp at hg1 hg2
+      rw [← hg2] at hg1
+      exact hg1
+    · -- Position beyond validLen: both false
+      have hg1 := maskAfter_false_beyond winners validLen (validLen + 1) i (by omega)
+      have hg2 := maskAfter_false_beyond winners validLen validLen i (by omega)
+      simp only [List.getD, List.getElem?_eq_getElem (by omega : i < (maskAfter winners validLen (validLen + 1)).length)] at hg1
+      simp only [List.getD, List.getElem?_eq_getElem (by omega : i < (maskAfter winners validLen validLen).length)] at hg2
+      simp at hg1 hg2
+      rw [hg1, hg2]
 
 /-! ## Bridging lemmas: goal statement ↔ internal representation -/
 
