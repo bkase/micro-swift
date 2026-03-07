@@ -103,7 +103,7 @@ public enum GreedySelector {
       let n = pageSize
       let sentinelScalar = Int32(n)
       let sentinelArr = MLXArray([sentinelScalar])
-      let sentinelFill = MLXArray(Array(repeating: sentinelScalar, count: n))
+      let sentinelFill = broadcast(sentinelArr, to: [n])
       let positions = arange(n, dtype: .int32)
       let validMask = positions .< Int32(boundedValidLen)
       let winnerLen = winnerTensors.len.asType(.int32)

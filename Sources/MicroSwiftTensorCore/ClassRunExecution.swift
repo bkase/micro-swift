@@ -63,7 +63,7 @@ public enum ClassRunExecution {
       let isEnd = inBody .&& .!nextInBody
 
       // 4. endPos = where isEnd, index, sentinel pageLen
-      let sentinelFill = MLXArray(Array(repeating: Int32(pageLen), count: pageLen), [pageLen])
+      let sentinelFill = broadcast(MLXArray(Int32(pageLen)), to: [pageLen])
       let endPos = which(isEnd, indices, sentinelFill)
 
       // 5. propagatedEnds = cummin(endPos, reverse=true) → nearest end for each position

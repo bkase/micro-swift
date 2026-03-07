@@ -249,7 +249,8 @@ public enum WinnerReduction {
     let lenI64 = batch.candLenByRule.asType(.int64)
     let invPriority = (MLXArray(Int64(0xFFFF)) - batch.priorityRankByRule.asType(.int64))
     let invRuleID = (MLXArray(Int64(0xFFFF)) - batch.ruleIDByRule.asType(.int64))
-    let score = lenI64 * MLXArray(Int64(1) << 32) + invPriority * MLXArray(Int64(1) << 16) + invRuleID
+    let score =
+      lenI64 * MLXArray(Int64(1) << 32) + invPriority * MLXArray(Int64(1) << 16) + invRuleID
 
     // Mask out zero-length candidates so they never win
     let hasMatch = batch.candLenByRule.asType(.int64) .> MLXArray(Int64(0))
@@ -275,7 +276,8 @@ public enum WinnerReduction {
       len: bestLen.asType(.uint16),
       priorityRank: which(anyMatch, bestPriority, emptyPriority).asType(.uint16),
       ruleID: which(anyMatch, bestRuleID, emptyRuleID).asType(.uint16),
-      tokenKindID: which(anyMatch, bestTokenKindID, zeros([pageSize], dtype: .uint16)).asType(.uint16),
+      tokenKindID: which(anyMatch, bestTokenKindID, zeros([pageSize], dtype: .uint16)).asType(
+        .uint16),
       mode: which(anyMatch, bestMode, zeros([pageSize], dtype: .uint8)).asType(.uint8)
     )
   }
@@ -349,11 +351,11 @@ private func uint16Tensor(_ values: [UInt16]) -> MLXArray {
 }
 
 private func uint16Filled(value: UInt16, count: Int) -> MLXArray {
-  withMLXCPU { MLXArray(Array(repeating: value, count: count), [count]).asType(.uint16) }
+  withMLXCPU { broadcast(MLXArray(value).asType(.uint16), to: [count]) }
 }
 
 private func uint8Filled(value: UInt8, count: Int) -> MLXArray {
-  withMLXCPU { MLXArray(Array(repeating: value, count: count), [count]).asType(.uint8) }
+  withMLXCPU { broadcast(MLXArray(value).asType(.uint8), to: [count]) }
 }
 
 public struct CandidateWinner: Sendable, Equatable {

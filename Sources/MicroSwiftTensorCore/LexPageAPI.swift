@@ -357,12 +357,14 @@ public enum TensorLexer {
     if useMLXCandidates, let literalPage {
       classIDTensor = literalPage.classIDTensor
       validMaskTensor = literalPage.validRangeMask(dtype: .bool)
-      byteTensor = literalPage.byteTensor ?? withMLXCPU {
-        MLXArray(bytes, [pageSize]).asType(.uint8)
-      }
+      byteTensor =
+        literalPage.byteTensor
+        ?? withMLXCPU {
+          MLXArray(bytes, [pageSize]).asType(.uint8)
+        }
       nextInvalidTensor = withMLXCPU {
         let indices = MLXArray(Int32(0)..<Int32(pageSize), [pageSize])
-        let sentinelFill = MLXArray(Array(repeating: Int32(pageSize), count: pageSize), [pageSize])
+        let sentinelFill = broadcast(MLXArray(Int32(pageSize)), to: [pageSize])
         let invalidIndices = which(.!validMaskTensor!, indices, sentinelFill)
         return cummin(invalidIndices, axis: 0, reverse: true)
       }
@@ -457,8 +459,7 @@ public enum TensorLexer {
           } else {
             let computed = withMLXCPU { () -> MLXArray in
               let indices = MLXArray(Int32(0)..<Int32(pageSize), [pageSize])
-              let sentinelFill = MLXArray(
-                Array(repeating: Int32(pageSize), count: pageSize), [pageSize])
+              let sentinelFill = broadcast(MLXArray(Int32(pageSize)), to: [pageSize])
               let stopMember = MembershipKernels.membershipMaskTensor(
                 classIDTensor: classIDTensor,
                 setID: stopClassSetID,
@@ -585,11 +586,11 @@ private func mlxUInt16Tensor(_ values: [UInt16]) -> MLXArray {
 }
 
 private func mlxUInt16Filled(value: UInt16, count: Int) -> MLXArray {
-  withMLXCPU { MLXArray(Array(repeating: value, count: count), [count]).asType(.uint16) }
+  withMLXCPU { broadcast(MLXArray(value).asType(.uint16), to: [count]) }
 }
 
 private func mlxUInt8Filled(value: UInt8, count: Int) -> MLXArray {
-  withMLXCPU { MLXArray(Array(repeating: value, count: count), [count]).asType(.uint8) }
+  withMLXCPU { broadcast(MLXArray(value).asType(.uint8), to: [count]) }
 }
 
 private func mlxStackRows(_ rows: [MLXArray], pageSize: Int, dtype: DType) -> MLXArray {

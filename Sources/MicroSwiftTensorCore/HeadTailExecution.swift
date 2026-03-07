@@ -41,17 +41,19 @@ public enum HeadTailExecution {
       let indices = MLXArray(Int32(0)..<Int32(pageLen), [pageLen])
 
       // 1. isHead and isTail membership
-      let isHead = MembershipKernels.membershipMaskTensor(
-        classIDTensor: classIDTensor,
-        setID: headClassSetID,
-        classSetRuntime: classSetRuntime
-      ) .&& validMaskTensor
+      let isHead =
+        MembershipKernels.membershipMaskTensor(
+          classIDTensor: classIDTensor,
+          setID: headClassSetID,
+          classSetRuntime: classSetRuntime
+        ) .&& validMaskTensor
 
-      let isTail = MembershipKernels.membershipMaskTensor(
-        classIDTensor: classIDTensor,
-        setID: tailClassSetID,
-        classSetRuntime: classSetRuntime
-      ) .&& validMaskTensor
+      let isTail =
+        MembershipKernels.membershipMaskTensor(
+          classIDTensor: classIDTensor,
+          setID: tailClassSetID,
+          classSetRuntime: classSetRuntime
+        ) .&& validMaskTensor
 
       // 2. isStart = isHead && !prevIsTail (maximal munch)
       let prevIsTail = concatenated(
@@ -71,7 +73,7 @@ public enum HeadTailExecution {
       let isEnd = validChar .&& .!nextIsTail
 
       // 5. endPos = where isEnd, index, sentinel pageLen
-      let sentinelFill = MLXArray(Array(repeating: Int32(pageLen), count: pageLen), [pageLen])
+      let sentinelFill = broadcast(MLXArray(Int32(pageLen)), to: [pageLen])
       let endPos = which(isEnd, indices, sentinelFill)
 
       // 6. propagatedEnds = cummin(endPos, reverse=true)

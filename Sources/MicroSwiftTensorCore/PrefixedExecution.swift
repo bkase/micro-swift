@@ -146,7 +146,7 @@ public enum PrefixedExecution {
 
       let indices = MLXArray(Int32(0)..<Int32(pageLen), [pageLen])
       let sentinel = Int32(pageLen)
-      let sentinelFill = MLXArray(Array(repeating: sentinel, count: pageLen), [pageLen])
+      let sentinelFill = broadcast(MLXArray(sentinel), to: [pageLen])
 
       // 1. Prefix start mask: shifted byte comparisons
       let prefixStartMask: MLXArray = {
@@ -204,14 +204,14 @@ public enum PrefixedExecution {
       let shiftedNextBodyBreak = concatenated(
         [
           nextBodyBreak[prefixLen..<pageLen],
-          MLXArray(Array(repeating: sentinel, count: prefixLen), [prefixLen]),
+          broadcast(MLXArray(sentinel), to: [prefixLen]),
         ],
         axis: 0
       )
       let shiftedNextInvalid = concatenated(
         [
           nextInvalidTensor[prefixLen..<pageLen],
-          MLXArray(Array(repeating: sentinel, count: prefixLen), [prefixLen]),
+          broadcast(MLXArray(sentinel), to: [prefixLen]),
         ],
         axis: 0
       )
@@ -223,7 +223,7 @@ public enum PrefixedExecution {
         let shiftedNextStop = concatenated(
           [
             nextStopTensor[prefixLen..<pageLen],
-            MLXArray(Array(repeating: sentinel, count: prefixLen), [prefixLen]),
+            broadcast(MLXArray(sentinel), to: [prefixLen]),
           ],
           axis: 0
         )
