@@ -29,6 +29,29 @@ struct LexPageIntegrationTests {
     #expect(result.errorSpans.isEmpty)
   }
 
+  @Test
+  func lexPageRejectsLiteralThatWouldReadPastValidLen() throws {
+    let runtime = try makeMicroSwiftRuntime()
+    let bytes = Array("==".utf8)
+
+    let result = TensorLexer.lexPage(
+      bytes: bytes,
+      validLen: 1,
+      baseOffset: 0,
+      artifact: runtime,
+      options: LexOptions(emitSkipTokens: false)
+    )
+    let tokens = TokenUnpacker.unpack(result: result, baseOffset: 0)
+    let kindByID = Dictionary(
+      uniqueKeysWithValues: runtime.tokenKinds.map { ($0.tokenKindID, $0.name) })
+    let kindNames = tokens.map { kindByID[$0.kind] ?? "<unknown>" }
+
+    #expect(tokens.count == 1)
+    #expect(tokens[0].startByte == 0)
+    #expect(tokens[0].endByte == 1)
+    #expect(kindNames == ["eq"])
+  }
+
   private func makeMicroSwiftRuntime() throws -> ArtifactRuntime {
     let declared = microSwiftV0.declare()
     let normalized = DeclaredSpec.normalize(declared)

@@ -1,4 +1,5 @@
 import Testing
+import MicroSwiftLexerGen
 
 @testable import MicroSwiftTensorCore
 
@@ -23,6 +24,37 @@ struct CandidateVerificationTests {
         literalBytes: literal
       )
       let expected = referenceLiteral(bytes: bytes, validMask: validMask, literal: literal)
+      #expect(actual == expected)
+    }
+  }
+
+  @Test
+  func literalCompiledPageDifferentialMatchesBruteForceOnRandomInputs() throws {
+    let runtime = try makeLiteralCandidateRuntime()
+    var rng = LCG(seed: 0xC0DEC0DE)
+
+    for _ in 0..<220 {
+      let length = rng.int(in: 1...28)
+      let bytes = randomBytes(count: length, rng: &rng)
+      let validLen = rng.int(in: 0...length)
+      let validMask = makeValidMask(count: length, validLen: validLen)
+      let literalLength = rng.int(in: 1...4)
+      let literal = randomBytes(count: literalLength, rng: &rng)
+
+      let compiledPage = CompiledPageInput(
+        bytes: bytes,
+        validLen: Int32(validLen),
+        baseOffset: 0,
+        bucket: PageBucket(byteCapacity: Int32(length)),
+        artifact: runtime
+      )
+      let actualTensor = LiteralExecution.evaluateLiteral(
+        compiledPage: compiledPage,
+        literalBytes: literal
+      )
+      let actual = actualTensor.asArray(UInt16.self)
+      let expected = referenceLiteral(bytes: bytes, validMask: validMask, literal: literal)
+
       #expect(actual == expected)
     }
   }
@@ -770,4 +802,20 @@ private func selectLiteralFixture(
 
   let winners = WinnerReduction.reduce(candidates: candidates, pageSize: bytes.count)
   return modelSelect(winners: winners, validMask: validMask)
+}
+
+private func makeLiteralCandidateRuntime() throws -> ArtifactRuntime {
+  let declared = microSwiftV0.declare()
+  let normalized = DeclaredSpec.normalize(declared)
+  let validated = try NormalizedSpec.validate(normalized)
+  let byteClasses = validated.buildByteClasses()
+  let classSets = validated.buildClassSets(using: byteClasses)
+  let classified = try validated.classifyRules(byteClasses: byteClasses, classSets: classSets)
+  let artifact = try ArtifactSerializer.build(
+    classified: classified,
+    byteClasses: byteClasses,
+    classSets: classSets,
+    generatorVersion: "test"
+  )
+  return try ArtifactLoader.load(artifact)
 }
