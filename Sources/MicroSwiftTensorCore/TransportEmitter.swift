@@ -118,25 +118,27 @@ public enum TransportEmitter {
         : selectedTokenTensors.selectedMask .&& (selectedTokenTensors.mode .!= skipMode)
     }
 
-    let keptStart = selectedTokenTensors.startPos.asType(.int32).asArray(Int32.self)
-    let keptLength = selectedTokenTensors.length.asType(.uint16).asArray(UInt16.self)
-    let keptKind = remappedTokenKind.asType(.uint16).asArray(UInt16.self)
-    let keptMode = selectedTokenTensors.mode.asType(.uint8).asArray(UInt8.self)
-    let keptMaskHost = keepMask.asType(.bool).asArray(Bool.self)
+    // GPU-side bitwise packing: pack all 4 fields into UInt64 with a single extraction
+    let packed = withMLXCPU { () -> MLXArray in
+      let startU64 = selectedTokenTensors.startPos.asType(.uint64)
+      let lenU64 = selectedTokenTensors.length.asType(.uint64)
+      let kindU64 = remappedTokenKind.asType(.uint64)
+      let modeU64 = selectedTokenTensors.mode.asType(.uint64)
 
+      let combined = bitwiseOr(
+        bitwiseOr(startU64, lenU64 << 16),
+        bitwiseOr(kindU64 << 32, modeU64 << 48)
+      )
+      // Zero out non-kept positions
+      return which(keepMask, combined, zeros([pageSize], dtype: .uint64))
+    }
+
+    let packedHost = packed.asArray(UInt64.self)
     var packedRows = Array(repeating: UInt64.zero, count: capacity)
     var emitted = 0
-    for index in 0..<min(pageSize, keptMaskHost.count) where keptMaskHost[index] {
+    for index in 0..<min(pageSize, packedHost.count) where packedHost[index] != 0 {
       precondition(emitted < capacity, "kept tokens exceed maxRowCapacity")
-      guard let localStart = UInt16(exactly: keptStart[index]) else {
-        preconditionFailure("token startPos must fit in UInt16")
-      }
-      packedRows[emitted] = PackedToken.pack(
-        localStart: localStart,
-        length: keptLength[index],
-        tokenKindID: keptKind[index],
-        flags: keptMode[index]
-      )
+      packedRows[emitted] = packedHost[index]
       emitted += 1
     }
 
