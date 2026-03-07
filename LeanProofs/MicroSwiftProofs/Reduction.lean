@@ -98,17 +98,7 @@ def transpose {α : Type} (matrix : List (List α)) : List (List α) :=
     (List.range row.length).map fun col =>
       matrix.filterMap (·[col]?)
 
-/-- The core reduction equivalence: vectorized fold-over-rules produces the same
-    winners as scalar fold-over-rules at each position.
-
-    This is the key theorem. The Swift code does:
-      for ruleIndex in 0..<batch.ruleCount { ... which(contenderWins, ...) ... }
-    and we prove it equals mapping scalarReducePosition over transposed columns. -/
-theorem reduction_equiv (ruleBatches : List (List Winner)) (pageSize : Nat)
-    (h_shape : ∀ batch ∈ ruleBatches, batch.length = pageSize) :
-    vectorizedReducePage ruleBatches pageSize =
-    scalarReducePage (transpose ruleBatches) := by
-  sorry
+/-! ## Pointwise Lemmas -/
 
 /-- Per-position lemma: isBetter is consistent with the vectorized compare mask. -/
 theorem isBetter_iff_compare (cand best : Winner) :
@@ -133,5 +123,113 @@ theorem compare_eq_isBetter (cand best : Winner) :
     by_cases h2 : cand.len = 0 <;>
     by_cases h3 : cand.priorityRank = best.priorityRank <;>
     simp_all [bne_iff_ne, beq_iff_eq, ne_eq, Nat.pos_iff_ne_zero]
+
+/-! ## Reduction Equivalence Helper Lemmas -/
+
+/-- winnerWhich with vectorizedCompare equals zipWith of the isBetter-based selection. -/
+theorem winnerWhich_vectorizedCompare_eq (cands bests : List Winner) :
+    winnerWhich (vectorizedCompare cands bests) cands bests =
+    List.zipWith (fun c b => if isBetter c b then c else b) cands bests := by
+  unfold winnerWhich vectorizedCompare
+  induction cands generalizing bests with
+  | nil => simp [List.zipWith, List.zip, List.map]
+  | cons c cs ih =>
+    cases bests with
+    | nil => simp [List.zipWith, List.zip, List.map]
+    | cons b bs =>
+      simp only [List.zipWith, List.zip, List.map]
+      exact congr_arg₂ List.cons (by rw [compare_eq_isBetter]) (ih bs)
+
+/-- The foldl in vectorizedReducePage uses the same step function as isBetter selection. -/
+private theorem vectorizedReducePage_foldl_eq (ruleBatches : List (List Winner)) (pageSize : Nat) :
+    vectorizedReducePage ruleBatches pageSize =
+    ruleBatches.foldl (fun best cand =>
+      List.zipWith (fun c b => if isBetter c b then c else b) cand best)
+      (List.replicate pageSize emptyWinner) := by
+  simp only [vectorizedReducePage, full, MLX.full]
+  congr 1
+  funext best cand
+  exact winnerWhich_vectorizedCompare_eq cand best
+
+/-- Length is preserved through the foldl of zipWith. -/
+private theorem length_foldl_zipWith
+    (f : Winner → Winner → Winner)
+    (rows : List (List Winner)) (init : List Winner) (n : Nat)
+    (h_init : init.length = n)
+    (h_rows : ∀ row ∈ rows, row.length = n) :
+    (rows.foldl (fun acc row => List.zipWith f row acc) init).length = n := by
+  induction rows generalizing init with
+  | nil => simpa
+  | cons row rows ih =>
+    simp only [List.foldl]
+    apply ih
+    · simp [List.length_zipWith, h_rows row (by simp), h_init, Nat.min_self]
+    · exact fun r hr => h_rows r (by simp [hr])
+
+/-- Indexing into the foldl of zipWith distributes to a per-position foldl.
+    Key structural lemma: vectorized fold = per-position fold after indexing. -/
+private theorem getElem_foldl_zipWith
+    (f : Winner → Winner → Winner)
+    (rows : List (List Winner)) (init : List Winner) (n : Nat)
+    (h_init : init.length = n)
+    (h_rows : ∀ row ∈ rows, row.length = n)
+    (i : Nat) (hi : i < n) :
+    (rows.foldl (fun acc row => List.zipWith f row acc) init)[i]'(by
+      rw [length_foldl_zipWith f rows init n h_init h_rows]; exact hi) =
+    (rows.filterMap (·[i]?)).foldl (fun best cand => f cand best) (init[i]'(by omega)) := by
+  induction rows generalizing init with
+  | nil => simp
+  | cons row rows ih =>
+    simp only [List.foldl]
+    have h_row : row.length = n := by apply h_rows; simp
+    have h_rows' : ∀ r ∈ rows, r.length = n := by intro r hr; apply h_rows; simp [hr]
+    have h_init' : (List.zipWith f row init).length = n := by
+      simp [List.length_zipWith, h_row, h_init]
+    rw [ih _ h_init' h_rows']
+    -- Simplify filterMap on cons: row[i]? = some row[i] since i < n = row.length
+    have h_get : row[i]? = some (row[i]'(by omega)) := List.getElem?_eq_getElem (by omega)
+    simp only [List.filterMap, h_get, Option.some_bind]
+    simp only [List.foldl]
+    congr 1
+    -- (zipWith f row init)[i] = f row[i] init[i]
+    rw [List.getElem_zipWith]
+
+/-- Length of transpose for nonempty uniform matrices. -/
+private theorem length_transpose (matrix : List (List Winner)) (n : Nat)
+    (h_ne : matrix ≠ []) (h_shape : ∀ row ∈ matrix, row.length = n) :
+    (transpose matrix).length = n := by
+  obtain ⟨r, rs, rfl⟩ := List.exists_cons_of_ne_nil h_ne
+  simp [transpose, h_shape r (by simp), List.length_map, List.length_range]
+
+/-- Indexing into transpose gives the column via filterMap. -/
+private theorem getElem_transpose (matrix : List (List Winner)) (n : Nat)
+    (h_ne : matrix ≠ []) (h_shape : ∀ row ∈ matrix, row.length = n)
+    (i : Nat) (hi : i < n) :
+    (transpose matrix)[i]'(by rw [length_transpose matrix n h_ne h_shape]; exact hi) =
+    matrix.filterMap (·[i]?) := by
+  obtain ⟨r, rs, rfl⟩ := List.exists_cons_of_ne_nil h_ne
+  simp only [transpose, List.getElem_map, List.getElem_range]
+
+/-- The core reduction equivalence. Requires nonempty ruleBatches since
+    vectorizedReducePage produces `full pageSize emptyWinner` for [] but
+    scalarReducePage (transpose []) = []. -/
+theorem reduction_equiv (ruleBatches : List (List Winner)) (pageSize : Nat)
+    (h_nonempty : ruleBatches ≠ [])
+    (h_shape : ∀ batch ∈ ruleBatches, batch.length = pageSize) :
+    vectorizedReducePage ruleBatches pageSize =
+    scalarReducePage (transpose ruleBatches) := by
+  rw [vectorizedReducePage_foldl_eq]
+  simp only [scalarReducePage, scalarReducePosition]
+  apply List.ext_getElem
+  · rw [length_foldl_zipWith _ _ _ _ (by simp) h_shape]
+    rw [List.length_map, length_transpose _ _ h_nonempty h_shape]
+  · intro i h1 h2
+    have hi : i < pageSize := by
+      rwa [length_foldl_zipWith _ _ _ _ (by simp) h_shape] at h1
+    rw [getElem_foldl_zipWith _ _ _ pageSize (by simp) h_shape i hi]
+    rw [List.getElem_map]
+    rw [getElem_transpose _ pageSize h_nonempty h_shape i hi]
+    congr 1
+    simp [List.getElem_replicate]
 
 end Reduction
