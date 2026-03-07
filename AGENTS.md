@@ -72,6 +72,20 @@ git push                # Push to remote
 
 <!-- end-br-agent-instructions -->
 
+## Running Benchmarks
+
+MLX requires xcodebuild (not `swift build`) for GPU support:
+
+```bash
+# Build release benchmark
+xcodebuild -scheme micro-swift-bench -configuration Release -destination 'platform=macOS' build
+
+# Run it (path is in DerivedData)
+/Users/bkase/Library/Developer/Xcode/DerivedData/micro-swift6-gxzohxwhspffsodzynbxfsdjchpb/Build/Products/Release/micro-swift-bench
+```
+
+Tests that use MLX (`requiresMLXEval`) also need xcodebuild, not `swift test`.
+
 ## Parallel Codex Orchestration
 
 When spawning multiple `codex exec` instances across clones via `zmx`:
