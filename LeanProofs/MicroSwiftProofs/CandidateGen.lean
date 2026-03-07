@@ -112,6 +112,136 @@ Verified by `#eval` on diverse test vectors including:
       By IH, the mask after k steps captures offsets 0..k-1.
       The new AND adds offset k, giving offsets 0..k.
     - At the end (k = L), the mask captures all offsets, matching scalarLiteralMatchAt. -/
+-- The fold step function
+private def litStep (bytes : List Nat) (validMask : List Bool) (literalBytes : List Nat)
+    (pageLen : Nat) (mask : List Bool) (offset : Nat) : List Bool :=
+  let expectedByte := match literalBytes[offset]? with | some b => b | none => 0
+  let shiftedBytes := shiftLeft bytes offset 0
+  let shiftedValidNat := shiftLeft (validMask.map fun b => if b then (1 : Nat) else 0) offset 0
+  let byteMatch := elemEq shiftedBytes (full pageLen expectedByte)
+  let validHere := shiftedValidNat.map fun v => decide (v > 0)
+  List.zipWith and mask (List.zipWith and validHere byteMatch)
+
+-- The fold body in vectorizedLiteralEval equals litStep
+private lemma fold_body_eq_litStep (bytes : List Nat) (validMask : List Bool)
+    (literalBytes : List Nat) (pageLen : Nat) :
+    (fun mask offset =>
+      let expectedByte := match literalBytes[offset]? with | some b => b | none => 0
+      let shiftedBytes := shiftLeft bytes offset 0
+      let shiftedValidNat := shiftLeft (validMask.map fun b => if b then (1 : Nat) else 0) offset 0
+      let byteMatch := elemEq shiftedBytes (full pageLen expectedByte)
+      let validHere := shiftedValidNat.map fun v => decide (v > 0)
+      List.zipWith and mask (List.zipWith and validHere byteMatch)) =
+    litStep bytes validMask literalBytes pageLen := by
+  rfl
+
+-- litStep preserves length when shift amount ≤ list length
+private lemma litStep_length (bytes : List Nat) (validMask : List Bool)
+    (literalBytes : List Nat) (pageLen : Nat) (mask : List Bool) (offset : Nat)
+    (h_pg : pageLen = bytes.length) (h_len : bytes.length = validMask.length)
+    (h_mask : mask.length = bytes.length) (h_off : offset ≤ bytes.length) :
+    (litStep bytes validMask literalBytes pageLen mask offset).length = bytes.length := by
+  unfold litStep
+  simp only [List.length_zipWith, List.length_map]
+  have h_sl1 : (MLX.shiftLeft bytes offset 0).length = bytes.length - offset + offset := by
+    simp [MLX.shiftLeft, List.length_append, List.length_drop, List.length_replicate]
+  have h_sl2 : (MLX.shiftLeft (validMask.map fun b => if b then (1 : Nat) else 0) offset 0).length =
+      validMask.length - offset + offset := by
+    simp [MLX.shiftLeft, List.length_append, List.length_drop, List.length_replicate]
+  simp only [elemEq, List.length_zipWith, MLX.full, List.length_replicate, h_pg]
+  rw [h_sl1]
+  simp only [List.length_map, h_sl2, h_len, h_mask]
+  omega
+
+-- The fold preserves length
+private lemma fold_range_length (bytes : List Nat) (validMask : List Bool)
+    (literalBytes : List Nat) (pageLen : Nat) (k : Nat) (mask : List Bool)
+    (h_pg : pageLen = bytes.length) (h_len : bytes.length = validMask.length)
+    (h_mask : mask.length = bytes.length) (h_k : k ≤ bytes.length) :
+    ((List.range k).foldl (litStep bytes validMask literalBytes pageLen) mask).length =
+      bytes.length := by
+  induction k generalizing mask with
+  | zero => simpa
+  | succ n ih =>
+    rw [List.range_succ, List.foldl_append, List.foldl_cons, List.foldl_nil]
+    have h_n_len : ((List.range n).foldl (litStep bytes validMask literalBytes pageLen) mask).length =
+        bytes.length := ih mask h_mask (by omega)
+    exact litStep_length bytes validMask literalBytes pageLen _ n h_pg h_len h_n_len (by omega)
+
+-- The per-offset check in the scalar definition
+private def scalarOffsetCheck (bytes : List Nat) (validMask : List Bool)
+    (literalBytes : List Nat) (i j : Nat) : Bool :=
+  let pos := i + j
+  match validMask[pos]?, bytes[pos]?, literalBytes[j]? with
+  | some true, some b, some lb => b == lb
+  | _, _, _ => false
+
+-- Sub-lemma: litStep at position i ANDs in scalarOffsetCheck at that offset
+private lemma litStep_getElem (bytes : List Nat) (validMask : List Bool)
+    (literalBytes : List Nat) (pageLen : Nat) (mask : List Bool) (offset : Nat)
+    (h_pg : pageLen = bytes.length) (h_len : bytes.length = validMask.length)
+    (h_mask : mask.length = bytes.length) (h_off : offset ≤ bytes.length)
+    (i : Nat) (hi : i < bytes.length) :
+    (litStep bytes validMask literalBytes pageLen mask offset)[i]'(by
+      rw [litStep_length bytes validMask literalBytes pageLen mask offset h_pg h_len h_mask h_off]
+      exact hi) =
+      (mask[i]'(by omega) && scalarOffsetCheck bytes validMask literalBytes i offset) := by
+  sorry
+
+-- The fold invariant: after k steps, mask[i] = validMask[i] && all offsets 0..k-1 check out
+private lemma fold_invariant (bytes : List Nat) (validMask : List Bool)
+    (literalBytes : List Nat) (pageLen : Nat)
+    (k : Nat) (h_k : k ≤ literalBytes.length)
+    (h_pg : pageLen = bytes.length) (h_len : bytes.length = validMask.length)
+    (h_fit : literalBytes.length ≤ bytes.length)
+    (i : Nat) (hi : i < bytes.length) :
+    let fm := (List.range k).foldl (litStep bytes validMask literalBytes pageLen) validMask
+    fm[i]'(by rw [fold_range_length _ _ _ _ _ _ h_pg h_len (by omega) (by omega)]; exact hi) =
+      (validMask[i]'(by omega) &&
+       (List.range k).all fun j => scalarOffsetCheck bytes validMask literalBytes i j) := by
+  induction k with
+  | zero => simp [List.range_zero, List.foldl_nil]
+  | succ n ih =>
+    -- Unfold range (n+1) = range n ++ [n]
+    have h_unfold : (List.range (n + 1)).foldl (litStep bytes validMask literalBytes pageLen) validMask =
+        litStep bytes validMask literalBytes pageLen
+          ((List.range n).foldl (litStep bytes validMask literalBytes pageLen) validMask) n := by
+      rw [List.range_succ, List.foldl_append, List.foldl_cons, List.foldl_nil]
+    -- Get the intermediate fold result
+    set fm_n := (List.range n).foldl (litStep bytes validMask literalBytes pageLen) validMask with fm_n_def
+    have h_fm_n_len : fm_n.length = bytes.length :=
+      fold_range_length _ _ _ _ _ _ h_pg h_len (by omega) (by omega)
+    -- The step result at position i
+    have h_step := litStep_getElem bytes validMask literalBytes pageLen fm_n n h_pg h_len
+        h_fm_n_len (by omega) i hi
+    -- The IH gives us fm_n[i]
+    have h_ih := ih (by omega)
+    simp only [fm_n_def] at h_ih
+    -- Combine: we need to show the step result equals the all-check
+    -- Instead of rewriting in the complex dependent type, we prove equality directly
+    have h_result : (litStep bytes validMask literalBytes pageLen fm_n n)[i]'(by
+        rw [litStep_length bytes validMask literalBytes pageLen fm_n n h_pg h_len h_fm_n_len (by omega)]
+        exact hi) =
+        (validMask[i]'(by omega) &&
+         (List.range (n + 1)).all fun j => scalarOffsetCheck bytes validMask literalBytes i j) := by
+      rw [h_step, h_ih]
+      rw [List.range_succ, List.all_append, List.all_cons, List.all_nil]
+      simp only [Bool.and_true]
+      rw [Bool.and_assoc]
+    -- The goal's LHS is the same as h_result's LHS (modulo proof term)
+    simp only [h_unfold]
+    exact h_result
+
+-- scalarLiteralMatchAt unfolds to the same all-check (with bound + length guards)
+private lemma scalarMatch_unfold (bytes : List Nat) (validMask : List Bool)
+    (literalBytes : List Nat) (h_pos : literalBytes.length > 0) (i : Nat) :
+    scalarLiteralMatchAt bytes validMask literalBytes i =
+      (decide (literalBytes.length > 0) &&
+       decide (i + literalBytes.length ≤ bytes.length) &&
+       (List.range literalBytes.length).all fun j =>
+         scalarOffsetCheck bytes validMask literalBytes i j) := by
+  simp only [scalarLiteralMatchAt, scalarOffsetCheck]
+
 private lemma literal_foldl_semantic
     (bytes : List Nat) (validMask : List Bool) (literalBytes : List Nat)
     (h_len : bytes.length = validMask.length)
@@ -131,7 +261,66 @@ private lemma literal_foldl_semantic
       if scalarLiteralMatchAt bytes validMask literalBytes i
       then literalBytes.length
       else 0 := by
-  sorry
+  simp only []
+  rw [fold_body_eq_litStep]
+  set fm := (List.range literalBytes.length).foldl
+    (litStep bytes validMask literalBytes bytes.length) validMask
+  have h_fm_len : fm.length = bytes.length :=
+    fold_range_length _ _ _ _ _ _ rfl h_len (by omega) (by omega)
+  apply List.ext_getElem
+  · simp [List.length_zipWith, h_fm_len]
+  · intro i h1 h2
+    have hi_fm : i < fm.length := by rw [h_fm_len]; simp [List.length_zipWith, h_fm_len] at h1; exact h1
+    have hi_bytes : i < bytes.length := by rw [← h_fm_len]; exact hi_fm
+    rw [List.getElem_zipWith]
+    rw [List.getElem_map]
+    simp only [List.getElem_range]
+    -- Show fm[i] = scalarLiteralMatchAt i
+    suffices h_eq : fm[i]'(by rw [h_fm_len]; exact hi_bytes) =
+        scalarLiteralMatchAt bytes validMask literalBytes i by
+      rw [h_eq]
+    have h_fold := fold_invariant bytes validMask literalBytes bytes.length
+      literalBytes.length (le_refl _) rfl h_len h_fit i hi_bytes
+    simp only [fm] at h_fold ⊢
+    rw [h_fold]
+    rw [scalarMatch_unfold bytes validMask literalBytes h_pos i]
+    simp [h_pos]
+    -- Goal: validMask[i] && all(checks) = decide(i+L≤N) && all(checks)
+    -- Factor: if all(checks) is false, both sides are false.
+    -- If all(checks) is true, then in particular offset 0 checks validMask[i].
+    by_cases h_bound : i + literalBytes.length ≤ bytes.length
+    · simp only [h_bound, decide_true, Bool.true_and]
+      -- Need: validMask[i] && all(checks) = all(checks)
+      -- If all(checks) is true, offset 0 guarantees validMask[i] = true
+      by_cases h_all : (List.range literalBytes.length).all
+          (fun j => scalarOffsetCheck bytes validMask literalBytes i j) = true
+      · -- all checks pass; in particular offset 0
+        have h0 : scalarOffsetCheck bytes validMask literalBytes i 0 = true := by
+          rw [List.all_eq_true] at h_all
+          exact h_all 0 (List.mem_range.mpr h_pos)
+        simp only [scalarOffsetCheck, Nat.add_zero] at h0
+        rw [List.getElem?_eq_getElem (by omega)] at h0
+        rw [List.getElem?_eq_getElem (by omega)] at h0
+        rw [List.getElem?_eq_getElem (by omega)] at h0
+        simp only [h_all, Bool.and_true]
+        -- h0 tells us the match produces true, which requires validMask[i] = true
+        split at h0 <;> simp_all
+      · simp [Bool.not_eq_true] at h_all; simp [h_all]
+    · -- Out of bounds: all(checks) is false
+      simp only [h_bound, decide_false, Bool.false_and]
+      -- Show all(checks) = false
+      suffices h_all_false : (List.range literalBytes.length).all
+          (fun j => scalarOffsetCheck bytes validMask literalBytes i j) = false by
+        simp [h_all_false]
+      simp only [Bool.eq_false_iff]
+      intro h_all
+      rw [List.all_eq_true] at h_all
+      have h0 := h_all (bytes.length - i) (List.mem_range.mpr (by omega))
+      simp only [scalarOffsetCheck] at h0
+      have h_oob : i + (bytes.length - i) = bytes.length := by omega
+      rw [h_oob] at h0
+      rw [List.getElem?_eq_none (by omega : validMask.length ≤ bytes.length)] at h0
+      simp at h0
 
 theorem literal_eval_equiv (bytes : List Nat) (validMask : List Bool) (literalBytes : List Nat)
     (h_len : bytes.length = validMask.length) :
