@@ -626,26 +626,55 @@ theorem fixpoint_converges (winners : List Reduction.Winner) (validLen : Nat)
   exact fixpoint_stable winners validLen validLen
     (mono_decreasing_stabilizes winners validLen h_valid) (n - validLen)
 
-/-- The vectorized fixed-point selection produces the same tokens as the scalar greedy walk.
+/-! ## Selection equivalence helpers -/
 
-    Proof strategy: Show that the converged boolean mask from vectorizedSelect marks
-    exactly the positions that the scalar greedy walk would select.
+/-- The scalar greedy mask: true at position i iff the scalar walk would select there. -/
+private def scalarGreedyMaskAux (winners : List Reduction.Winner) (validLen : Nat)
+    (positions : List Nat) (coveredUntil : Nat) (mask : List Bool) : Nat × List Bool :=
+  match positions with
+  | [] => (coveredUntil, mask)
+  | i :: rest =>
+    match winners[i]? with
+    | some w =>
+      if w.len > 0 ∧ i ≥ coveredUntil ∧ i < validLen then
+        scalarGreedyMaskAux winners validLen rest (i + w.len)
+          (mask.set i true)
+      else
+        scalarGreedyMaskAux winners validLen rest coveredUntil mask
+    | none => scalarGreedyMaskAux winners validLen rest coveredUntil mask
 
-    The fixpoint characterization: after convergence, selectedMask[i] = true iff
-    - positive[i] = true (winner has len > 0 and position is within validLen), AND
-    - i >= max{j + winners[j].len : j < i, selectedMask[j] = true}
-      (position is not covered by any earlier selected token)
+private def scalarGreedyMask (winners : List Reduction.Winner) (validLen : Nat) : List Bool :=
+  (scalarGreedyMaskAux winners validLen (List.range winners.length) 0
+    (List.replicate winners.length false)).2
 
-    This is exactly the greedy selection criterion maintained by coveredUntil
-    in scalarSelect. The proof would proceed by:
-    1. Characterizing the fixpoint mask via the above predicate
-    2. Showing extractSelected applied to this mask produces the same list as
-       the scalar foldl, by induction on position
+/-- The fixpoint mask is unique: any mask satisfying iterStep = self must agree
+    pointwise with maskAfter(validLen). Uses wave-front convergence. -/
+private theorem fixpoint_unique_pointwise (winners : List Reduction.Winner) (validLen : Nat)
+    (h_valid : validLen ≤ winners.length)
+    (mask : List Bool) (h_len : mask.length = winners.length)
+    (h_fix : ∀ i, i < winners.length →
+      mask.getD i false = (iterStep winners validLen mask).getD i false)
+    (h_beyond : ∀ i, i ≥ validLen → mask.getD i false = false)
+    (i : Nat) (hi : i < winners.length) :
+    mask.getD i false = (maskAfter winners validLen validLen).getD i false := by
+  -- Use strong induction, handling both i < validLen and i ≥ validLen
+  induction i using Nat.strongRecOn with
+  | _ i ih =>
+    by_cases hi_val : i < validLen
+    · have h_conv := mask_converges_at winners validLen i hi validLen (by omega)
+      rw [h_conv, maskAfter_succ, h_fix i hi]
+      have h_agree : ∀ j < i, mask.getD j false = (maskAfter winners validLen i).getD j false := by
+        intro j hj
+        have hj_len : j < winners.length := by omega
+        rw [ih j hj hj_len]
+        have hc1 := mask_converges_at winners validLen j hj_len validLen (by omega)
+        have hc2 := mask_converges_at winners validLen j hj_len i (by omega)
+        rw [hc1, hc2]
+      exact iterStep_prefix_eq winners validLen mask (maskAfter winners validLen i) i
+        h_len (maskAfter_length winners validLen i) h_agree
+    · rw [h_beyond i (by omega)]
+      exact (maskAfter_false_beyond winners validLen validLen i (by omega)).symm
 
-    The key helper lemmas needed:
-    - The fixpoint mask is the unique boolean list satisfying the above predicate
-    - The scalar walk's coveredUntil at each step equals the cummax-derived coverage
-    - extractSelected filters by the mask, matching the scalar's conditional append -/
 theorem selection_equiv (winners : List Reduction.Winner) (validLen : Nat)
     (h_valid : validLen ≤ winners.length) :
     extractSelected winners (vectorizedSelect winners validLen) =
