@@ -1,5 +1,5 @@
-import Testing
 import MicroSwiftLexerGen
+import Testing
 
 @testable import MicroSwiftTensorCore
 
@@ -28,10 +28,10 @@ struct CandidateVerificationTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func literalCompiledPageDifferentialMatchesBruteForceOnRandomInputs() throws {
     let runtime = try makeLiteralCandidateRuntime()
-    var rng = LCG(seed: 0xC0DEC0DE)
+    var rng = LCG(seed: 0xC0DE_C0DE)
 
     for _ in 0..<220 {
       let length = rng.int(in: 1...28)

@@ -50,7 +50,8 @@ public enum WinnerReduction {
         return Array(repeating: 0, count: pageSize)
       }
       let values = candLenTensor.asType(.uint16).asArray(UInt16.self)
-      precondition(values.count == pageSize, "RuleCandidate candLen tensor count must equal pageSize")
+      precondition(
+        values.count == pageSize, "RuleCandidate candLen tensor count must equal pageSize")
       return values
     }
   }

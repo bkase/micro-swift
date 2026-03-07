@@ -6,7 +6,7 @@ import Testing
 
 @Suite
 struct FallbackBenchmarkTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func benchmarkModesProduceValidResults() throws {
     let artifact = try makeRuntimeArtifact()
     let bytes = Array("if abc _a1 z9 if abc".utf8)
@@ -54,7 +54,7 @@ struct FallbackBenchmarkTests {
     #expect(error.errorSpansPerSecond >= 0)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func benchmarkResultJSONIsValid() throws {
     let artifact = try makeRuntimeArtifact()
     let bytes = Array("abc123 _a1".utf8)
@@ -72,7 +72,7 @@ struct FallbackBenchmarkTests {
     #expect(decoded == result)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func benchmarkMetricsAreConsistent() throws {
     let artifact = try makeRuntimeArtifact()
     let bytes = Array("a_a_a_a_a_a".utf8)

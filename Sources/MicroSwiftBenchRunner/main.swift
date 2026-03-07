@@ -81,7 +81,9 @@ func printResult(_ r: BenchResult) {
 
 // --- M3 benchmark: CPU-only full lex pipeline (v0 profile) ---
 
-func benchM3(source: SourceBuffer, runtime: ArtifactRuntime, warmup: Int, measure: Int) -> BenchResult {
+func benchM3(source: SourceBuffer, runtime: ArtifactRuntime, warmup: Int, measure: Int)
+  -> BenchResult
+{
   let result = LexBenchmark.benchmarkWarm(
     source: source,
     artifact: runtime,
@@ -191,7 +193,9 @@ do {
     let m3Rate = formatRate(m3Results[i].bytesPerSecond)
     let m4Rate = formatRate(m4Results[i].bytesPerSecond)
     let speedupStr = String(format: "%.2fx", speedup)
-    print("  \(sizeLabel.padding(toLength: 12, withPad: " ", startingAt: 0))  \(m3Rate.padding(toLength: 12, withPad: " ", startingAt: 0))  \(m4Rate.padding(toLength: 12, withPad: " ", startingAt: 0))  \(speedupStr)")
+    print(
+      "  \(sizeLabel.padding(toLength: 12, withPad: " ", startingAt: 0))  \(m3Rate.padding(toLength: 12, withPad: " ", startingAt: 0))  \(m4Rate.padding(toLength: 12, withPad: " ", startingAt: 0))  \(speedupStr)"
+    )
   }
 
 } catch {

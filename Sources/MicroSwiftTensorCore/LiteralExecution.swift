@@ -55,26 +55,30 @@ public enum LiteralExecution {
   ) -> [UInt16] {
     let pageLen = min(bytes.count, validMask.count)
     guard pageLen > 0 else { return [] }
+    let literalLen = literalBytes.count
+    guard literalLen > 0, literalLen <= pageLen else {
+      return Array(repeating: 0, count: pageLen)
+    }
 
-    let bytesTensor = withMLXCPU {
-      MLXArray(Array(bytes.prefix(pageLen)), [pageLen]).asType(.uint8)
-    }
-    let validMaskTensor = withMLXCPU {
-      MLXArray(Array(validMask.prefix(pageLen)), [pageLen]).asType(.bool)
-    }
-    let candLen = evaluateLiteral(
-      byteTensor: bytesTensor,
-      validMaskTensor: validMaskTensor,
-      pageLen: pageLen,
-      literalBytes: literalBytes,
-      shiftedBytes: { offset in
-        ShiftedTensorView.forward(bytesTensor, by: offset)
-      },
-      shiftedMask: { offset in
-        ShiftedTensorView.forwardValidMask(validMaskTensor, by: offset)
+    let boundedLen = UInt16(min(literalLen, Int(UInt16.max)))
+    var candidateLen = Array(repeating: UInt16(0), count: pageLen)
+    let maxStart = pageLen - literalLen
+
+    for start in 0...maxStart {
+      var isMatch = true
+      for offset in 0..<literalLen {
+        let position = start + offset
+        if !validMask[position] || bytes[position] != literalBytes[offset] {
+          isMatch = false
+          break
+        }
       }
-    )
-    return candLen.asArray(UInt16.self)
+      if isMatch {
+        candidateLen[start] = boundedLen
+      }
+    }
+
+    return candidateLen
   }
 
   /// Evaluate all literal rules in a bucket (same length), returns [R, P] candidate lengths.
@@ -110,7 +114,9 @@ public enum LiteralExecution {
         let shiftedBytesTensor = shiftedBytes(offset)
         let shiftedValidMask = shiftedMask(offset)
         let byteMatch = shiftedBytesTensor .== literalBytes[offset]
-        startMask = startMask .&& shiftedValidMask .&& byteMatch
+        let startMaskWithValidity = startMask .&& shiftedValidMask
+        let updatedStartMask = startMaskWithValidity .&& byteMatch
+        startMask = updatedStartMask
       }
 
       let literalLenU16 = UInt16(min(literalLen, Int(UInt16.max)))
