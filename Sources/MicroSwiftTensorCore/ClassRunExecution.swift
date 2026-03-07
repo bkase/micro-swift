@@ -10,42 +10,20 @@ public enum ClassRunExecution {
     minLength: UInt16,
     classSetRuntime: ClassSetRuntime
   ) -> [UInt16] {
-    let positionCount = min(classIDs.count, validMask.count)
-    guard positionCount > 0 else { return [] }
-
-    var inBody = Array(repeating: false, count: positionCount)
-    for index in 0..<positionCount {
-      inBody[index] =
-        validMask[index]
-        && classSetRuntime.contains(setID: bodyClassSetID, classID: classIDs[index])
+    do {
+      return try RunFamilyMetalExecutorProvider.shared.evaluateClassRun(
+        classIDs: classIDs,
+        validMask: validMask,
+        bodyClassSetID: bodyClassSetID,
+        minLength: minLength,
+        classSetRuntime: classSetRuntime
+      )
+    } catch {
+      preconditionFailure("classRun Metal execution failed: \(error)")
     }
+  }
 
-    var starts: [Int] = []
-    var ends: [Int] = []
-    starts.reserveCapacity(positionCount)
-    ends.reserveCapacity(positionCount)
-
-    for index in 0..<positionCount {
-      if inBody[index] && (index == 0 || !inBody[index - 1]) {
-        starts.append(index)
-      }
-      if inBody[index] && (index == positionCount - 1 || !inBody[index + 1]) {
-        ends.append(index)
-      }
-    }
-
-    var candidateLengths = Array(repeating: UInt16(0), count: positionCount)
-    let runCount = min(starts.count, ends.count)
-
-    for runIndex in 0..<runCount {
-      let start = starts[runIndex]
-      let end = ends[runIndex]
-      let length = UInt16(end - start + 1)
-      if length >= minLength {
-        candidateLengths[start] = length
-      }
-    }
-
-    return candidateLengths
+  static func backendNameForTesting() -> String {
+    RunFamilyMetalExecutorProvider.shared.backendName
   }
 }

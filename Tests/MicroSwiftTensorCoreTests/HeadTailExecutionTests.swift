@@ -5,6 +5,11 @@ import Testing
 @Suite
 struct HeadTailExecutionTests {
   @Test
+  func usesMetalBackend() {
+    #expect(HeadTailExecution.backendNameForTesting().starts(with: "metal-"))
+  }
+
+  @Test
   func identifierFooReturnsLengthThree() {
     let runtime = makeIdentifierRuntime()
     let classIDs: [UInt8] = [1, 1, 1]

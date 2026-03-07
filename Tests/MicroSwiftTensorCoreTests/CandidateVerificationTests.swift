@@ -92,6 +92,39 @@ struct CandidateVerificationTests {
   }
 
   @Test
+  func classRunDifferentialVariesClassSetTablesAndMinLength() {
+    var rng = LCG(seed: 0x44CC11)
+
+    for _ in 0..<220 {
+      let runtime = randomClassRuntime(rng: &rng)
+      let count = rng.int(in: 1...48)
+      let maxClassID = max(0, runtime.numByteClasses - 1)
+      let classIDs = (0..<count).map { _ in UInt8(rng.int(in: 0...maxClassID)) }
+      let validLen = rng.int(in: 0...count)
+      let validMask = makeValidMask(count: count, validLen: validLen)
+      let bodySetID = UInt16(rng.int(in: 0...max(0, runtime.numClassSets - 1)))
+      let minLength = UInt16(rng.int(in: 1...8))
+
+      let actual = ClassRunExecution.evaluateClassRun(
+        classIDs: classIDs,
+        validMask: validMask,
+        bodyClassSetID: bodySetID,
+        minLength: minLength,
+        classSetRuntime: runtime
+      )
+      let expected = referenceClassRun(
+        classIDs: classIDs,
+        validMask: validMask,
+        bodySetID: bodySetID,
+        minLength: minLength,
+        runtime: runtime
+      )
+
+      #expect(actual == expected)
+    }
+  }
+
+  @Test
   func headTailDifferentialMatchesBruteForceOnRandomInputs() {
     var rng = LCG(seed: 0xBEEF)
     let runtime = makeClassRuntime()
@@ -103,6 +136,39 @@ struct CandidateVerificationTests {
       let validMask = makeValidMask(count: count, validLen: validLen)
       let headSetID = UInt16(rng.int(in: 0...2))
       let tailSetID = UInt16(rng.int(in: 0...2))
+
+      let actual = HeadTailExecution.evaluateHeadTail(
+        classIDs: classIDs,
+        validMask: validMask,
+        headClassSetID: headSetID,
+        tailClassSetID: tailSetID,
+        classSetRuntime: runtime
+      )
+      let expected = referenceHeadTail(
+        classIDs: classIDs,
+        validMask: validMask,
+        headSetID: headSetID,
+        tailSetID: tailSetID,
+        runtime: runtime
+      )
+
+      #expect(actual == expected)
+    }
+  }
+
+  @Test
+  func headTailDifferentialVariesClassSetTables() {
+    var rng = LCG(seed: 0x50EE77)
+
+    for _ in 0..<220 {
+      let runtime = randomClassRuntime(rng: &rng)
+      let count = rng.int(in: 1...48)
+      let maxClassID = max(0, runtime.numByteClasses - 1)
+      let classIDs = (0..<count).map { _ in UInt8(rng.int(in: 0...maxClassID)) }
+      let validLen = rng.int(in: 0...count)
+      let validMask = makeValidMask(count: count, validLen: validLen)
+      let headSetID = UInt16(rng.int(in: 0...max(0, runtime.numClassSets - 1)))
+      let tailSetID = UInt16(rng.int(in: 0...max(0, runtime.numClassSets - 1)))
 
       let actual = HeadTailExecution.evaluateHeadTail(
         classIDs: classIDs,
@@ -498,6 +564,27 @@ private func makePrefixedRuntime() -> ClassSetRuntime {
   let body = [true, true, true, true, true, false, true]
   let stop = [false, false, false, false, false, true, false]
   return ClassSetRuntime(mask: [body, stop], numClassSets: 2, numByteClasses: 7)
+}
+
+private func randomClassRuntime(rng: inout LCG) -> ClassSetRuntime {
+  let numClassSets = rng.int(in: 1...4)
+  let numByteClasses = rng.int(in: 1...8)
+  var mask: [[Bool]] = []
+  mask.reserveCapacity(numClassSets)
+
+  for _ in 0..<numClassSets {
+    var row = Array(repeating: false, count: numByteClasses)
+    for classIndex in 0..<numByteClasses {
+      row[classIndex] = rng.bool()
+    }
+    mask.append(row)
+  }
+
+  return ClassSetRuntime(
+    mask: mask,
+    numClassSets: numClassSets,
+    numByteClasses: numByteClasses
+  )
 }
 
 private func classifyPrefixed(_ bytes: [UInt8]) -> [UInt8] {

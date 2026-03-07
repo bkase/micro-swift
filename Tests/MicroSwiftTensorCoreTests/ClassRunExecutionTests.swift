@@ -7,6 +7,11 @@ import Testing
 @Suite
 struct ClassRunExecutionTests {
   @Test
+  func usesMetalBackend() {
+    #expect(ClassRunExecution.backendNameForTesting().starts(with: "metal-"))
+  }
+
+  @Test
   func singleDigitRunFoundAtStart() throws {
     let runtime = try makeRuntime()
     let classIDs: [UInt8] = [1, 1, 1, 0]

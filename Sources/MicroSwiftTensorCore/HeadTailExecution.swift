@@ -10,34 +10,20 @@ public enum HeadTailExecution {
     tailClassSetID: UInt16,
     classSetRuntime: ClassSetRuntime
   ) -> [UInt16] {
-    let count = classIDs.count
-    guard count > 0 else { return [] }
-
-    var isHead = Array(repeating: false, count: count)
-    var isTail = Array(repeating: false, count: count)
-
-    for i in 0..<count {
-      let isValid = i < validMask.count ? validMask[i] : false
-      guard isValid else { continue }
-      let classID = classIDs[i]
-      isHead[i] = classSetRuntime.contains(setID: headClassSetID, classID: classID)
-      isTail[i] = classSetRuntime.contains(setID: tailClassSetID, classID: classID)
+    do {
+      return try RunFamilyMetalExecutorProvider.shared.evaluateHeadTail(
+        classIDs: classIDs,
+        validMask: validMask,
+        headClassSetID: headClassSetID,
+        tailClassSetID: tailClassSetID,
+        classSetRuntime: classSetRuntime
+      )
+    } catch {
+      preconditionFailure("headTail Metal execution failed: \(error)")
     }
+  }
 
-    var candLen = Array(repeating: UInt16(0), count: count)
-    for start in 0..<count {
-      let startsHere = isHead[start] && (start == 0 || !isTail[start - 1])
-      guard startsHere else { continue }
-
-      var end = start
-      while end + 1 < count && isTail[end + 1] {
-        end += 1
-      }
-
-      let length = end - start + 1
-      candLen[start] = UInt16(clamping: length)
-    }
-
-    return candLen
+  static func backendNameForTesting() -> String {
+    RunFamilyMetalExecutorProvider.shared.backendName
   }
 }

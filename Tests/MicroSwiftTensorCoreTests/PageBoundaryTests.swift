@@ -80,6 +80,51 @@ struct PageBoundaryTests {
     #expect(selected.count == 1)
     #expect(selected[0] == winner(position: 1, len: 2, priorityRank: 0, ruleID: 0, tokenKindID: 0))
   }
+
+  @Test
+  func classRunDoesNotLeakIntoPaddedTailBytes() {
+    let runtime = ClassSetRuntime(
+      mask: [[false, true]],
+      numClassSets: 1,
+      numByteClasses: 2
+    )
+    let classIDs: [UInt8] = [1, 1, 1, 1, 1, 1]
+    let validMask: [Bool] = [true, true, true, false, false, false]
+
+    let result = ClassRunExecution.evaluateClassRun(
+      classIDs: classIDs,
+      validMask: validMask,
+      bodyClassSetID: 0,
+      minLength: 1,
+      classSetRuntime: runtime
+    )
+
+    #expect(result == [3, 0, 0, 0, 0, 0])
+  }
+
+  @Test
+  func headTailDoesNotLeakIntoPaddedTailBytes() {
+    let runtime = ClassSetRuntime(
+      mask: [
+        [false, true, false],
+        [false, true, true],
+      ],
+      numClassSets: 2,
+      numByteClasses: 3
+    )
+    let classIDs: [UInt8] = [1, 2, 2, 2, 2]
+    let validMask: [Bool] = [true, true, false, false, false]
+
+    let result = HeadTailExecution.evaluateHeadTail(
+      classIDs: classIDs,
+      validMask: validMask,
+      headClassSetID: 0,
+      tailClassSetID: 1,
+      classSetRuntime: runtime
+    )
+
+    #expect(result == [2, 0, 0, 0, 0])
+  }
 }
 
 private func makeABFallbackArtifact(maxWidth: UInt16) -> LexerArtifact {
