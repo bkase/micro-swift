@@ -1,10 +1,6 @@
 mlx-smoke: ok
 runtime-profile: fallback-benchmark-warm
-backend: metal
-device: metal-test-device
-pipeline: fallbackKernel
-fallback-positions-entered: 17
-fallback-dispatches: 2
+fallback-rule-count: 1
 artifact-hash: deadbeefcafebabe
 fast-backend: mlx
 fast-device: mlx-cpu

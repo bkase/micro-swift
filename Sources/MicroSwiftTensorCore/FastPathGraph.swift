@@ -83,6 +83,25 @@ public struct FastPathCompiledGraph: Sendable {
         ))
     }
 
+    // Pre-convert fallback DFA data to MLX tensors for capture in the compiled graph
+    let capturedFallbackRules: [FallbackRuleMLXInfo] = artifact.fallbackRuleDFAs.map { dfa in
+      let transitionTensor = MLXArray(dfa.transitions.map(Int32.init), [dfa.transitions.count])
+        .asType(.int32)
+      let acceptMask = MLXArray(dfa.acceptingMaskArray(), [Int(dfa.stateCount)]).asType(.bool)
+      return FallbackRuleMLXInfo(
+        ruleID: dfa.ruleID,
+        priorityRank: dfa.priorityRank,
+        tokenKindID: dfa.tokenKindID,
+        mode: dfa.mode,
+        maxWidth: Int(dfa.maxWidth),
+        classCount: Int(dfa.classCount),
+        startState: Int32(dfa.startState),
+        stateCount: Int(dfa.stateCount),
+        transitionTensor: transitionTensor,
+        acceptingMask: acceptMask
+      )
+    }
+
     let capturedLiteralRules = literalRules
     let capturedClassRunRules = classRunRules
     let capturedHeadTailRules = headTailRules
@@ -93,6 +112,7 @@ public struct FastPathCompiledGraph: Sendable {
         tensors: tensors, pageSize: pageSize,
         literalRules: capturedLiteralRules, classRunRules: capturedClassRunRules,
         headTailRules: capturedHeadTailRules, prefixedRules: capturedPrefixedRules,
+        fallbackRules: capturedFallbackRules,
         classSetRuntime: classSetRuntime,
         remapTables: capturedRemapTables
       )
@@ -103,31 +123,12 @@ public struct FastPathCompiledGraph: Sendable {
   public func execute(
     byteTensor: MLXArray,
     classIDTensor: MLXArray,
-    validMaskTensor: MLXArray,
-    fallbackResult: FallbackPageResult? = nil
+    validMaskTensor: MLXArray
   ) -> GreedySelector.SelectedTokenTensors {
-    let fallbackWinners: WinnerReduction.WinnerTensors
-    if let fallbackResult {
-      fallbackWinners = makeFallbackWinnerTensors(
-        fallbackResult: fallbackResult, pageSize: pageSize)
-    } else {
-      fallbackWinners = WinnerReduction.WinnerTensors(
-        len: zeros([pageSize], dtype: .uint16),
-        priorityRank: zeros([pageSize], dtype: .uint16),
-        ruleID: zeros([pageSize], dtype: .uint16),
-        tokenKindID: zeros([pageSize], dtype: .uint16),
-        mode: zeros([pageSize], dtype: .uint8)
-      )
-    }
     let outputs = candidateAndSelectGraph([
       byteTensor.asType(.uint8),
       classIDTensor.asType(.uint16),
       validMaskTensor.asType(.bool),
-      fallbackWinners.len,
-      fallbackWinners.priorityRank,
-      fallbackWinners.ruleID,
-      fallbackWinners.tokenKindID,
-      fallbackWinners.mode,
     ])
 
     precondition(outputs.count == 6, "compiled fast-path graph must return 6 outputs")
@@ -174,6 +175,19 @@ public struct FastPathCompiledGraph: Sendable {
     let stopClassSetID: UInt16?
   }
 
+  struct FallbackRuleMLXInfo: @unchecked Sendable {
+    let ruleID: UInt16
+    let priorityRank: UInt16
+    let tokenKindID: UInt16
+    let mode: UInt8
+    let maxWidth: Int
+    let classCount: Int
+    let startState: Int32
+    let stateCount: Int
+    let transitionTensor: MLXArray
+    let acceptingMask: MLXArray
+  }
+
   private static func candidateAndSelectGraph(
     tensors: [MLXArray],
     pageSize: Int,
@@ -181,21 +195,15 @@ public struct FastPathCompiledGraph: Sendable {
     classRunRules: [ClassRunRuleInfo],
     headTailRules: [HeadTailRuleInfo],
     prefixedRules: [PrefixedRuleInfo],
+    fallbackRules: [FallbackRuleMLXInfo],
     classSetRuntime: ClassSetRuntime,
     remapTables: [KeywordRemapTable]
   ) -> [MLXArray] {
-    precondition(tensors.count == 8, "compiled fast-path graph expects 8 inputs")
+    precondition(tensors.count == 3, "compiled fast-path graph expects 3 inputs")
 
     let byteTensor = tensors[0].asType(.uint8)
     let classIDTensor = tensors[1].asType(.uint16)
     let validMask = tensors[2].asType(.bool)
-    let fallbackWinners = WinnerReduction.WinnerTensors(
-      len: tensors[3],
-      priorityRank: tensors[4],
-      ruleID: tensors[5],
-      tokenKindID: tensors[6],
-      mode: tensors[7]
-    )
 
     // Precompute shared tensor resources
     let indices = MLXArray(Int32(0)..<Int32(pageSize), [pageSize])
@@ -310,8 +318,18 @@ public struct FastPathCompiledGraph: Sendable {
       modeByRule: stackRowsInline(modeRows, pageSize: pageSize, dtype: .uint8)
     )
 
-    // Reduce → merge with fallback → greedy select
+    // Reduce fast-path winners
     let fastWinners = WinnerReduction.reduce(batch: batch, pageSize: pageSize)
+
+    // Evaluate fallback DFA rules using MLX gather ops
+    let fallbackWinners = evaluateFallbackMLX(
+      classIDTensor: classIDTensor,
+      validMaskTensor: validMask,
+      fallbackRules: fallbackRules,
+      pageSize: pageSize
+    )
+
+    // Merge fast-path and fallback winners
     let merged = mergeFastAndFallback(
       fastWinners: fastWinners,
       fallbackWinners: fallbackWinners,
@@ -338,6 +356,116 @@ public struct FastPathCompiledGraph: Sendable {
     ]
   }
 
+}
+
+private func evaluateFallbackMLX(
+  classIDTensor: MLXArray,
+  validMaskTensor: MLXArray,
+  fallbackRules: [FastPathCompiledGraph.FallbackRuleMLXInfo],
+  pageSize: Int
+) -> WinnerReduction.WinnerTensors {
+  guard !fallbackRules.isEmpty else {
+    return WinnerReduction.WinnerTensors(
+      len: zeros([pageSize], dtype: .uint16),
+      priorityRank: zeros([pageSize], dtype: .uint16),
+      ruleID: zeros([pageSize], dtype: .uint16),
+      tokenKindID: zeros([pageSize], dtype: .uint16),
+      mode: zeros([pageSize], dtype: .uint8)
+    )
+  }
+
+  // Evaluate each fallback rule independently and reduce
+  var bestLen = zeros([pageSize], dtype: .uint16)
+  var bestPriority = broadcast(
+    MLXArray(WinnerTuple.empty.priorityRank).asType(.uint16), to: [pageSize])
+  var bestRuleID = broadcast(MLXArray(WinnerTuple.empty.ruleID).asType(.uint16), to: [pageSize])
+  var bestTokenKindID = zeros([pageSize], dtype: .uint16)
+  var bestMode = zeros([pageSize], dtype: .uint8)
+
+  for rule in fallbackRules {
+    let ruleWinnerLen = evaluateSingleFallbackRuleMLX(
+      classIDTensor: classIDTensor,
+      validMaskTensor: validMaskTensor,
+      rule: rule,
+      pageSize: pageSize
+    )
+
+    // Merge this rule's results into best using standard tie-break
+    let candPriority = broadcast(MLXArray(rule.priorityRank).asType(.uint16), to: [pageSize])
+    let candRuleID = broadcast(MLXArray(rule.ruleID).asType(.uint16), to: [pageSize])
+    let candTokenKindID = broadcast(MLXArray(rule.tokenKindID).asType(.uint16), to: [pageSize])
+    let candMode = broadcast(MLXArray(rule.mode).asType(.uint8), to: [pageSize])
+
+    let longer = ruleWinnerLen .> bestLen
+    let sameLen = ruleWinnerLen .== bestLen
+    let positiveLen = ruleWinnerLen .> MLXArray(UInt16(0))
+    let betterPriority = candPriority .< bestPriority
+    let samePriority = candPriority .== bestPriority
+    let betterRuleIDCmp = candRuleID .< bestRuleID
+    let tieBreak =
+      sameLen .&& positiveLen .&& (betterPriority .|| (samePriority .&& betterRuleIDCmp))
+    let contenderWins = longer .|| tieBreak
+
+    bestLen = which(contenderWins, ruleWinnerLen, bestLen).asType(.uint16)
+    bestPriority = which(contenderWins, candPriority, bestPriority).asType(.uint16)
+    bestRuleID = which(contenderWins, candRuleID, bestRuleID).asType(.uint16)
+    bestTokenKindID = which(contenderWins, candTokenKindID, bestTokenKindID).asType(.uint16)
+    bestMode = which(contenderWins, candMode, bestMode).asType(.uint8)
+  }
+
+  return WinnerReduction.WinnerTensors(
+    len: bestLen,
+    priorityRank: bestPriority,
+    ruleID: bestRuleID,
+    tokenKindID: bestTokenKindID,
+    mode: bestMode
+  )
+}
+
+private func evaluateSingleFallbackRuleMLX(
+  classIDTensor: MLXArray,
+  validMaskTensor: MLXArray,
+  rule: FastPathCompiledGraph.FallbackRuleMLXInfo,
+  pageSize: Int
+) -> MLXArray {
+  // Every position starts at the DFA start state
+  var currentState = broadcast(MLXArray(rule.startState), to: [pageSize])
+  var bestLen = zeros([pageSize], dtype: .uint16)
+  // Track which positions are still alive (haven't hit invalid class or end of valid range)
+  var alive = validMaskTensor.asType(.bool)
+
+  let classCountI32 = MLXArray(Int32(rule.classCount))
+
+  for step in 0..<rule.maxWidth {
+    // Get classIDs shifted forward by `step` positions
+    let shiftedClassIDs = ShiftedTensorView.forward(classIDTensor, by: step).asType(.int32)
+    let shiftedValid = ShiftedTensorView.forwardValidMask(validMaskTensor, by: step)
+
+    // Kill positions where classID is out of bounds or position is beyond valid range
+    let classInBounds = shiftedClassIDs .< classCountI32
+    let aliveNext = alive .&& shiftedValid .&& classInBounds
+    alive = aliveNext
+
+    // Clamp classIDs to prevent out-of-bounds gather (dead positions get garbage but alive masks them)
+    let safeClassIDs = minimum(shiftedClassIDs, classCountI32 - MLXArray(Int32(1)))
+
+    // Compute flat transition table index: state * classCount + classID
+    let flatIndex = currentState * classCountI32 + safeClassIDs
+
+    // Gather next states from transition table
+    let nextState = rule.transitionTensor.take(flatIndex, axis: 0)
+    currentState = nextState
+
+    // Check if current state is accepting (only for alive positions)
+    let isAccepting = rule.acceptingMask.take(currentState, axis: 0) .&& alive
+
+    // Update best length where we found an accepting state
+    let candidateLen = broadcast(MLXArray(UInt16(step + 1)), to: [pageSize])
+    let updatedBestLen = which(isAccepting, candidateLen, bestLen).asType(.uint16)
+    bestLen = updatedBestLen
+  }
+
+  return bestLen
 }
 
 private func stackRowsInline(_ rows: [MLXArray], pageSize: Int, dtype: DType) -> MLXArray {
@@ -391,37 +519,6 @@ private func mergeFastAndFallback(
     tokenKindID: which(fallbackWins, fallbackTokenKindID, fastTokenKindID).asType(.uint16),
     mode: which(fallbackWins, fallbackMode, fastMode).asType(.uint8)
   )
-}
-
-private func makeFallbackWinnerTensors(
-  fallbackResult: FallbackPageResult,
-  pageSize: Int
-) -> WinnerReduction.WinnerTensors {
-  WinnerReduction.WinnerTensors(
-    len: MLXArray(normalized(fallbackResult.fallbackLen, count: pageSize, fill: 0), [pageSize])
-      .asType(.uint16),
-    priorityRank: MLXArray(
-      normalized(fallbackResult.fallbackPriorityRank, count: pageSize, fill: 0),
-      [pageSize]
-    ).asType(.uint16),
-    ruleID: MLXArray(
-      normalized(fallbackResult.fallbackRuleID, count: pageSize, fill: 0), [pageSize]
-    )
-    .asType(.uint16),
-    tokenKindID: MLXArray(
-      normalized(fallbackResult.fallbackTokenKindID, count: pageSize, fill: 0),
-      [pageSize]
-    ).asType(.uint16),
-    mode: MLXArray(normalized(fallbackResult.fallbackMode, count: pageSize, fill: 0), [pageSize])
-      .asType(.uint8)
-  )
-}
-
-private func normalized<T>(_ values: [T], count: Int, fill: T) -> [T] {
-  guard count > 0 else { return [] }
-  if values.count == count { return values }
-  if values.count > count { return Array(values.prefix(count)) }
-  return values + Array(repeating: fill, count: count - values.count)
 }
 
 final class KernelCacheLogSink: @unchecked Sendable {

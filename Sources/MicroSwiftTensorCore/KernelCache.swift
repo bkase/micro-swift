@@ -54,22 +54,19 @@ public struct KernelCacheRuntimeMetadata: Codable, Sendable, Equatable {
 }
 
 public struct KernelCacheEntry: Sendable {
-  public let fallbackRunner: FallbackKernelRunner?
   public let fastPathGraph: FastPathCompiledGraph?
   public let runtimeMetadata: KernelCacheRuntimeMetadata
   public let createdAt: Date
 
   public init(
-    fallbackRunner: FallbackKernelRunner? = nil,
     fastPathGraph: FastPathCompiledGraph? = nil,
     runtimeMetadata: KernelCacheRuntimeMetadata,
     createdAt: Date
   ) {
     precondition(
-      fallbackRunner != nil || fastPathGraph != nil,
-      "KernelCacheEntry requires at least one runtime resource"
+      fastPathGraph != nil,
+      "KernelCacheEntry requires a fastPathGraph"
     )
-    self.fallbackRunner = fallbackRunner
     self.fastPathGraph = fastPathGraph
     self.runtimeMetadata = runtimeMetadata
     self.createdAt = createdAt

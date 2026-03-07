@@ -24,11 +24,7 @@ struct MLXSmoke: AsyncParsableCommand {
 
     deps.stdout.write("mlx-smoke: \(result.status)\n")
     deps.stdout.write("runtime-profile: \(result.runtimeProfile)\n")
-    deps.stdout.write("backend: \(result.backendIdentifier)\n")
-    deps.stdout.write("device: \(result.deviceIdentifier)\n")
-    deps.stdout.write("pipeline: \(result.kernelPipelineIdentifier)\n")
-    deps.stdout.write("fallback-positions-entered: \(result.fallbackPositionsEntered)\n")
-    deps.stdout.write("fallback-dispatches: \(result.fallbackKernelExecutionCount)\n")
+    deps.stdout.write("fallback-rule-count: \(result.fallbackRuleCount)\n")
     deps.stdout.write("artifact-hash: \(result.artifactHash)\n")
     deps.stdout.write("fast-backend: \(result.fastPathBackendIdentifier)\n")
     deps.stdout.write("fast-device: \(result.fastPathDeviceIdentifier)\n")

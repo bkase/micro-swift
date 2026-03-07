@@ -36,21 +36,12 @@ struct FallbackBenchmarkTests {
       #expect(result.errorSpansPerSecond >= 0)
       #expect(result.wallTimeSeconds >= 0)
       #expect(result.graphCompilations >= 0)
-      #expect(result.fallbackCacheHits >= 0)
-      #expect(result.fallbackCacheMisses >= 0)
-      #expect(result.fallbackPositionsEntered >= 0)
-      #expect(result.fallbackPositionsSkippedByStartMask >= 0)
-      #expect(result.fallbackKernelBackendDispatches >= 0)
+      #expect(result.fallbackRuleCount >= 0)
       #expect(!result.cacheEvents.isEmpty)
     }
 
     #expect(cold.graphCompilations == 1)
-    #expect(cold.fallbackCacheMisses == 1)
-    #expect(cold.fallbackCacheHits == 0)
-
     #expect(warm.graphCompilations == 1)
-    #expect(warm.fallbackCacheMisses == 1)
-    #expect(warm.fallbackCacheHits >= 1)
     #expect(error.errorSpansPerSecond >= 0)
   }
 
@@ -84,24 +75,15 @@ struct FallbackBenchmarkTests {
       config: BenchmarkConfig(mode: .warm, iterations: iterations, seed: 7)
     )
 
-    let measuredPositions = bytes.count * iterations
-    #expect(
-      result.fallbackPositionsEntered + result.fallbackPositionsSkippedByStartMask
-        == measuredPositions
-    )
-
     let measuredRuns = result.pageBucketDistribution.values.reduce(0, +)
     #expect(measuredRuns == iterations)
 
-    #expect(result.fallbackCacheMisses == result.graphCompilations)
-    #expect(result.fallbackCacheHits >= iterations)
-    #expect(result.fallbackKernelBackendDispatches == iterations)
+    #expect(result.fallbackRuleCount > 0)
 
-    let storeEvents = result.cacheEvents.filter { $0.event == "fallback-kernel-cache-store" }
+    let storeEvents = result.cacheEvents.filter { $0.event == "fast-path-graph-cache-store" }
     #expect(storeEvents.count == 1)
-    #expect(storeEvents[0].runtimeMetadata?.backend == "metal")
-    #expect(storeEvents[0].runtimeMetadata?.pipelineFunction == "fallbackKernel")
-    #expect((storeEvents[0].runtimeMetadata?.constantTableByteCount ?? 0) > 0)
+    #expect(storeEvents[0].runtimeMetadata?.backend == "mlx")
+    #expect(storeEvents[0].runtimeMetadata?.pipelineFunction == "fastPathPageGraph")
   }
 
   private func makeRuntimeArtifact() throws -> ArtifactRuntime {

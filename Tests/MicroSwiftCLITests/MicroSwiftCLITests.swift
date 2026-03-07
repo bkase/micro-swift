@@ -24,12 +24,7 @@ private func withTestDependencies(
       result: MLXRuntimeClient.MLXSmokeResult(
         status: "ok",
         runtimeProfile: "fallback-benchmark-warm",
-        backendIdentifier: "metal",
-        deviceIdentifier: "metal-test-device",
-        kernelPipelineIdentifier: "fallbackKernel",
-        fallbackPositionsEntered: 17,
-        fallbackPositionsSkippedByStartMask: 4,
-        fallbackKernelExecutionCount: 2,
+        fallbackRuleCount: 1,
         artifactHash: "deadbeefcafebabe",
         fastPathBackendIdentifier: "mlx",
         fastPathDeviceIdentifier: "mlx-cpu",

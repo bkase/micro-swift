@@ -158,10 +158,12 @@ import Testing
     let numStates = Int(fallback.numStatesUsed)
     #expect(stepLo[(1 * numStates) + 1] == 1)
 
-    let runner = FallbackKernelRunner(fallback: fallback)
     let bytes = Array("abab".utf8)
-    let classIDs = bytes.map { UInt16(artifact.byteToClass[Int($0)]) }
-    let result = runner.evaluatePage(classIDs: classIDs, validLen: Int32(classIDs.count))
+    let result = scalarEvaluateFallbackPage(
+      bytes: bytes,
+      validLen: bytes.count,
+      artifact: artifact
+    )
 
     #expect(result.fallbackLen == [4, 0, 2, 0])
     #expect(result.fallbackRuleID == [12, 0, 12, 0])

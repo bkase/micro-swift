@@ -22,7 +22,6 @@ struct TestPipelineResult: Equatable {
   let selected: [CandidateWinner]
   let tokens: [TestToken]
   let errorRuns: [TestErrorRun]
-  let fallbackObservability: FallbackObservability
 }
 
 func runTestPipeline(
@@ -31,8 +30,6 @@ func runTestPipeline(
   applyKeywordRemap: Bool = true
 ) throws -> TestPipelineResult {
   let boundedArtifact = makeBoundedFallbackArtifactForTests(artifact)
-  let runtime = try ArtifactRuntime.fromArtifact(boundedArtifact)
-  let classIDs = bytes.map { UInt16(boundedArtifact.byteToClass[Int($0)]) }
 
   let fastWinners = buildFastWinners(
     bytes: bytes,
@@ -40,24 +37,11 @@ func runTestPipeline(
     artifact: boundedArtifact
   )
 
-  let fallbackResult: FallbackPageResult
-  var observability = FallbackObservability()
-  if let fallback = runtime.fallback {
-    let runner = FallbackKernelRunner(fallback: fallback)
-    fallbackResult = runner.evaluatePage(
-      classIDs: classIDs,
-      validLen: Int32(bytes.count),
-      observability: &observability
-    )
-  } else {
-    fallbackResult = FallbackPageResult(
-      fallbackLen: Array(repeating: 0, count: bytes.count),
-      fallbackPriorityRank: Array(repeating: 0, count: bytes.count),
-      fallbackRuleID: Array(repeating: 0, count: bytes.count),
-      fallbackTokenKindID: Array(repeating: 0, count: bytes.count),
-      fallbackMode: Array(repeating: 0, count: bytes.count)
-    )
-  }
+  let fallbackResult = scalarEvaluateFallbackPage(
+    bytes: bytes,
+    validLen: bytes.count,
+    artifact: boundedArtifact
+  )
 
   let integrated = integrateWithFallback(
     fastWinners: fastWinners,
@@ -93,8 +77,7 @@ func runTestPipeline(
   return TestPipelineResult(
     selected: selected,
     tokens: tokens,
-    errorRuns: errorRuns,
-    fallbackObservability: observability
+    errorRuns: errorRuns
   )
 }
 
@@ -179,6 +162,43 @@ struct LCRNG: Sendable {
     precondition(upperBound > 0)
     return Int(nextUInt64() % UInt64(upperBound))
   }
+}
+
+func scalarEvaluateFallbackPage(
+  bytes: [UInt8],
+  validLen: Int,
+  artifact: LexerArtifact
+) -> FallbackPageResult {
+  let scalar = ScalarFallbackEvaluator()
+  let count = bytes.count
+  var lens = Array(repeating: UInt16(0), count: count)
+  var ranks = Array(repeating: UInt16(0), count: count)
+  var ruleIDs = Array(repeating: UInt16(0), count: count)
+  var kindIDs = Array(repeating: UInt16(0), count: count)
+  var modes = Array(repeating: UInt8(0), count: count)
+
+  for pos in 0..<count {
+    let w = scalar.evaluate(
+      bytes: bytes,
+      startPosition: pos,
+      validLen: validLen,
+      byteToClass: artifact.byteToClass,
+      artifact: artifact
+    )
+    lens[pos] = w.len
+    ranks[pos] = w.priorityRank
+    ruleIDs[pos] = w.ruleID
+    kindIDs[pos] = w.tokenKindID
+    modes[pos] = w.mode
+  }
+
+  return FallbackPageResult(
+    fallbackLen: lens,
+    fallbackPriorityRank: ranks,
+    fallbackRuleID: ruleIDs,
+    fallbackTokenKindID: kindIDs,
+    fallbackMode: modes
+  )
 }
 
 private func buildFastWinners(

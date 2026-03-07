@@ -235,11 +235,11 @@ private func evaluateFallback(
   validLen: Int,
   artifact: LexerArtifact
 ) throws -> FallbackPageResult {
-  let runtime = try ArtifactRuntime.fromArtifact(artifact)
-  let fallback = try #require(runtime.fallback)
-  let runner = FallbackKernelRunner(fallback: fallback)
-  let classIDs = bytes.map { UInt16(artifact.byteToClass[Int($0)]) }
-  return runner.evaluatePage(classIDs: classIDs, validLen: Int32(validLen))
+  return scalarEvaluateFallbackPage(
+    bytes: bytes,
+    validLen: validLen,
+    artifact: artifact
+  )
 }
 
 private func assertMatchesScalar(

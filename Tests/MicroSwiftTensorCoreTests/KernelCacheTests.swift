@@ -11,8 +11,9 @@ struct KernelCacheTests {
     let sink = LogSink()
     let cache = KernelCache(logSink: sink.record)
     let key = makeKey(pageBucket: 128, inputDType: "uint16")
-    let runner = FallbackKernelRunner(fallback: makeFallbackRuntime())
     let metadata = makeRuntimeMetadata(deviceID: key.deviceID)
+    let runtime = try makeLiteralRuntime()
+    let graph = FastPathCompiledGraph(pageSize: 128, artifact: runtime)
 
     let firstLookup = cache.lookup(key: key, traceID: "trace-miss")
     #expect(firstLookup == nil)
@@ -20,7 +21,7 @@ struct KernelCacheTests {
     cache.store(
       key: key,
       entry: KernelCacheEntry(
-        fallbackRunner: runner,
+        fastPathGraph: graph,
         runtimeMetadata: metadata,
         createdAt: Date(timeIntervalSince1970: 10)
       ),
@@ -29,7 +30,7 @@ struct KernelCacheTests {
 
     let secondLookup = cache.lookup(key: key, traceID: "trace-hit")
     let entry = try #require(secondLookup)
-    #expect(entry.fallbackRunner?.fallback.maxWidth == runner.fallback.maxWidth)
+    #expect(entry.fastPathGraph != nil)
     #expect(entry.runtimeMetadata == metadata)
 
     let records = sink.snapshot()
@@ -64,13 +65,14 @@ struct KernelCacheTests {
     let keyA = makeKey(pageBucket: 64, inputDType: "uint16")
     let keyB = makeKey(pageBucket: 128, inputDType: "float16")
 
-    let runnerA = FallbackKernelRunner(fallback: makeFallbackRuntime(maxWidth: 3))
-    let runnerB = FallbackKernelRunner(fallback: makeFallbackRuntime(maxWidth: 7))
+    let runtime = try makeLiteralRuntime()
+    let graphA = FastPathCompiledGraph(pageSize: 64, artifact: runtime)
+    let graphB = FastPathCompiledGraph(pageSize: 128, artifact: runtime)
 
     cache.store(
       key: keyA,
       entry: KernelCacheEntry(
-        fallbackRunner: runnerA,
+        fastPathGraph: graphA,
         runtimeMetadata: makeRuntimeMetadata(deviceID: keyA.deviceID),
         createdAt: Date(timeIntervalSince1970: 100)
       )
@@ -78,7 +80,7 @@ struct KernelCacheTests {
     cache.store(
       key: keyB,
       entry: KernelCacheEntry(
-        fallbackRunner: runnerB,
+        fastPathGraph: graphB,
         runtimeMetadata: makeRuntimeMetadata(deviceID: keyB.deviceID),
         createdAt: Date(timeIntervalSince1970: 200)
       )
@@ -87,8 +89,8 @@ struct KernelCacheTests {
     let entryA = try #require(cache.lookup(key: keyA, traceID: "trace-a"))
     let entryB = try #require(cache.lookup(key: keyB, traceID: "trace-b"))
 
-    #expect(entryA.fallbackRunner?.fallback.maxWidth == 3)
-    #expect(entryB.fallbackRunner?.fallback.maxWidth == 7)
+    #expect(entryA.fastPathGraph != nil)
+    #expect(entryB.fastPathGraph != nil)
     #expect(entryA.createdAt != entryB.createdAt)
     #expect(entryA.runtimeMetadata.deviceID == keyA.deviceID)
     #expect(entryB.runtimeMetadata.deviceID == keyB.deviceID)
@@ -206,30 +208,11 @@ private func makeKey(pageBucket: Int, inputDType: String) -> KernelCacheKey {
   )
 }
 
-private func makeFallbackRuntime(maxWidth: UInt16 = 5) -> FallbackRuntime {
-  FallbackRuntime(
-    numStatesUsed: 2,
-    maxWidth: maxWidth,
-    startMaskLo: 0,
-    startMaskHi: 0,
-    stepLo: [],
-    stepHi: [],
-    acceptLoByRule: [],
-    acceptHiByRule: [],
-    globalRuleIDByFallbackRule: [],
-    priorityRankByFallbackRule: [],
-    tokenKindIDByFallbackRule: [],
-    modeByFallbackRule: [],
-    startClassMaskLo: 0,
-    startClassMaskHi: 0
-  )
-}
-
 private func makeRuntimeMetadata(deviceID: String) -> KernelCacheRuntimeMetadata {
   KernelCacheRuntimeMetadata(
-    backend: "metal",
+    backend: "mlx",
     deviceID: deviceID,
-    pipelineFunction: "fallbackKernel",
+    pipelineFunction: "fastPathPageGraph",
     constantTableByteCount: 128,
     fallbackRuleCount: 1,
     stepStride: 2,

@@ -186,12 +186,7 @@ public struct MLXRuntimeClient: Sendable {
   public struct MLXSmokeResult: Codable, Sendable, Equatable {
     public let status: String
     public let runtimeProfile: String
-    public let backendIdentifier: String
-    public let deviceIdentifier: String
-    public let kernelPipelineIdentifier: String
-    public let fallbackPositionsEntered: Int
-    public let fallbackPositionsSkippedByStartMask: Int
-    public let fallbackKernelExecutionCount: Int
+    public let fallbackRuleCount: Int
     public let artifactHash: String
     public let fastPathBackendIdentifier: String
     public let fastPathDeviceIdentifier: String
@@ -211,12 +206,7 @@ public struct MLXRuntimeClient: Sendable {
     public init(
       status: String,
       runtimeProfile: String,
-      backendIdentifier: String,
-      deviceIdentifier: String,
-      kernelPipelineIdentifier: String,
-      fallbackPositionsEntered: Int,
-      fallbackPositionsSkippedByStartMask: Int,
-      fallbackKernelExecutionCount: Int,
+      fallbackRuleCount: Int,
       artifactHash: String,
       fastPathBackendIdentifier: String,
       fastPathDeviceIdentifier: String,
@@ -235,12 +225,7 @@ public struct MLXRuntimeClient: Sendable {
     ) {
       self.status = status
       self.runtimeProfile = runtimeProfile
-      self.backendIdentifier = backendIdentifier
-      self.deviceIdentifier = deviceIdentifier
-      self.kernelPipelineIdentifier = kernelPipelineIdentifier
-      self.fallbackPositionsEntered = fallbackPositionsEntered
-      self.fallbackPositionsSkippedByStartMask = fallbackPositionsSkippedByStartMask
-      self.fallbackKernelExecutionCount = fallbackKernelExecutionCount
+      self.fallbackRuleCount = fallbackRuleCount
       self.artifactHash = artifactHash
       self.fastPathBackendIdentifier = fastPathBackendIdentifier
       self.fastPathDeviceIdentifier = fastPathDeviceIdentifier
@@ -278,25 +263,8 @@ public struct MLXRuntimeClient: Sendable {
         config: BenchmarkConfig(mode: .warm, iterations: 2, seed: 0x5EED)
       )
 
-      guard benchmark.fallbackPositionsEntered > 0 else {
-        throw MLXSmokeError.noFallbackPositionsEntered
-      }
-      guard benchmark.fallbackKernelBackendDispatches > 0 else {
-        throw MLXSmokeError.noFallbackKernelDispatch
-      }
-
-      let cacheEvent = benchmark.cacheEvents.first {
-        ($0.event == "fallback-kernel-cache-store" || $0.event == "fallback-kernel-cache-hit")
-          && $0.runtimeMetadata != nil
-      }
-      guard let metadata = cacheEvent?.runtimeMetadata else {
-        throw MLXSmokeError.missingRuntimeMetadata
-      }
-      guard metadata.backend == "metal" else {
-        throw MLXSmokeError.unexpectedBackend(metadata.backend)
-      }
-      guard metadata.pipelineFunction == "fallbackKernel" else {
-        throw MLXSmokeError.unexpectedPipeline(metadata.pipelineFunction)
+      guard benchmark.fallbackRuleCount > 0 else {
+        throw MLXSmokeError.noFallbackRulesPresent
       }
 
       let fastLiteralArtifact = try buildFastLiteralSmokeArtifact()
@@ -373,13 +341,8 @@ public struct MLXRuntimeClient: Sendable {
       return MLXSmokeResult(
         status: "ok",
         runtimeProfile: "fallback-benchmark-warm",
-        backendIdentifier: metadata.backend,
-        deviceIdentifier: metadata.deviceID,
-        kernelPipelineIdentifier: metadata.pipelineFunction,
-        fallbackPositionsEntered: benchmark.fallbackPositionsEntered,
-        fallbackPositionsSkippedByStartMask: benchmark.fallbackPositionsSkippedByStartMask,
-        fallbackKernelExecutionCount: benchmark.fallbackKernelBackendDispatches,
-        artifactHash: cacheEvent?.artifactHash ?? "unknown",
+        fallbackRuleCount: benchmark.fallbackRuleCount,
+        artifactHash: fallbackRuntime.artifactHash,
         fastPathBackendIdentifier: fastPathMetadata.backend,
         fastPathDeviceIdentifier: fastPathMetadata.deviceID,
         fastPathPipelineIdentifier: fastPathMetadata.pipelineFunction,
@@ -399,9 +362,7 @@ public struct MLXRuntimeClient: Sendable {
   }
 
   enum MLXSmokeError: Error {
-    case noFallbackPositionsEntered
-    case noFallbackKernelDispatch
-    case missingRuntimeMetadata
+    case noFallbackRulesPresent
     case missingFastPathRuntimeMetadata
     case missingFastPathWarmReuse
     case forbiddenMidPipelineHostExtraction(Int)
@@ -418,12 +379,7 @@ public struct MLXRuntimeClient: Sendable {
     result: MLXSmokeResult = MLXSmokeResult(
       status: "ok",
       runtimeProfile: "fallback-benchmark-warm",
-      backendIdentifier: "metal",
-      deviceIdentifier: "metal-test-device",
-      kernelPipelineIdentifier: "fallbackKernel",
-      fallbackPositionsEntered: 32,
-      fallbackPositionsSkippedByStartMask: 8,
-      fallbackKernelExecutionCount: 2,
+      fallbackRuleCount: 1,
       artifactHash: "deadbeefcafebabe",
       fastPathBackendIdentifier: "mlx",
       fastPathDeviceIdentifier: "mlx-cpu",
@@ -470,7 +426,7 @@ private func runFastPathProofWorkload(bytes: [UInt8], runtime: ArtifactRuntime) 
 
 private func makeFallbackHeavySmokeInput(runtime: ArtifactRuntime) throws -> [UInt8] {
   guard let fallback = runtime.fallback else {
-    throw MLXRuntimeClient.MLXSmokeError.noFallbackPositionsEntered
+    throw MLXRuntimeClient.MLXSmokeError.noFallbackRulesPresent
   }
 
   let byteToClass = runtime.hostByteToClassLUT()
@@ -502,7 +458,7 @@ private func makeFallbackHeavySmokeInput(runtime: ArtifactRuntime) throws -> [UI
   }
 
   guard let eligibleByte else {
-    throw MLXRuntimeClient.MLXSmokeError.noFallbackPositionsEntered
+    throw MLXRuntimeClient.MLXSmokeError.noFallbackRulesPresent
   }
 
   let spacer = ineligibleByte ?? 0x20

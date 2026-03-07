@@ -112,28 +112,6 @@ struct PropertyFallbackTests {
     }
   }
 
-  @Test(.enabled(if: requiresMLXEval))
-  func fallbackDispatchesOnlyWhenArtifactHasFallbackRules() throws {
-    var rng = LCRNG(seed: 0xAA55_0004)
-    for artifact in propertyFixtures() {
-      let hasFallbackRule = artifact.rules.contains { $0.family == .fallback }
-      for _ in 0..<80 {
-        let bytes = randomBytes(rng: &rng, maxLen: 24)
-        let result = try runTestPipeline(bytes: bytes, artifact: artifact)
-        #expect(
-          result.fallbackObservability.fallbackKernelBackendDispatches == (hasFallbackRule ? 1 : 0)
-        )
-        if hasFallbackRule {
-          #expect(
-            result.fallbackObservability.fallbackPositionsEntered
-              + result.fallbackObservability.fallbackPositionsSkippedByStartMask
-              == bytes.count
-          )
-        }
-      }
-    }
-  }
-
   private func propertyFixtures() -> [LexerArtifact] {
     [
       FallbackFixtures.singleRuleFallback(),
