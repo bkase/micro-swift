@@ -4,7 +4,7 @@ import Testing
 
 @Suite
 struct GoldenFallbackTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func singleRuleFallbackGolden() throws {
     let bytes = Array("if iffy".utf8)
     let result = try runTestPipeline(bytes: bytes, artifact: FallbackFixtures.singleRuleFallback())
@@ -18,7 +18,7 @@ struct GoldenFallbackTests {
     )
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func multiRuleFallbackWithPriorityGolden() throws {
     let bytes = Array("abc123 z9".utf8)
     let result = try runTestPipeline(
@@ -33,7 +33,7 @@ struct GoldenFallbackTests {
     )
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func mixedFastAndFallbackGolden() throws {
     let bytes = Array("let x9 42 _a1".utf8)
     let result = try runTestPipeline(
@@ -52,7 +52,7 @@ struct GoldenFallbackTests {
     )
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func zeroFallbackRulesGolden() throws {
     let bytes = Array("if 123 a".utf8)
     let result = try runTestPipeline(bytes: bytes, artifact: FallbackFixtures.zeroFallbackRules())

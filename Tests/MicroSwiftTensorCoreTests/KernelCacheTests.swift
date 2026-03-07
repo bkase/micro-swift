@@ -6,7 +6,7 @@ import Testing
 
 @Suite
 struct KernelCacheTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func cacheMissThenHit() throws {
     let sink = LogSink()
     let cache = KernelCache(logSink: sink.record)
@@ -56,7 +56,7 @@ struct KernelCacheTests {
     #expect(hit.runtimeMetadata == metadata)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func differentKeysReturnDifferentEntries() throws {
     let cache = KernelCache()
     let keyA = makeKey(pageBucket: 64, inputDType: "uint16")
@@ -92,7 +92,7 @@ struct KernelCacheTests {
     #expect(entryB.runtimeMetadata.deviceID == keyB.deviceID)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func structuredLogOutputFormat() throws {
     let sink = LogSink()
     let cache = KernelCache(logSink: sink.record)

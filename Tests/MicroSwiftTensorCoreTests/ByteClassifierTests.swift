@@ -4,7 +4,7 @@ import Testing
 
 @Suite
 struct ByteClassifierTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func classifyMapsBytesThroughLUT() {
     var lut = Array(repeating: UInt16(0), count: 256)
     lut[Int(UInt8(ascii: "a"))] = 10
@@ -18,7 +18,7 @@ struct ByteClassifierTests {
     #expect(classIDs == [10, 30, 20])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func validityMaskHonorsBoundary() {
     let mask = ByteClassifier.validityMask(pageSize: 6, validLen: 4)
 

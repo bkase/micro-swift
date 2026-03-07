@@ -5,7 +5,7 @@ import Testing
 
 @Suite
 struct MixedOverlapTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func fastLiteralVsFallbackOverlapPrefersFastLiteral() throws {
     let artifact = makeBoundedFallbackArtifact(
       FallbackFixtures.overlappingFastFallback(),
@@ -29,7 +29,7 @@ struct MixedOverlapTests {
     #expect(selected == [winner(position: 0, len: 2, priorityRank: 0, ruleID: 0, tokenKindID: 0)])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func fastRunVsFallbackOverlapPrefersFastRun() throws {
     let artifact = makeBoundedFallbackArtifact(
       FallbackFixtures.multiRuleFallbackWithPriority(),
@@ -53,7 +53,7 @@ struct MixedOverlapTests {
     #expect(selected == [winner(position: 0, len: 3, priorityRank: 0, ruleID: 200, tokenKindID: 3)])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func laterValidTokenAfterInternalRejectedFallbackStart() throws {
     let artifact = makeBoundedFallbackArtifact(
       FallbackFixtures.multiRuleFallbackWithPriority(),
@@ -88,7 +88,7 @@ struct MixedOverlapTests {
         ])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func fallbackCandidatesStartingInsideAcceptedFastTokenAreRejected() throws {
     let artifact = makeBoundedFallbackArtifact(
       FallbackFixtures.overlappingFastFallback(),
@@ -118,7 +118,7 @@ struct MixedOverlapTests {
         ])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func fallbackCandidateThatWouldWinAtStartStillRejectedByCoverage() throws {
     let artifact = makeBoundedFallbackArtifact(
       FallbackFixtures.multiRuleFallbackWithPriority(),

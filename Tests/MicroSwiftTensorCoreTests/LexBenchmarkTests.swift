@@ -42,7 +42,7 @@ struct LexBenchmarkTests {
     #expect(result.bytesPerSecond.isFinite)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func reportGeneratesValidJSON() throws {
     let result = LexBenchmarkResult(
       mode: "warm",

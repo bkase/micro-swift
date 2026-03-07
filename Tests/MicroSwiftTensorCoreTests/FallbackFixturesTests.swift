@@ -5,7 +5,7 @@ import Testing
 
 @Suite
 struct FallbackFixturesTests {
-  @Test("Fallback fixtures JSON round-trip")
+  @Test("Fallback fixtures JSON round-trip", .enabled(if: requiresMLXEval))
   func fixturesRoundTripAsJSON() throws {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]

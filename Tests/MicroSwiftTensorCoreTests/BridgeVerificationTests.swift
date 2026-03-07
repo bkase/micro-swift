@@ -5,7 +5,7 @@ import Testing
 
 @Suite
 struct BridgeVerificationTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func byteToClassBridgeMapsAsciiDigitsToSingleDigitClass() throws {
     let runtime = try makeMicroSwiftRuntime()
     let digitBytes = asciiRange("0", "9")
@@ -23,7 +23,7 @@ struct BridgeVerificationTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func classSetMembershipIncludesDigitsAndIdentifierStartLetters() throws {
     let runtime = try makeMicroSwiftRuntime()
     let byteToClassLUT = runtime.hostByteToClassLUT()
@@ -46,7 +46,7 @@ struct BridgeVerificationTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func classificationIsDeterministicForSameBytesAndArtifact() throws {
     let runtime = try makeMicroSwiftRuntime()
     let sample = Array("let x1 = foo42 + 9\\n".utf8) + Array(UInt8.min...UInt8.max)
@@ -58,7 +58,7 @@ struct BridgeVerificationTests {
     #expect(first == second)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func allByteValuesMapToDeclaredClass() throws {
     let runtime = try makeMicroSwiftRuntime()
     let allBytes = Array(UInt8.min...UInt8.max)
@@ -74,7 +74,7 @@ struct BridgeVerificationTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func classSetMembershipIsConsistentForAllBytes() throws {
     let runtime = try makeMicroSwiftRuntime()
     let allBytes = Array(UInt8.min...UInt8.max)
@@ -107,7 +107,7 @@ struct BridgeVerificationTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func boundaryBytesAndEmptyInputClassification() throws {
     let runtime = try makeMicroSwiftRuntime()
     let byteToClassLUT = runtime.hostByteToClassLUT()

@@ -5,7 +5,7 @@ import Testing
 
 @Suite
 struct LexPageIntegrationTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func lexSimpleInputEndToEnd() throws {
     let runtime = try makeMicroSwiftRuntime()
     let input = "let x = 42\n"

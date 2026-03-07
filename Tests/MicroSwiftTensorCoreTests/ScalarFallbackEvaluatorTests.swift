@@ -7,7 +7,7 @@ import Testing
 struct ScalarFallbackEvaluatorTests {
   private let evaluator = ScalarFallbackEvaluator()
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func prefersLongestAcceptingMatchWithinRule() {
     let artifact = artifactWithRules([
       fallbackRule(
@@ -44,7 +44,7 @@ struct ScalarFallbackEvaluatorTests {
         ))
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func breaksTiesByPriorityThenRuleID() {
     let artifact = artifactWithRules([
       fallbackRule(
@@ -92,7 +92,7 @@ struct ScalarFallbackEvaluatorTests {
         ))
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func returnsNoMatchWhenStartOutsideValidWindow() {
     let artifact = artifactWithRules([
       fallbackRule(

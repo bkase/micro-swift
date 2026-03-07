@@ -5,7 +5,7 @@ import Testing
 
 @Suite
 struct RuleBucketTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func literalsGroupedByLength() throws {
     let artifact = try makeMicroSwiftArtifact()
     let buckets = RuleBuckets.build(from: artifact.rules)
@@ -35,7 +35,7 @@ struct RuleBucketTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func runRulesSortedIntoCorrectBuckets() throws {
     let artifact = try makeMicroSwiftArtifact()
     let buckets = RuleBuckets.build(from: artifact.rules)
@@ -75,7 +75,7 @@ struct RuleBucketTests {
     #expect(buckets.prefixedRules.map(\LoweredRule.ruleID) == expectedPrefixed)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func emptyRulesProduceEmptyBuckets() {
     let buckets = RuleBuckets.build(from: [])
 

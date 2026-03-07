@@ -6,7 +6,7 @@ import Testing
 
 @Suite
 struct LexPageTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func lexPageIntegratesFallbackWinnersInV1Profile() throws {
     let runtime = try makeRuntime(maxLookahead: 8)
     let bytes = Array("aa".utf8)
@@ -28,7 +28,7 @@ struct LexPageTests {
     #expect(PackedToken.unpackTokenKindID(row) == 9)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func lexPageSkipsFallbackInV0Profile() throws {
     let runtime = try makeRuntime(maxLookahead: 8)
     let bytes = Array("aa".utf8)
@@ -46,7 +46,7 @@ struct LexPageTests {
     #expect(packedRows.allSatisfy { $0 == 0 })
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func lexShellPagesWhenPageCapacityExceeded() throws {
     let runtime = try makeRuntime(maxLookahead: 4)
     let shell = makeShell(targetBytes: 3, bucketBytes: 4)
@@ -67,7 +67,7 @@ struct LexPageTests {
     #expect(page1PackedRows[1...] == Array(repeating: UInt64(0), count: 3)[...])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func lexShellUsesBaseOffsetsAcrossMultiplePages() throws {
     let runtime = try makeRuntime(maxLookahead: 4)
     let shell = makeShell(targetBytes: 3, bucketBytes: 4)
@@ -87,7 +87,7 @@ struct LexPageTests {
     #expect(secondPageTokens.map(\.startByte) == [3])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func lexShellPadsUnusedRowsDeterministically() throws {
     let runtime = try makeRuntime(maxLookahead: 8)
     let shell = makeShell(targetBytes: 3, bucketBytes: 4)
@@ -111,7 +111,7 @@ struct LexPageTests {
     #expect(first == second)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func lexShellReturnsOverflowDiagnosticForUnsupportedPage() throws {
     let runtime = try makeRuntime(maxLookahead: 8)
     let shell = makeShell(targetBytes: 3, bucketBytes: 4)
@@ -131,7 +131,7 @@ struct LexPageTests {
     #expect(overflow.maxBucketSize == 4)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func lexPageRetainsFull16BitTokenKindIDInPackedRows() throws {
     let runtime = try makeRuntime(maxLookahead: 8, tokenKindID: 300)
     let bytes = Array("aa".utf8)

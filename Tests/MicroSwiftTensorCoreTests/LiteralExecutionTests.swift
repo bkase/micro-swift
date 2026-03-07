@@ -5,7 +5,7 @@ import Testing
 
 @Suite
 struct LiteralExecutionTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func singleLiteralFoundAtCorrectPositions() {
     let bytes = Array("a==b==".utf8)
     let validMask = Array(repeating: true, count: bytes.count)
@@ -19,7 +19,7 @@ struct LiteralExecutionTests {
     #expect(result == [0, 2, 0, 0, 2, 0])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func literalAtEndNotMatchedWhenExceedingValidRegion() {
     let bytes = Array("abc==".utf8)
     let validMask: [Bool] = [true, true, true, true, false]
@@ -33,7 +33,7 @@ struct LiteralExecutionTests {
     #expect(result == [0, 0, 0, 0, 0])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func multipleSameLengthLiteralsInBucket() {
     let bytes = Array("a==!=<=".utf8)
     let validMask = Array(repeating: true, count: bytes.count)
@@ -55,7 +55,7 @@ struct LiteralExecutionTests {
     #expect(results[2] == [0, 0, 0, 0, 0, 2, 0])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func literalNotFoundReturnsAllZeros() {
     let bytes = Array("abcdef".utf8)
     let validMask = Array(repeating: true, count: bytes.count)
@@ -69,7 +69,7 @@ struct LiteralExecutionTests {
     #expect(result == [0, 0, 0, 0, 0, 0])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func overlappingLiteralsAreDetected() {
     let bytes = Array("===".utf8)
     let validMask = Array(repeating: true, count: bytes.count)

@@ -6,7 +6,7 @@ import Testing
 
 @Suite
 struct ArtifactLoaderTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func loadsValidArtifact() throws {
     let artifact = try makeMicroSwiftArtifact()
 
@@ -22,7 +22,7 @@ struct ArtifactLoaderTests {
     #expect(runtime.classes == artifact.classes)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func rejectsInvalidByteToClassSize() throws {
     let artifact = try makeMicroSwiftArtifact()
     let invalid = try mutatingArtifactJSON(artifact) { root in
@@ -34,7 +34,7 @@ struct ArtifactLoaderTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func extractsRuntimeHintConstants() throws {
     let artifact = try makeMicroSwiftArtifact()
 
@@ -47,7 +47,7 @@ struct ArtifactLoaderTests {
     )
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func rejectsEmptyRules() throws {
     let artifact = try makeMicroSwiftArtifact()
     let invalid = try mutatingArtifactJSON(artifact) { root in

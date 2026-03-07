@@ -4,7 +4,7 @@ import Testing
 
 @Suite
 struct TransportEmitterTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func tokensRoundtripThroughPackedRows() {
     let selected = [
       token(start: 0, length: 2, kind: 10, mode: 0),
@@ -29,7 +29,7 @@ struct TransportEmitterTests {
       ])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func skipTokensAreFilteredWhenEmitSkipTokensIsFalse() {
     let selected = [
       token(start: 0, length: 2, kind: 11, mode: 1),
@@ -54,7 +54,7 @@ struct TransportEmitterTests {
     #expect(result.errorSpans.isEmpty)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func skipTokensAreKeptWhenEmitSkipTokensIsTrue() {
     let selected = [
       token(start: 0, length: 2, kind: 11, mode: 1),
@@ -79,7 +79,7 @@ struct TransportEmitterTests {
       ])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func errorSpansAreIncludedInResult() {
     let selected = [
       token(start: 1, length: 1, kind: 55, mode: 0)
@@ -101,7 +101,7 @@ struct TransportEmitterTests {
       ])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func unusedRowsAreZeroPadded() {
     let selected = [
       token(start: 0, length: 1, kind: 99, mode: 0)
@@ -125,7 +125,7 @@ struct TransportEmitterTests {
     #expect(packedRows[4] == 0)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func unpackAppliesBaseOffset() {
     let rows: [UInt64] = [
       PackedToken.pack(localStart: 1, length: 2, tokenKindID: 7, flags: 3),

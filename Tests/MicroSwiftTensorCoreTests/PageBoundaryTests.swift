@@ -7,7 +7,7 @@ import Testing
 struct PageBoundaryTests {
   private let scalar = ScalarFallbackEvaluator()
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func fallbackMatchEndingExactlyAtPageEndUsesValidLen() throws {
     let artifact = makeBoundedFallbackArtifact(
       FallbackFixtures.singleRuleFallback(),
@@ -23,7 +23,7 @@ struct PageBoundaryTests {
     #expect(result.fallbackRuleID[2] == 0)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func fallbackPrefixNearPageEndFailsWhenPageEnds() throws {
     let artifact = makeABFallbackArtifact(maxWidth: 2)
     let bytes = Array("xxa".utf8)
@@ -36,7 +36,7 @@ struct PageBoundaryTests {
     #expect(result.fallbackRuleID[2] == 0)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func fallbackCandidateFullyContainedInsidePage() throws {
     let artifact = makeABFallbackArtifact(maxWidth: 2)
     let bytes = Array("zabz".utf8)
@@ -50,7 +50,7 @@ struct PageBoundaryTests {
     #expect(result.fallbackLen[2] == 0)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func fallbackFastOverlapNearPageBoundaryResolvesToFastWinner() throws {
     let artifact = makeBoundedFallbackArtifact(
       FallbackFixtures.overlappingFastFallback(),
@@ -81,7 +81,7 @@ struct PageBoundaryTests {
     #expect(selected[0] == winner(position: 1, len: 2, priorityRank: 0, ruleID: 0, tokenKindID: 0))
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func classRunDoesNotLeakIntoPaddedTailBytes() {
     let runtime = ClassSetRuntime(
       mask: [[false, true]],
@@ -102,7 +102,7 @@ struct PageBoundaryTests {
     #expect(result == [3, 0, 0, 0, 0, 0])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func headTailDoesNotLeakIntoPaddedTailBytes() {
     let runtime = ClassSetRuntime(
       mask: [

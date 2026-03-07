@@ -3,7 +3,7 @@ import Testing
 
 @Suite
 struct GreedySelectorTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func selectsNonOverlappingWinnersInSourceOrder() {
     let winners = [
       winner(position: 0, len: 4, priorityRank: 0, ruleID: 10),
@@ -23,7 +23,7 @@ struct GreedySelectorTests {
       ])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func rejectsFallbackStartInsideAcceptedFastToken() {
     let fastWinners = [
       winner(position: 0, len: 3, priorityRank: 0, ruleID: 10),

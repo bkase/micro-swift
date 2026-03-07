@@ -5,7 +5,7 @@ import Testing
 
 @Suite
 struct V0CompatibilityTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func v0LikeArtifactPassesV1FallbackAndLexesIdentically() throws {
     let artifact = makeV0LikeArtifact()
     #expect(CapabilityValidator.validate(artifact: artifact, profile: .v1Fallback).isEmpty)
@@ -47,7 +47,7 @@ struct V0CompatibilityTests {
     #expect(decoded.overflowDiagnostic == nil)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func microSwiftV0ArtifactUnderV1FallbackMatchesV0Profile() throws {
     let artifact = try buildArtifact(
       from: microSwiftV0,
@@ -105,7 +105,7 @@ struct V0CompatibilityTests {
     #expect(decoded.overflowDiagnostic == nil)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func v1FallbackRejectsLocalWindowWithStructuredDiagnostic() {
     let artifact = makeLocalWindowArtifact()
     let diagnostics = CapabilityValidator.validate(artifact: artifact, profile: .v1Fallback)

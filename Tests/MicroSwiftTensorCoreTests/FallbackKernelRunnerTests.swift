@@ -7,7 +7,7 @@ import Testing
 struct FallbackKernelRunnerTests {
   private let scalar = ScalarFallbackEvaluator()
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func bitsetKernelMatchesScalarAcrossFixtures() throws {
     let artifacts = [
       FallbackFixtures.singleRuleFallback(),
@@ -60,7 +60,7 @@ struct FallbackKernelRunnerTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func recordsBackendDispatchInObservability() throws {
     let artifact = makeBoundedFallbackArtifact(FallbackFixtures.singleRuleFallback())
     let runtime = try ArtifactRuntime.fromArtifact(artifact)

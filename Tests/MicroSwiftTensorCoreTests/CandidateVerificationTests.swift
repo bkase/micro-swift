@@ -5,7 +5,7 @@ import Testing
 
 @Suite
 struct CandidateVerificationTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func literalDifferentialMatchesBruteForceOnRandomInputs() {
     var rng = LCG(seed: 0xC0FFEE)
 
@@ -91,7 +91,7 @@ struct CandidateVerificationTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func classRunDifferentialVariesClassSetTablesAndMinLength() {
     var rng = LCG(seed: 0x44CC11)
 
@@ -124,7 +124,7 @@ struct CandidateVerificationTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func headTailDifferentialMatchesBruteForceOnRandomInputs() {
     var rng = LCG(seed: 0xBEEF)
     let runtime = makeClassRuntime()
@@ -156,7 +156,7 @@ struct CandidateVerificationTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func headTailDifferentialVariesClassSetTables() {
     var rng = LCG(seed: 0x50EE77)
 
@@ -189,7 +189,7 @@ struct CandidateVerificationTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func prefixedDifferentialMatchesBruteForceOnRandomInputs() {
     var rng = LCG(seed: 0xFACE)
     let runtime = makePrefixedRuntime()
@@ -245,7 +245,7 @@ struct CandidateVerificationTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func selectedRowsAreStrictlyIncreasingAndNonOverlapping() {
     var rng = LCG(seed: 0x1234_5678)
 
@@ -281,7 +281,7 @@ struct CandidateVerificationTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func everyValidByteIsCoveredByTokenOrErrorRun() {
     var rng = LCG(seed: 0x4455_6677)
 
@@ -320,7 +320,7 @@ struct CandidateVerificationTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func keywordRemapDoesNotChangeSelectedTokenSpan() {
     var rng = LCG(seed: 0x0DDF00D)
 
@@ -344,7 +344,7 @@ struct CandidateVerificationTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func overlapFixtureTripleEqualsWithDoubleAndSingle() {
     let selection = selectLiteralFixture(
       input: "===",
@@ -362,7 +362,7 @@ struct CandidateVerificationTests {
     #expect(selection.errors.isEmpty)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func overlapFixtureTripleEqualsArrow() {
     let selection = selectLiteralFixture(
       input: "===>",
@@ -381,7 +381,7 @@ struct CandidateVerificationTests {
     #expect(selection.errors.isEmpty)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func overlapFixtureDashRunArrow() {
     let selection = selectLiteralFixture(
       input: "---->",
@@ -400,7 +400,7 @@ struct CandidateVerificationTests {
     #expect(selection.errors == [ErrorSpan(start: 4, end: 5)])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func overlapFixtureSlashDoubleEquals() {
     let selection = selectLiteralFixture(
       input: "/==",
@@ -419,7 +419,7 @@ struct CandidateVerificationTests {
     #expect(selection.errors.isEmpty)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func overlapFixtureSlashFlood() {
     let selection = selectLiteralFixture(
       input: "////x",
@@ -440,7 +440,7 @@ struct CandidateVerificationTests {
     #expect(selection.errors.isEmpty)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func longerLowPriorityCandidateInsideAcceptedTokenIsRejected() {
     let selection = selectLiteralFixture(
       input: "aaaaX",
@@ -459,7 +459,7 @@ struct CandidateVerificationTests {
     #expect(selection.errors.isEmpty)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func laterValidTokenSurvivesAfterInternalRejectedCandidate() {
     let selection = selectLiteralFixture(
       input: "abcbcY",

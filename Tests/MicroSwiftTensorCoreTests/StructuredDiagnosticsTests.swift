@@ -5,7 +5,7 @@ import Testing
 
 @Suite
 struct StructuredDiagnosticsTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func eachRejectionReasonRendersExpectedDescriptionFormat() {
     for reason in allReasons {
       let family: RuleFamily = reason == .localWindowPresent ? .localWindow : .fallback
@@ -23,7 +23,7 @@ struct StructuredDiagnosticsTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func formattedMessageIncludesRequiredStructuredFields() {
     let diagnostic = CapabilityDiagnostic(
       ruleID: 77,

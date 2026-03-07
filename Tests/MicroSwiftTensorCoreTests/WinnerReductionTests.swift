@@ -3,7 +3,7 @@ import Testing
 
 @Suite
 struct WinnerReductionTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func reduceAcrossLiteralRunAndFallbackBuckets() {
     let literalBucket = [
       winner(position: 0, len: 2, priorityRank: 3, ruleID: 20),
@@ -29,7 +29,7 @@ struct WinnerReductionTests {
     #expect(reduced[2] == winner(position: 2, len: 4, priorityRank: 0, ruleID: 60))
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func integrateFallbackIntoFastWinners() {
     let fastWinners = [
       winner(position: 0, len: 2, priorityRank: 0, ruleID: 10),

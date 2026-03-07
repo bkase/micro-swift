@@ -5,7 +5,7 @@ import Testing
 
 @Suite
 struct CompiledPageInputTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func compiledPageInputIsBucketStableAndDeterministic() throws {
     let runtime = try makeMicroSwiftRuntime()
     let bucket = PageBucket(byteCapacity: 4096)
@@ -41,7 +41,7 @@ struct CompiledPageInputTests {
     #expect(firstBytes[4095] == PageBucket.neutralPaddingByte)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func deviceClassIDsMatchScalarOracleForRandomizedInput() throws {
     let runtime = try makeMicroSwiftRuntime()
     let bucket = PageBucket(byteCapacity: 4096)
@@ -68,7 +68,7 @@ struct CompiledPageInputTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func paddedTailCannotCreateLiteralMatchBeyondValidLen() throws {
     let runtime = try makeLiteralRuntime()
     let bucket = PageBucket(byteCapacity: 4096)
@@ -91,7 +91,7 @@ struct CompiledPageInputTests {
     #expect(result.hostPackedRows().allSatisfy { $0 == 0 })
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func hostExtractionBoundaryIsExplicit() throws {
     let runtime = try makeMicroSwiftRuntime()
     let bucket = PageBucket(byteCapacity: 4096)

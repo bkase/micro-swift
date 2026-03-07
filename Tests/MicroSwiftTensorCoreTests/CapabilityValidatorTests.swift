@@ -4,7 +4,7 @@ import Testing
 @testable import MicroSwiftTensorCore
 
 @Suite struct CapabilityValidatorTests {
-  @Test func v1FallbackAcceptsLiteralRunAndFallback() {
+  @Test(.enabled(if: requiresMLXEval)) func v1FallbackAcceptsLiteralRunAndFallback() {
     let artifact = makeArtifact(
       rules: [
         makeLiteralRule(ruleID: 1, name: "literal"),
@@ -18,7 +18,7 @@ import Testing
     #expect(diagnostics.isEmpty)
   }
 
-  @Test func v1FallbackRejectsLocalWindow() {
+  @Test(.enabled(if: requiresMLXEval)) func v1FallbackRejectsLocalWindow() {
     let artifact = makeArtifact(
       rules: [
         LoweredRule(
@@ -41,7 +41,7 @@ import Testing
     #expect(diagnostics[0].reason == .localWindowPresent)
   }
 
-  @Test func v1FallbackRejectsInvalidFallbackPayload() {
+  @Test(.enabled(if: requiresMLXEval)) func v1FallbackRejectsInvalidFallbackPayload() {
     let invalid = LoweredRule(
       ruleID: 20,
       name: "badFallback",
@@ -67,7 +67,7 @@ import Testing
     #expect(diagnostics.contains { $0.reason == .missingTable })
   }
 
-  @Test func v1FallbackRejectsStateCapExceeding128() {
+  @Test(.enabled(if: requiresMLXEval)) func v1FallbackRejectsStateCapExceeding128() {
     let artifact = makeArtifact(
       rules: [
         makeFallbackRule(ruleID: 30, name: "a", stateCount: 80, maxWidth: 4),
@@ -80,7 +80,7 @@ import Testing
     #expect(diagnostics.contains { $0.ruleID == 31 && $0.reason == .stateCapExceeded })
   }
 
-  @Test func v1FallbackRejectsClassCapExceeding128() {
+  @Test(.enabled(if: requiresMLXEval)) func v1FallbackRejectsClassCapExceeding128() {
     let artifact = makeArtifact(
       rules: [
         makeFallbackRule(ruleID: 32, name: "tooManyClasses", classCount: 129, maxWidth: 4)
@@ -92,7 +92,7 @@ import Testing
     #expect(diagnostics.contains { $0.ruleID == 32 && $0.reason == .classCapExceeded })
   }
 
-  @Test func v1FallbackRejectsUnboundedFallbackWidth() {
+  @Test(.enabled(if: requiresMLXEval)) func v1FallbackRejectsUnboundedFallbackWidth() {
     let unbounded = makeFallbackRule(ruleID: 40, name: "wide", maxWidth: nil)
     let artifact = makeArtifact(rules: [unbounded], maxLookahead: 8)
 
@@ -100,7 +100,7 @@ import Testing
     #expect(diagnostics.contains { $0.reason == .widthExceeded })
   }
 
-  @Test func v1FallbackRejectsLookaheadMismatch() {
+  @Test(.enabled(if: requiresMLXEval)) func v1FallbackRejectsLookaheadMismatch() {
     let artifact = makeArtifact(
       rules: [makeFallbackRule(ruleID: 50, name: "tooWide", maxWidth: 12)],
       maxLookahead: 8
@@ -110,7 +110,7 @@ import Testing
     #expect(diagnostics.contains { $0.reason == .maxLookaheadMismatch })
   }
 
-  @Test func v1FallbackRejectsMissingRuleMetadata() {
+  @Test(.enabled(if: requiresMLXEval)) func v1FallbackRejectsMissingRuleMetadata() {
     let rule = makeFallbackRule(ruleID: 60, name: "", tokenKindID: 999, maxWidth: 4)
     let artifact = makeArtifact(rules: [rule], tokenKindIDs: [1], maxLookahead: 8)
 
@@ -118,7 +118,7 @@ import Testing
     #expect(diagnostics.contains { $0.reason == .missingTable })
   }
 
-  @Test func diagnosticDescriptionIsStructured() {
+  @Test(.enabled(if: requiresMLXEval)) func diagnosticDescriptionIsStructured() {
     let diagnostic = CapabilityDiagnostic(
       ruleID: 7,
       ruleName: "foo",

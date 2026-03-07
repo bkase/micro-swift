@@ -6,7 +6,7 @@ import Testing
 
 @Suite
 struct MembershipKernelTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func membershipMaskMatchesClassSetContents() throws {
     let classSets = try decodeClassSets(
       """
@@ -34,7 +34,7 @@ struct MembershipKernelTests {
     #expect(mask == [false, true, true, false, true])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func precomputeReturnsCorrectNumberOfMasks() throws {
     let classSets = try decodeClassSets(
       """

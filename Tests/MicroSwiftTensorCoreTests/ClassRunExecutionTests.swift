@@ -6,12 +6,12 @@ import Testing
 
 @Suite
 struct ClassRunExecutionTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func usesMetalBackend() {
     #expect(ClassRunExecution.backendNameForTesting().starts(with: "metal-"))
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func singleDigitRunFoundAtStart() throws {
     let runtime = try makeRuntime()
     let classIDs: [UInt8] = [1, 1, 1, 0]
@@ -28,7 +28,7 @@ struct ClassRunExecutionTests {
     #expect(candidateLengths == [3, 0, 0, 0])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func whitespaceRunFoundWithMinLengthOne() throws {
     let runtime = try makeRuntime()
     let classIDs: [UInt8] = [0, 2, 2, 2, 0]
@@ -45,7 +45,7 @@ struct ClassRunExecutionTests {
     #expect(candidateLengths == [0, 3, 0, 0, 0])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func runBelowMinLengthIsFilteredOut() throws {
     let runtime = try makeRuntime()
     let classIDs: [UInt8] = [0, 1, 1, 0]
@@ -62,7 +62,7 @@ struct ClassRunExecutionTests {
     #expect(candidateLengths == [0, 0, 0, 0])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func multipleSeparateRunsAreDetected() throws {
     let runtime = try makeRuntime()
     let classIDs: [UInt8] = [1, 1, 0, 1, 1, 1, 0, 1]
@@ -79,7 +79,7 @@ struct ClassRunExecutionTests {
     #expect(candidateLengths == [2, 0, 0, 3, 0, 0, 0, 1])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func runStopsAtValidLengthBoundary() throws {
     let runtime = try makeRuntime()
     let classIDs: [UInt8] = [1, 1, 1, 1, 1]

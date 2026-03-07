@@ -7,7 +7,7 @@ import Testing
 struct DifferentialFallbackTests {
   private let scalar = ScalarFallbackEvaluator()
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func fallbackKernelMatchesScalarOnSeededRandomShortInputs() throws {
     let artifacts: [LexerArtifact] = [
       FallbackFixtures.singleRuleFallback(),

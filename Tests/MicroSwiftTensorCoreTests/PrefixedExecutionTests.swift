@@ -7,7 +7,7 @@ struct PrefixedExecutionTests {
   private let bodySetID: UInt16 = 0
   private let stopSetID: UInt16 = 1
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func lineCommentStopsBeforeNewline() {
     let bytes = Array("// hello\n".utf8)
     let validMask = Array(repeating: true, count: bytes.count)
@@ -34,7 +34,7 @@ struct PrefixedExecutionTests {
     #expect(lengths.dropFirst().allSatisfy { $0 == 0 })
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func lineCommentAtEndConsumesToValidRegionEnd() {
     let bytes = Array("// hi".utf8)
     let validMask = Array(repeating: true, count: bytes.count)
@@ -60,7 +60,7 @@ struct PrefixedExecutionTests {
     #expect(lengths[0] == 5)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func noPrefixMatchProducesAllZeros() {
     let bytes = Array("abc\n".utf8)
     let validMask = Array(repeating: true, count: bytes.count)
@@ -86,7 +86,7 @@ struct PrefixedExecutionTests {
     #expect(lengths.allSatisfy { $0 == 0 })
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func multipleLineCommentsAreEvaluatedIndependently() {
     let bytes = Array("//a\nx//bc\n".utf8)
     let validMask = Array(repeating: true, count: bytes.count)
@@ -113,7 +113,7 @@ struct PrefixedExecutionTests {
     #expect(lengths[5] == 4)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func prefixWithoutBodyReturnsPrefixLength() {
     let bytes = Array("//\n".utf8)
     let validMask = Array(repeating: true, count: bytes.count)

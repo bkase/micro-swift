@@ -4,7 +4,7 @@ import Testing
 @testable import MicroSwiftTensorCore
 
 @Suite struct ArtifactRuntimeTests {
-  @Test func packsFallbackTablesAndMetadata() throws {
+  @Test(.enabled(if: requiresMLXEval)) func packsFallbackTablesAndMetadata() throws {
     let artifact = makeArtifact(
       rules: [
         makeFallbackRule(
@@ -58,7 +58,7 @@ import Testing
     #expect(stepHi.allSatisfy { $0 == 0 })
   }
 
-  @Test func combinesStartMasksAcrossFallbackRules() throws {
+  @Test(.enabled(if: requiresMLXEval)) func combinesStartMasksAcrossFallbackRules() throws {
     let artifact = makeArtifact(
       rules: [
         makeFallbackRule(
@@ -117,7 +117,8 @@ import Testing
     #expect(modeByFallbackRule == [0, 1])
   }
 
-  @Test func preservesTransitionsThatTargetFallbackStateZero() throws {
+  @Test(.enabled(if: requiresMLXEval)) func preservesTransitionsThatTargetFallbackStateZero() throws
+  {
     let artifact = makeArtifact(
       byteToClass: makeByteToClass(
         defaultClass: 2,
@@ -168,7 +169,7 @@ import Testing
     #expect(result.fallbackMode == [0, 0, 0, 0])
   }
 
-  @Test func rejectsCombinedFallbackStatesOver128() {
+  @Test(.enabled(if: requiresMLXEval)) func rejectsCombinedFallbackStatesOver128() {
     let artifact = makeArtifact(
       rules: [
         makeFallbackRule(

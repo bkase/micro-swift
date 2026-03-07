@@ -4,7 +4,7 @@ import Testing
 
 @Suite
 struct PropertyFallbackTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func determinismSameBytesAndArtifactSameResults() throws {
     var rng = LCRNG(seed: 0xD1CE_F00D)
     for artifact in propertyFixtures() {
@@ -17,7 +17,7 @@ struct PropertyFallbackTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func sourceOrderTokenPositionsStrictlyIncrease() throws {
     var rng = LCRNG(seed: 0xAA55_0001)
     for artifact in propertyFixtures() {
@@ -33,7 +33,7 @@ struct PropertyFallbackTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func noOverlapBetweenSelectedTokens() throws {
     var rng = LCRNG(seed: 0xAA55_0002)
     for artifact in propertyFixtures() {
@@ -51,7 +51,7 @@ struct PropertyFallbackTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func coverageCompletenessEveryValidByteCoveredByTokenOrErrorRun() throws {
     var rng = LCRNG(seed: 0xAA55_0003)
     for artifact in propertyFixtures() {
@@ -76,7 +76,7 @@ struct PropertyFallbackTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func keywordRemapPreservesTokenSpans() throws {
     let fixtures = keywordRemapFixtures()
     let inputs: [[UInt8]] = [
@@ -112,7 +112,7 @@ struct PropertyFallbackTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func fallbackDispatchesOnlyWhenArtifactHasFallbackRules() throws {
     var rng = LCRNG(seed: 0xAA55_0004)
     for artifact in propertyFixtures() {

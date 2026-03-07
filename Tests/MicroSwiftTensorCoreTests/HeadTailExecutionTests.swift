@@ -4,12 +4,12 @@ import Testing
 
 @Suite
 struct HeadTailExecutionTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func usesMetalBackend() {
     #expect(HeadTailExecution.backendNameForTesting().starts(with: "metal-"))
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func identifierFooReturnsLengthThree() {
     let runtime = makeIdentifierRuntime()
     let classIDs: [UInt8] = [1, 1, 1]
@@ -26,7 +26,7 @@ struct HeadTailExecutionTests {
     #expect(result == [3, 0, 0])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func identifierX1ReturnsLengthTwo() {
     let runtime = makeIdentifierRuntime()
     let classIDs: [UInt8] = [1, 2]
@@ -43,7 +43,7 @@ struct HeadTailExecutionTests {
     #expect(result == [2, 0])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func nonHeadByteDoesNotStartMatch() {
     let runtime = makeIdentifierRuntime()
     let classIDs: [UInt8] = [2, 1, 1]
@@ -60,7 +60,7 @@ struct HeadTailExecutionTests {
     #expect(result == [0, 0, 0])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func twoIdentifiersSeparatedBySpace() {
     let runtime = makeIdentifierRuntime()
     let classIDs: [UInt8] = [1, 1, 0, 1, 2]
@@ -77,7 +77,7 @@ struct HeadTailExecutionTests {
     #expect(result == [2, 0, 0, 2, 0])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func singleCharIdentifier() {
     let runtime = makeIdentifierRuntime()
     let classIDs: [UInt8] = [1]

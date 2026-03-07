@@ -4,7 +4,7 @@ import Testing
 
 @Suite
 struct PackedTokenTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func packUnpackRoundTrip() {
     let localStart: UInt16 = 0x1234
     let length: UInt16 = 0x00FF

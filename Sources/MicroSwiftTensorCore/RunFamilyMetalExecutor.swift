@@ -237,7 +237,8 @@ final class RunFamilyMetalExecutor: @unchecked Sendable {
 
   private func makeBuffer<T>(_ values: [T], name: String) throws -> MTLBuffer {
     guard !values.isEmpty else {
-      guard let buffer = device.makeBuffer(length: MemoryLayout<T>.stride, options: .storageModeShared)
+      guard
+        let buffer = device.makeBuffer(length: MemoryLayout<T>.stride, options: .storageModeShared)
       else {
         throw RunFamilyMetalExecutorError.bufferCreationFailed(name)
       }
@@ -271,140 +272,140 @@ final class RunFamilyMetalExecutor: @unchecked Sendable {
 }
 
 private let runFamilyKernelSource = """
-#include <metal_stdlib>
-using namespace metal;
+  #include <metal_stdlib>
+  using namespace metal;
 
-struct ClassRunConfig {
-  uint validLen;
-  uint pageWidth;
-  uint numClassSets;
-  uint numByteClasses;
-  ushort bodySetID;
-  ushort minLength;
-  uint _padding;
-};
+  struct ClassRunConfig {
+    uint validLen;
+    uint pageWidth;
+    uint numClassSets;
+    uint numByteClasses;
+    ushort bodySetID;
+    ushort minLength;
+    uint _padding;
+  };
 
-struct HeadTailConfig {
-  uint validLen;
-  uint pageWidth;
-  uint numClassSets;
-  uint numByteClasses;
-  ushort headSetID;
-  ushort tailSetID;
-  uint _padding;
-};
+  struct HeadTailConfig {
+    uint validLen;
+    uint pageWidth;
+    uint numClassSets;
+    uint numByteClasses;
+    ushort headSetID;
+    ushort tailSetID;
+    uint _padding;
+  };
 
-inline bool containsClassSet(
-  constant uchar* classSetMask,
-  uint numClassSets,
-  uint numByteClasses,
-  ushort setID,
-  uchar classID
-) {
-  if (setID >= numClassSets) {
-    return false;
-  }
-  if (classID >= numByteClasses) {
-    return false;
-  }
-  uint flat = uint(setID) * numByteClasses + uint(classID);
-  return classSetMask[flat] != 0;
-}
-
-kernel void classRunKernel(
-  device const uchar* classIDs [[buffer(0)]],
-  device const uchar* validMask [[buffer(1)]],
-  constant uchar* classSetMask [[buffer(2)]],
-  device ushort* outLen [[buffer(3)]],
-  constant ClassRunConfig& cfg [[buffer(14)]],
-  uint gid [[thread_position_in_grid]]
-) {
-  if (gid >= cfg.pageWidth) {
-    return;
-  }
-
-  if (gid >= cfg.validLen || validMask[gid] == 0) {
-    outLen[gid] = 0;
-    return;
-  }
-
-  bool inBody = containsClassSet(
-    classSetMask, cfg.numClassSets, cfg.numByteClasses, cfg.bodySetID, classIDs[gid]);
-
-  bool prevInBody = false;
-  if (gid > 0 && gid - 1 < cfg.validLen && validMask[gid - 1] != 0) {
-    prevInBody = containsClassSet(
-      classSetMask, cfg.numClassSets, cfg.numByteClasses, cfg.bodySetID, classIDs[gid - 1]);
-  }
-
-  bool isStart = inBody && !prevInBody;
-  if (!isStart) {
-    outLen[gid] = 0;
-    return;
-  }
-
-  uint length = 1;
-  uint cursor = gid + 1;
-  while (cursor < cfg.validLen && validMask[cursor] != 0) {
-    bool nextInBody = containsClassSet(
-      classSetMask, cfg.numClassSets, cfg.numByteClasses, cfg.bodySetID, classIDs[cursor]);
-    if (!nextInBody) {
-      break;
+  inline bool containsClassSet(
+    constant uchar* classSetMask,
+    uint numClassSets,
+    uint numByteClasses,
+    ushort setID,
+    uchar classID
+  ) {
+    if (setID >= numClassSets) {
+      return false;
     }
-    length += 1;
-    cursor += 1;
-  }
-
-  if (length < cfg.minLength) {
-    outLen[gid] = 0;
-    return;
-  }
-  outLen[gid] = ushort(min(length, uint(65535)));
-}
-
-kernel void headTailKernel(
-  device const uchar* classIDs [[buffer(0)]],
-  device const uchar* validMask [[buffer(1)]],
-  constant uchar* classSetMask [[buffer(2)]],
-  device ushort* outLen [[buffer(3)]],
-  constant HeadTailConfig& cfg [[buffer(14)]],
-  uint gid [[thread_position_in_grid]]
-) {
-  if (gid >= cfg.pageWidth) {
-    return;
-  }
-
-  if (gid >= cfg.validLen || validMask[gid] == 0) {
-    outLen[gid] = 0;
-    return;
-  }
-
-  bool isHead = containsClassSet(
-    classSetMask, cfg.numClassSets, cfg.numByteClasses, cfg.headSetID, classIDs[gid]);
-  bool prevIsTail = false;
-  if (gid > 0 && gid - 1 < cfg.validLen && validMask[gid - 1] != 0) {
-    prevIsTail = containsClassSet(
-      classSetMask, cfg.numClassSets, cfg.numByteClasses, cfg.tailSetID, classIDs[gid - 1]);
-  }
-
-  bool startsHere = isHead && !prevIsTail;
-  if (!startsHere) {
-    outLen[gid] = 0;
-    return;
-  }
-
-  uint length = 1;
-  uint cursor = gid + 1;
-  while (cursor < cfg.validLen && validMask[cursor] != 0) {
-    bool nextIsTail = containsClassSet(
-      classSetMask, cfg.numClassSets, cfg.numByteClasses, cfg.tailSetID, classIDs[cursor]);
-    if (!nextIsTail) {
-      break;
+    if (classID >= numByteClasses) {
+      return false;
     }
-    length += 1;
-    cursor += 1;
+    uint flat = uint(setID) * numByteClasses + uint(classID);
+    return classSetMask[flat] != 0;
   }
 
-  outLen[gid] = ushort(min(length, uint(65535)));
-}
-"""
+  kernel void classRunKernel(
+    device const uchar* classIDs [[buffer(0)]],
+    device const uchar* validMask [[buffer(1)]],
+    constant uchar* classSetMask [[buffer(2)]],
+    device ushort* outLen [[buffer(3)]],
+    constant ClassRunConfig& cfg [[buffer(14)]],
+    uint gid [[thread_position_in_grid]]
+  ) {
+    if (gid >= cfg.pageWidth) {
+      return;
+    }
+
+    if (gid >= cfg.validLen || validMask[gid] == 0) {
+      outLen[gid] = 0;
+      return;
+    }
+
+    bool inBody = containsClassSet(
+      classSetMask, cfg.numClassSets, cfg.numByteClasses, cfg.bodySetID, classIDs[gid]);
+
+    bool prevInBody = false;
+    if (gid > 0 && gid - 1 < cfg.validLen && validMask[gid - 1] != 0) {
+      prevInBody = containsClassSet(
+        classSetMask, cfg.numClassSets, cfg.numByteClasses, cfg.bodySetID, classIDs[gid - 1]);
+    }
+
+    bool isStart = inBody && !prevInBody;
+    if (!isStart) {
+      outLen[gid] = 0;
+      return;
+    }
+
+    uint length = 1;
+    uint cursor = gid + 1;
+    while (cursor < cfg.validLen && validMask[cursor] != 0) {
+      bool nextInBody = containsClassSet(
+        classSetMask, cfg.numClassSets, cfg.numByteClasses, cfg.bodySetID, classIDs[cursor]);
+      if (!nextInBody) {
+        break;
+      }
+      length += 1;
+      cursor += 1;
+    }
+
+    if (length < cfg.minLength) {
+      outLen[gid] = 0;
+      return;
+    }
+    outLen[gid] = ushort(min(length, uint(65535)));
+  }
+
+  kernel void headTailKernel(
+    device const uchar* classIDs [[buffer(0)]],
+    device const uchar* validMask [[buffer(1)]],
+    constant uchar* classSetMask [[buffer(2)]],
+    device ushort* outLen [[buffer(3)]],
+    constant HeadTailConfig& cfg [[buffer(14)]],
+    uint gid [[thread_position_in_grid]]
+  ) {
+    if (gid >= cfg.pageWidth) {
+      return;
+    }
+
+    if (gid >= cfg.validLen || validMask[gid] == 0) {
+      outLen[gid] = 0;
+      return;
+    }
+
+    bool isHead = containsClassSet(
+      classSetMask, cfg.numClassSets, cfg.numByteClasses, cfg.headSetID, classIDs[gid]);
+    bool prevIsTail = false;
+    if (gid > 0 && gid - 1 < cfg.validLen && validMask[gid - 1] != 0) {
+      prevIsTail = containsClassSet(
+        classSetMask, cfg.numClassSets, cfg.numByteClasses, cfg.tailSetID, classIDs[gid - 1]);
+    }
+
+    bool startsHere = isHead && !prevIsTail;
+    if (!startsHere) {
+      outLen[gid] = 0;
+      return;
+    }
+
+    uint length = 1;
+    uint cursor = gid + 1;
+    while (cursor < cfg.validLen && validMask[cursor] != 0) {
+      bool nextIsTail = containsClassSet(
+        classSetMask, cfg.numClassSets, cfg.numByteClasses, cfg.tailSetID, classIDs[cursor]);
+      if (!nextIsTail) {
+        break;
+      }
+      length += 1;
+      cursor += 1;
+    }
+
+    outLen[gid] = ushort(min(length, uint(65535)));
+  }
+  """
