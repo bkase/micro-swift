@@ -351,6 +351,78 @@ public func reduceBucketWinners(buckets: [[CandidateWinner]]) -> [CandidateWinne
 }
 
 public func integrateWithFallback(
+  fastWinners: WinnerReduction.WinnerTensors,
+  fallbackResult: FallbackPageResult,
+  pageWidth: Int
+) -> WinnerReduction.WinnerTensors {
+  guard pageWidth > 0 else {
+    return WinnerReduction.WinnerTensors(
+      len: zeros([0], dtype: .uint16),
+      priorityRank: zeros([0], dtype: .uint16),
+      ruleID: zeros([0], dtype: .uint16),
+      tokenKindID: zeros([0], dtype: .uint16),
+      mode: zeros([0], dtype: .uint8)
+    )
+  }
+
+  return withMLXCPU {
+    let fallbackLen = MLXArray(
+      normalized(
+        fallbackResult.fallbackLen, count: pageWidth, fill: 0
+      ),
+      [pageWidth]
+    ).asType(.uint16)
+    let fallbackPriority = MLXArray(
+      normalized(
+        fallbackResult.fallbackPriorityRank, count: pageWidth, fill: 0
+      ),
+      [pageWidth]
+    ).asType(.uint16)
+    let fallbackRuleID = MLXArray(
+      normalized(
+        fallbackResult.fallbackRuleID, count: pageWidth, fill: 0
+      ),
+      [pageWidth]
+    ).asType(.uint16)
+    let fallbackTokenKindID = MLXArray(
+      normalized(
+        fallbackResult.fallbackTokenKindID, count: pageWidth, fill: 0
+      ),
+      [pageWidth]
+    ).asType(.uint16)
+    let fallbackMode = MLXArray(
+      normalized(
+        fallbackResult.fallbackMode, count: pageWidth, fill: 0
+      ),
+      [pageWidth]
+    ).asType(.uint8)
+
+    let fastLen = fastWinners.len.asType(.uint16)
+    let fastPriority = fastWinners.priorityRank.asType(.uint16)
+    let fastRuleID = fastWinners.ruleID.asType(.uint16)
+    let fastTokenKindID = fastWinners.tokenKindID.asType(.uint16)
+    let fastMode = fastWinners.mode.asType(.uint8)
+
+    let longer = fallbackLen .> fastLen
+    let sameLen = fallbackLen .== fastLen
+    let positiveLen = fallbackLen .> 0
+    let betterPriority = fallbackPriority .< fastPriority
+    let samePriority = fallbackPriority .== fastPriority
+    let betterRuleID = fallbackRuleID .< fastRuleID
+    let tieBreak = sameLen .&& positiveLen .&& (betterPriority .|| (samePriority .&& betterRuleID))
+    let fallbackWins = longer .|| tieBreak
+
+    return WinnerReduction.WinnerTensors(
+      len: which(fallbackWins, fallbackLen, fastLen).asType(.uint16),
+      priorityRank: which(fallbackWins, fallbackPriority, fastPriority).asType(.uint16),
+      ruleID: which(fallbackWins, fallbackRuleID, fastRuleID).asType(.uint16),
+      tokenKindID: which(fallbackWins, fallbackTokenKindID, fastTokenKindID).asType(.uint16),
+      mode: which(fallbackWins, fallbackMode, fastMode).asType(.uint8)
+    )
+  }
+}
+
+public func integrateWithFallback(
   fastWinners: [WinnerTuple],
   fallbackResult: FallbackPageResult,
   pageWidth: Int
@@ -373,6 +445,13 @@ public func integrateWithFallback(
   }
 
   return integrated
+}
+
+private func normalized<T>(_ values: [T], count: Int, fill: T) -> [T] {
+  guard count > 0 else { return [] }
+  if values.count == count { return values }
+  if values.count > count { return Array(values.prefix(count)) }
+  return values + Array(repeating: fill, count: count - values.count)
 }
 
 public func integrateWithFallback(

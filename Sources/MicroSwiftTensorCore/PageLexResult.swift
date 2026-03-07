@@ -1,5 +1,10 @@
 import MLX
 
+public enum ResultExtractionBoundary: Sendable {
+  case finalTransport
+  case testInspection
+}
+
 public struct PageLexResult: Sendable, Equatable {
   private let hostPackedRowsStorage: [UInt64]
   public let rowCount: Int32
@@ -18,13 +23,30 @@ public struct PageLexResult: Sendable, Equatable {
     self.overflowDiagnostic = overflowDiagnostic
   }
 
+  public init(
+    packedRowsTensor: MLXArray,
+    rowCount: Int32,
+    errorSpans: [ErrorSpan] = [],
+    overflowDiagnostic: OverflowDiagnostic? = nil
+  ) {
+    self.hostPackedRowsStorage = packedRowsTensor.asType(.uint64).asArray(UInt64.self)
+    self.rowCount = rowCount
+    self.errorSpans = errorSpans
+    self.overflowDiagnostic = overflowDiagnostic
+  }
+
   public func hostPackedRows() -> [UInt64] {
-    hostPackedRowsStorage
+    extractHostPackedRows(at: .finalTransport)
+  }
+
+  public func extractHostPackedRows(at boundary: ResultExtractionBoundary) -> [UInt64] {
+    _ = boundary
+    return hostPackedRowsStorage
   }
 
   /// MLX-backed packed rows for device execution. Created on demand.
   public func mlxPackedRows() -> MLXArray {
-    withMLXCPU { MLXArray(hostPackedRowsStorage) }
+    withMLXCPU { MLXArray(hostPackedRowsStorage).asType(.uint64) }
   }
 
   public static func == (lhs: PageLexResult, rhs: PageLexResult) -> Bool {

@@ -43,10 +43,7 @@ public enum TensorLexer {
 
     let hostView = compiledPage.extractHostExecutionView(at: .transitionalFamilyExecution)
 
-    // Phase A: Byte classification
-    let classIDs = hostView.classIDs
-
-    // Phase B: Per-rule candidate generation (using RuleBuckets)
+    // Phase A/B: Byte classification + per-rule candidate generation
     let candidateBatch = makeFastCandidateBatch(
       compiledPage: compiledPage,
       hostView: hostView,
@@ -54,32 +51,37 @@ public enum TensorLexer {
       artifact: artifact
     )
 
-    // Phase C: Device-resident winner reduction
-    let winnerTensors = WinnerReduction.reduce(
+    // Phase C: Device-resident winner reduction and fallback merge
+    var winnerTensors = WinnerReduction.reduce(
       batch: candidateBatch,
       pageSize: hostView.bytes.count
     )
-    var winners = WinnerReduction.hostWinners(from: winnerTensors, pageSize: hostView.bytes.count)
 
     if options.runtimeProfile == .v1Fallback, let fallback = artifact.fallback {
       let fallbackResult = FallbackKernelRunner(fallback: fallback).evaluatePage(
-        classIDs: classIDs.map(UInt16.init),
+        classIDs: hostView.classIDs.map(UInt16.init),
         validLen: Int32(boundedValidLen)
       )
-      winners = integrateWithFallback(
-        fastWinners: winners,
+      winnerTensors = integrateWithFallback(
+        fastWinners: winnerTensors,
         fallbackResult: fallbackResult,
         pageWidth: hostView.bytes.count
       )
     }
 
-    // Phase D: Greedy non-overlap selection
-    let selected = GreedySelector.select(winners: winners, validLen: Int32(boundedValidLen))
-
-    // Phase E-G: Remap, coverage, emission via TransportEmitter
+    // Phase D-G: Greedy selection, remap, coverage/error spans, and packed-row assembly.
+    let selectedTensors = GreedySelector.select(
+      winnerTensors: winnerTensors,
+      validLen: Int32(boundedValidLen)
+    )
+    let byteTensor =
+      compiledPage.byteTensor
+      ?? withMLXCPU {
+        MLXArray(hostView.bytes, [hostView.bytes.count]).asType(.uint8)
+      }
     return TransportEmitter.emit(
-      selectedTokens: selected,
-      bytes: hostView.bytes,
+      selectedTokenTensors: selectedTensors,
+      byteTensor: byteTensor,
       validLen: Int32(boundedValidLen),
       remapTables: artifact.keywordRemaps,
       options: options,
