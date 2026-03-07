@@ -104,10 +104,21 @@ public struct FastPathCompiledGraph: Sendable {
     byteTensor: MLXArray,
     classIDTensor: MLXArray,
     validMaskTensor: MLXArray,
-    fallbackResult: FallbackPageResult
+    fallbackResult: FallbackPageResult? = nil
   ) -> GreedySelector.SelectedTokenTensors {
-    let fallbackWinners = makeFallbackWinnerTensors(
-      fallbackResult: fallbackResult, pageSize: pageSize)
+    let fallbackWinners: WinnerReduction.WinnerTensors
+    if let fallbackResult {
+      fallbackWinners = makeFallbackWinnerTensors(
+        fallbackResult: fallbackResult, pageSize: pageSize)
+    } else {
+      fallbackWinners = WinnerReduction.WinnerTensors(
+        len: zeros([pageSize], dtype: .uint16),
+        priorityRank: zeros([pageSize], dtype: .uint16),
+        ruleID: zeros([pageSize], dtype: .uint16),
+        tokenKindID: zeros([pageSize], dtype: .uint16),
+        mode: zeros([pageSize], dtype: .uint8)
+      )
+    }
     let outputs = candidateAndSelectGraph([
       byteTensor.asType(.uint8),
       classIDTensor.asType(.uint16),

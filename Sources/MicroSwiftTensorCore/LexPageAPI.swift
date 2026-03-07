@@ -90,16 +90,15 @@ public enum TensorLexer {
       preconditionFailure("Fast-path graph cache resource creation failed: \(error)")
     }
 
-    let fallbackResult: FallbackPageResult
+    let fallbackResult: FallbackPageResult?
     if options.runtimeProfile == .v1Fallback, let fallbackRunner = cacheEntry.fallbackRunner {
-      // Extract classIDs lazily from the tensor only when fallback needs them
       let fallbackClassIDs = compiledPage.classIDTensor!.asArray(UInt16.self)
       fallbackResult = fallbackRunner.evaluatePage(
         classIDs: fallbackClassIDs,
         validLen: Int32(boundedValidLen)
       )
     } else {
-      fallbackResult = emptyFallbackResult(pageWidth: pageSize)
+      fallbackResult = nil
     }
 
     guard let fastPathGraph = cacheEntry.fastPathGraph else {
@@ -182,16 +181,6 @@ public enum TensorLexer {
       fastPathGraph: FastPathCompiledGraph(pageSize: pageSize, artifact: artifact),
       runtimeMetadata: metadata,
       createdAt: Date()
-    )
-  }
-
-  private static func emptyFallbackResult(pageWidth: Int) -> FallbackPageResult {
-    FallbackPageResult(
-      fallbackLen: Array(repeating: 0, count: pageWidth),
-      fallbackPriorityRank: Array(repeating: 0, count: pageWidth),
-      fallbackRuleID: Array(repeating: 0, count: pageWidth),
-      fallbackTokenKindID: Array(repeating: 0, count: pageWidth),
-      fallbackMode: Array(repeating: 0, count: pageWidth)
     )
   }
 
