@@ -1224,6 +1224,33 @@ private theorem extractSelected_eq_range_filterMap
   simp only [Nat.add_zero, List.map_id'] at h
   exact h
 
+/-- extractSelected position pairs equal filterMap from selectedMask + winner lengths. -/
+theorem extractSelected_pairs (winners : List Reduction.Winner)
+    (selectedMask : List Bool) (h_len : selectedMask.length = winners.length) :
+    (extractSelected winners selectedMask).map (fun t => (t.startPos, t.length)) =
+    (List.range winners.length).filterMap (fun i =>
+      if (match selectedMask[i]? with | some true => true | _ => false) then
+        some (i, match (winners.map (·.len))[i]? with | some v => v | none => 0)
+      else none) := by
+  rw [extractSelected_eq_range_filterMap winners selectedMask h_len, List.map_filterMap]
+  apply List.filterMap_congr
+  intro i hi
+  -- LHS: Option.map (fun t => (t.startPos, t.length)) (if mask.getD i false then ...)
+  -- RHS: if (match mask[i]? with ...) then some (i, ...) else none
+  -- Both are none when mask[i] ≠ true, and produce (i, w.len) when mask[i] = true
+  cases hs : selectedMask[i]? with
+  | none => simp [List.getD, hs]
+  | some sv =>
+    cases sv with
+    | false => simp [List.getD, hs]
+    | true =>
+      simp only [List.getD, hs, Option.getD]
+      have hilt : i < winners.length := List.mem_range.mp hi
+      have hw : winners[i]? ≠ none := by
+        intro h; rw [List.getElem?_eq_none_iff] at h; omega
+      obtain ⟨w, hw'⟩ := Option.ne_none_iff_exists'.mp hw
+      simp only [hw', Option.map_some, List.getElem?_map, ite_true]
+
 /-- The joint induction: scalarSelect's fold tracks coveredBeforeRec and produces
     the same tokens as filterMap on the mask. -/
 private theorem scalarSelectFold_matches
@@ -1445,5 +1472,9 @@ theorem selection_equiv (winners : List Reduction.Winner) (validLen : Nat)
       (scalarGreedyMask_length winners validLen) h_mask_eq]
   -- Step 4: extractSelected on scalarGreedyMask = scalarSelect
   exact extractSelected_scalarGreedyMask winners validLen h_valid
+
+theorem vectorizedSelect_length (winners : List Reduction.Winner) (validLen : Nat) :
+    (vectorizedSelect winners validLen).length = winners.length := by
+  rw [vectorizedSelect_eq_maskAfter]; exact maskAfter_length winners validLen validLen
 
 end Selection

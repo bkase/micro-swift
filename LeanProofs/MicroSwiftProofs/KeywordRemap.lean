@@ -99,6 +99,77 @@ def vectorizedRemap (tokenKindIDs : List Nat) (ruleIDs : List Nat) (lengths : Li
     ) kinds
   ) tokenKindIDs
 
+/-- One remap table step preserves startPos and length. -/
+private theorem remap_step_preserves (bytes : List Nat) (table : RemapTable)
+    (tok : Selection.SelectedToken) :
+    (if tok.ruleID != table.baseRuleID then tok
+     else if tok.length > table.maxKeywordLength then tok
+     else match table.entries.find? (fun entry =>
+         sliceMatches bytes tok.startPos tok.length entry.lexeme) with
+       | some entry => { tok with tokenKindID := entry.tokenKindID }
+       | none => tok).startPos = tok.startPos ∧
+    (if tok.ruleID != table.baseRuleID then tok
+     else if tok.length > table.maxKeywordLength then tok
+     else match table.entries.find? (fun entry =>
+         sliceMatches bytes tok.startPos tok.length entry.lexeme) with
+       | some entry => { tok with tokenKindID := entry.tokenKindID }
+       | none => tok).length = tok.length := by
+  by_cases h1 : tok.ruleID != table.baseRuleID
+  · simp [h1]
+  · simp only [h1, ite_false]
+    by_cases h2 : tok.length > table.maxKeywordLength
+    · simp [h2]
+    · simp only [h2, ite_false]
+      cases table.entries.find? (fun entry =>
+          sliceMatches bytes tok.startPos tok.length entry.lexeme) with
+      | none => exact ⟨rfl, rfl⟩
+      | some _ => exact ⟨rfl, rfl⟩
+
+/-- Folding remap tables preserves startPos and length. -/
+private theorem remap_foldl_preserves (bytes : List Nat) (tables : List RemapTable)
+    (tok : Selection.SelectedToken) :
+    (tables.foldl (fun tok table =>
+      if tok.ruleID != table.baseRuleID then tok
+      else if tok.length > table.maxKeywordLength then tok
+      else match table.entries.find? (fun entry =>
+          sliceMatches bytes tok.startPos tok.length entry.lexeme) with
+        | some entry => { tok with tokenKindID := entry.tokenKindID }
+        | none => tok) tok).startPos = tok.startPos ∧
+    (tables.foldl (fun tok table =>
+      if tok.ruleID != table.baseRuleID then tok
+      else if tok.length > table.maxKeywordLength then tok
+      else match table.entries.find? (fun entry =>
+          sliceMatches bytes tok.startPos tok.length entry.lexeme) with
+        | some entry => { tok with tokenKindID := entry.tokenKindID }
+        | none => tok) tok).length = tok.length := by
+  induction tables generalizing tok with
+  | nil => exact ⟨rfl, rfl⟩
+  | cons tbl rest ih =>
+    simp only [List.foldl_cons]
+    have hstep := remap_step_preserves bytes tbl tok
+    set tok' := (if tok.ruleID != tbl.baseRuleID then tok
+      else if tok.length > tbl.maxKeywordLength then tok
+      else match tbl.entries.find? (fun entry =>
+          sliceMatches bytes tok.startPos tok.length entry.lexeme) with
+        | some entry => { tok with tokenKindID := entry.tokenKindID }
+        | none => tok)
+    have hih := ih tok'
+    exact ⟨hih.1.trans hstep.1, hih.2.trans hstep.2⟩
+
+/-- scalarRemap only changes tokenKindID, preserving startPos and length. -/
+theorem scalarRemap_preserves_pairs (tokens : List Selection.SelectedToken)
+    (bytes : List Nat) (tables : List RemapTable) :
+    (scalarRemap tokens bytes tables).map (fun t => (t.startPos, t.length)) =
+    tokens.map (fun t => (t.startPos, t.length)) := by
+  simp only [scalarRemap]
+  induction tokens with
+  | nil => simp
+  | cons tok rest ih =>
+    simp only [List.map_cons]
+    have h := remap_foldl_preserves bytes tables tok
+    simp only [Prod.ext_iff] at h
+    rw [List.cons.injEq]; exact ⟨Prod.ext h.1 h.2, ih⟩
+
 /-! ## Equivalence -/
 
 /-- The vectorized remap, when projected back to selected tokens, yields
