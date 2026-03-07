@@ -206,4 +206,45 @@ private theorem vec_runLength_at (inBody : List Bool) (i : Nat)
   rw [foldr_break_eq inBody i (by omega)]
   simp
 
+/-! ### MLX primitive helpers for classrun/remap proofs -/
+
+-- shiftLeft at position i gives bytes[i+offset]
+private theorem shiftLeft_getD (bytes : List Nat) (offset i : Nat) :
+    (shiftLeft bytes offset (0 : Nat)).getD i 0 =
+    bytes.getD (i + offset) 0 := by
+  simp only [shiftLeft, List.getD, List.getElem?_append, List.length_drop]
+  by_cases h : i < bytes.length - offset
+  · simp only [h, ite_true, List.getElem?_drop]
+    conv_rhs => rw [show i + offset = offset + i from by omega]
+  · simp only [h, ite_false, List.getElem?_replicate]
+    have h2 : bytes.length ≤ i + offset := by omega
+    simp only [List.getElem?_eq_none h2]
+    split <;> simp
+
+-- Bridge: match validMask[i]? pattern = validMask.getD i false
+private theorem match_valid_eq_getD (validMask : List Bool) (i : Nat) :
+    (match validMask[i]? with | some true => true | _ => false) =
+    validMask.getD i false := by
+  simp only [List.getD]
+  cases validMask[i]? with
+  | none => rfl
+  | some v => cases v <;> rfl
+
+-- Bridge: match classIDs[i]? pattern = classIDs.getD i 0
+private theorem match_classID_eq_getD (classIDs : List Nat) (i : Nat) :
+    (match classIDs[i]? with | some c => c | none => 0) =
+    classIDs.getD i 0 := by
+  simp only [List.getD]; cases classIDs[i]? <;> rfl
+
+-- inBody at position i equals scalar computation
+private theorem inBody_getD (classIDs : List Nat) (validMask : List Bool)
+    (bodySetID : Nat) (membership : CandidateGen.ClassSetMembership) (i : Nat)
+    (h_len : classIDs.length = validMask.length) (hi : i < classIDs.length) :
+    (List.zipWith and validMask (classIDs.map (membership bodySetID))).getD i false =
+    (validMask.getD i false && membership bodySetID (classIDs.getD i 0)) := by
+  simp only [List.getD, List.getElem?_zipWith, List.getElem?_map]
+  rw [List.getElem?_eq_getElem (by omega : i < validMask.length)]
+  rw [List.getElem?_eq_getElem hi]
+  simp
+
 end TestClassRun
