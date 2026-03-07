@@ -123,6 +123,63 @@ private theorem scalar_loop_eq_runLen (inBody : List Bool) (i n count : Nat)
 
 /-! ### Vectorized runLength = runLenFrom -/
 
+-- Helper: bp length
+private theorem bp_length (inBody : List Bool) :
+    (which (elemNot inBody) (arange inBody.length) (full inBody.length inBody.length)).length
+    = inBody.length := by
+  simp [which, elemNot, arange, full, List.length_map, List.length_zip]
+
+-- Helper: bp getElem characterization
+private theorem bp_getElem (inBody : List Bool) (i : Nat) (hi : i < inBody.length) :
+    let bp := which (elemNot inBody) (arange inBody.length) (full inBody.length inBody.length)
+    bp[i]'(by rw [bp_length]; exact hi) = if inBody[i] then inBody.length else i := by
+  simp only [which, elemNot, arange, full]
+  simp only [List.getElem_map, List.getElem_zip, List.getElem_zip,
+    List.getElem_range, List.getElem_replicate]
+  cases inBody[i] <;> simp
+
+-- Helper: runLenFrom bound
+private theorem runLenFrom_le (mask : List Bool) (i : Nat) :
+    runLenFrom mask i ≤ mask.length - i := by
+  unfold runLenFrom
+  split
+  · rename_i h
+    split
+    · have ih := runLenFrom_le mask (i + 1)
+      omega
+    · omega
+  · omega
+termination_by mask.length - i
+
+-- Key: foldr min n of bp[i..] = i + runLenFrom inBody i
+private theorem foldr_break_eq (inBody : List Bool) (i : Nat) (hi : i ≤ inBody.length) :
+    ((which (elemNot inBody) (arange inBody.length) (full inBody.length inBody.length)).drop i).foldr
+      min inBody.length
+    = i + runLenFrom inBody i := by
+  by_cases h_lt : i < inBody.length
+  · have h_bp_lt : i < (which (elemNot inBody) (arange inBody.length)
+        (full inBody.length inBody.length)).length := by rw [bp_length]; exact h_lt
+    rw [List.drop_eq_getElem_cons h_bp_lt, List.foldr_cons, bp_getElem inBody i h_lt]
+    rw [foldr_break_eq inBody (i + 1) (by omega)]
+    cases h_mask : inBody[i]
+    · simp [h_mask]
+      rw [show runLenFrom inBody i = 0 from by rw [runLenFrom]; simp [h_lt, h_mask]]
+      omega
+    · simp [h_mask]
+      rw [show runLenFrom inBody i = 1 + runLenFrom inBody (i + 1) from by
+        rw [runLenFrom]; simp [h_lt, h_mask]]
+      have bound := runLenFrom_le inBody (i + 1)
+      omega
+  · have h_eq : i = inBody.length := by omega
+    subst h_eq
+    have h1 := bp_length inBody
+    have : (which (elemNot inBody) (arange inBody.length) (full inBody.length inBody.length)).drop
+        inBody.length = [] := by simp [List.drop_eq_nil_iff, h1]
+    rw [this, List.foldr_nil]
+    have : runLenFrom inBody inBody.length = 0 := by rw [runLenFrom]; simp
+    omega
+termination_by inBody.length - i
+
 private theorem vec_runLength_at (inBody : List Bool) (i : Nat)
     (hi : i < inBody.length) :
     let n := inBody.length
@@ -131,6 +188,22 @@ private theorem vec_runLength_at (inBody : List Bool) (i : Nat)
     let nextBreakPos := cumminRev breakPositions n
     let runLength := elemSub nextBreakPos (arange n)
     runLength.getD i 0 = runLenFrom inBody i := by
-  sorry
+  simp only []
+  simp only [elemSub, List.getD, List.getElem?_zipWith, cumminRev]
+  set bp := which (elemNot inBody) (arange inBody.length) (full inBody.length inBody.length)
+  have h_bp_len : bp.length = inBody.length := bp_length inBody
+  have h_scanr_len : (bp.scanr min inBody.length).length = bp.length + 1 := List.length_scanr ..
+  have h_i_lt_scanr : i < (bp.scanr min inBody.length).length := by omega
+  rw [List.getElem?_eq_getElem h_i_lt_scanr]
+  simp only [arange]
+  rw [List.getElem?_eq_getElem (by simp; exact hi)]
+  simp only [List.getElem_range]
+  have h_scanr_val : (bp.scanr min inBody.length)[i] = (bp.drop i).foldr min inBody.length := by
+    have := scanr_getD_eq_foldr_drop bp inBody.length i (by omega)
+    simp only [List.getD, List.getElem?_eq_getElem h_i_lt_scanr] at this
+    simpa using this
+  simp only [h_scanr_val]
+  rw [foldr_break_eq inBody i (by omega)]
+  simp
 
 end TestClassRun
