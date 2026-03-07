@@ -210,25 +210,19 @@ public enum TransportEmitter {
 
     return withMLXCPU {
       let positions = arange(pageSize, dtype: .int32)
+      let validMask = positions .< Int32(validLen)
       let selectedMask = selectedTokenTensors.selectedMask.asType(.bool)
       let lengths = selectedTokenTensors.length.asType(.int32)
-      var covered = zeros([pageSize], dtype: .bool)
 
-      for start in 0..<min(validLen, pageSize) {
-        let startMask = selectedMask .&& (positions .== Int32(start))
-        let hasSelection = startMask.any()
-        let lengthAtStart = which(
-          startMask,
-          lengths,
-          zeros([pageSize], dtype: .int32)
-        ).sum()
-        let tokenEnd = MLXArray(Int32(start)) + lengthAtStart
-        let rangeMask = (positions .>= Int32(start)) .&& (positions .< tokenEnd)
-        let nextCovered = covered .|| (hasSelection .&& rangeMask)
-        covered = nextCovered
-      }
+      // End position of each selected token (start + length), zero for non-selected
+      let tokenEnds = which(selectedMask, positions + lengths, zeros([pageSize], dtype: .int32))
 
-      let validMask = positions .< Int32(validLen)
+      // Prefix-max propagates the furthest token end boundary rightward
+      let maxEndSoFar = cummax(tokenEnds, axis: 0)
+
+      // A position is covered if it falls before the end boundary of the most recent token
+      let covered = maxEndSoFar .> positions
+
       return covered .&& validMask
     }
   }
