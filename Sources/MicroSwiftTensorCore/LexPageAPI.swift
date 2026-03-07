@@ -346,89 +346,195 @@ public enum TensorLexer {
       }
     }
 
+    // Use MLX tensor path when compiled page tensors are available
+    let useMLXCandidates = literalPage?.classIDTensor != nil
+
+    // Precompute shared tensor resources for MLX path
+    let classIDTensor: MLXArray?
+    let validMaskTensor: MLXArray?
+    let byteTensor: MLXArray?
+    let nextInvalidTensor: MLXArray?
+    if useMLXCandidates, let literalPage {
+      classIDTensor = literalPage.classIDTensor
+      validMaskTensor = literalPage.validRangeMask(dtype: .bool)
+      byteTensor = literalPage.byteTensor ?? withMLXCPU {
+        MLXArray(bytes, [pageSize]).asType(.uint8)
+      }
+      nextInvalidTensor = withMLXCPU {
+        let indices = MLXArray(Int32(0)..<Int32(pageSize), [pageSize])
+        let sentinelFill = MLXArray(Array(repeating: Int32(pageSize), count: pageSize), [pageSize])
+        let invalidIndices = which(.!validMaskTensor!, indices, sentinelFill)
+        return cummin(invalidIndices, axis: 0, reverse: true)
+      }
+    } else {
+      classIDTensor = nil
+      validMaskTensor = nil
+      byteTensor = nil
+      nextInvalidTensor = nil
+    }
+
     for rule in buckets.classRunRules {
       guard case .runClassRun(let bodyClassSetID, let minLength) = rule.plan else { continue }
-      let candLen = ClassRunExecution.evaluateClassRun(
-        classIDs: classIDs,
-        validMask: validMask,
-        bodyClassSetID: bodyClassSetID,
-        minLength: minLength,
-        classSetRuntime: artifact.classSetRuntime
-      )
-      appendCandidateRow(
-        ruleID: rule.ruleID,
-        tokenKindID: rule.tokenKindID,
-        priorityRank: rule.priorityRank,
-        mode: modeByte(rule.mode),
-        candLenHost: candLen
-      )
+      if let classIDTensor, let validMaskTensor {
+        appendCandidateRow(
+          ruleID: rule.ruleID,
+          tokenKindID: rule.tokenKindID,
+          priorityRank: rule.priorityRank,
+          mode: modeByte(rule.mode),
+          candLenTensor: ClassRunExecution.evaluateClassRunMLX(
+            classIDTensor: classIDTensor,
+            validMaskTensor: validMaskTensor,
+            bodyClassSetID: bodyClassSetID,
+            minLength: minLength,
+            classSetRuntime: artifact.classSetRuntime
+          )
+        )
+      } else {
+        let candLen = ClassRunExecution.evaluateClassRun(
+          classIDs: classIDs,
+          validMask: validMask,
+          bodyClassSetID: bodyClassSetID,
+          minLength: minLength,
+          classSetRuntime: artifact.classSetRuntime
+        )
+        appendCandidateRow(
+          ruleID: rule.ruleID,
+          tokenKindID: rule.tokenKindID,
+          priorityRank: rule.priorityRank,
+          mode: modeByte(rule.mode),
+          candLenHost: candLen
+        )
+      }
     }
 
     for rule in buckets.headTailRules {
       guard case .runHeadTail(let headClassSetID, let tailClassSetID) = rule.plan else { continue }
-      let candLen = HeadTailExecution.evaluateHeadTail(
-        classIDs: classIDs,
-        validMask: validMask,
-        headClassSetID: headClassSetID,
-        tailClassSetID: tailClassSetID,
-        classSetRuntime: artifact.classSetRuntime
-      )
-      appendCandidateRow(
-        ruleID: rule.ruleID,
-        tokenKindID: rule.tokenKindID,
-        priorityRank: rule.priorityRank,
-        mode: modeByte(rule.mode),
-        candLenHost: candLen
-      )
+      if let classIDTensor, let validMaskTensor {
+        appendCandidateRow(
+          ruleID: rule.ruleID,
+          tokenKindID: rule.tokenKindID,
+          priorityRank: rule.priorityRank,
+          mode: modeByte(rule.mode),
+          candLenTensor: HeadTailExecution.evaluateHeadTailMLX(
+            classIDTensor: classIDTensor,
+            validMaskTensor: validMaskTensor,
+            headClassSetID: headClassSetID,
+            tailClassSetID: tailClassSetID,
+            classSetRuntime: artifact.classSetRuntime
+          )
+        )
+      } else {
+        let candLen = HeadTailExecution.evaluateHeadTail(
+          classIDs: classIDs,
+          validMask: validMask,
+          headClassSetID: headClassSetID,
+          tailClassSetID: tailClassSetID,
+          classSetRuntime: artifact.classSetRuntime
+        )
+        appendCandidateRow(
+          ruleID: rule.ruleID,
+          tokenKindID: rule.tokenKindID,
+          priorityRank: rule.priorityRank,
+          mode: modeByte(rule.mode),
+          candLenHost: candLen
+        )
+      }
     }
 
     var nextStopBySetID: [UInt16: [Int32]] = [:]
+    var nextStopTensorBySetID: [UInt16: MLXArray] = [:]
     for rule in buckets.prefixedRules {
       guard case .runPrefixed(let prefix, let bodyClassSetID, let stopClassSetID) = rule.plan else {
         continue
       }
 
-      let nextStop: [Int32]?
-      if let stopClassSetID {
-        if let cached = nextStopBySetID[stopClassSetID] {
-          nextStop = cached
-        } else {
-          let stopMembership = MembershipKernels.membershipMask(
-            classIDs: classIDs,
-            setID: stopClassSetID,
-            classSetRuntime: artifact.classSetRuntime
-          )
-          let stopMask = zip(stopMembership, validMask).map { membership, valid in
-            membership && valid
+      if let classIDTensor, let validMaskTensor, let byteTensor, let nextInvalidTensor {
+        // MLX tensor path
+        let nextStopTensor: MLXArray?
+        if let stopClassSetID {
+          if let cached = nextStopTensorBySetID[stopClassSetID] {
+            nextStopTensor = cached
+          } else {
+            let computed = withMLXCPU { () -> MLXArray in
+              let indices = MLXArray(Int32(0)..<Int32(pageSize), [pageSize])
+              let sentinelFill = MLXArray(
+                Array(repeating: Int32(pageSize), count: pageSize), [pageSize])
+              let stopMember = MembershipKernels.membershipMaskTensor(
+                classIDTensor: classIDTensor,
+                setID: stopClassSetID,
+                classSetRuntime: artifact.classSetRuntime
+              )
+              let isStop = stopMember .&& validMaskTensor
+              let stopIndices = which(isStop, indices, sentinelFill)
+              return cummin(stopIndices, axis: 0, reverse: true)
+            }
+            nextStopTensorBySetID[stopClassSetID] = computed
+            nextStopTensor = computed
           }
-          let computed = NextStopHelper.computeNextStop(
-            stopMask: stopMask,
-            validLen: validLen
-          )
-          nextStopBySetID[stopClassSetID] = computed
-          nextStop = computed
+        } else {
+          nextStopTensor = nil
         }
-      } else {
-        nextStop = nil
-      }
 
-      let candLen = PrefixedExecution.evaluatePrefixed(
-        bytes: bytes,
-        classIDs: classIDs,
-        validMask: validMask,
-        prefix: prefix,
-        bodyClassSetID: bodyClassSetID,
-        stopClassSetID: stopClassSetID,
-        classSetRuntime: artifact.classSetRuntime,
-        nextStop: nextStop
-      )
-      appendCandidateRow(
-        ruleID: rule.ruleID,
-        tokenKindID: rule.tokenKindID,
-        priorityRank: rule.priorityRank,
-        mode: modeByte(rule.mode),
-        candLenHost: candLen
-      )
+        appendCandidateRow(
+          ruleID: rule.ruleID,
+          tokenKindID: rule.tokenKindID,
+          priorityRank: rule.priorityRank,
+          mode: modeByte(rule.mode),
+          candLenTensor: PrefixedExecution.evaluatePrefixedMLX(
+            byteTensor: byteTensor,
+            classIDTensor: classIDTensor,
+            validMaskTensor: validMaskTensor,
+            prefix: prefix,
+            bodyClassSetID: bodyClassSetID,
+            classSetRuntime: artifact.classSetRuntime,
+            nextInvalidTensor: nextInvalidTensor,
+            nextStopTensor: nextStopTensor
+          )
+        )
+      } else {
+        // Host path
+        let nextStop: [Int32]?
+        if let stopClassSetID {
+          if let cached = nextStopBySetID[stopClassSetID] {
+            nextStop = cached
+          } else {
+            let stopMembership = MembershipKernels.membershipMask(
+              classIDs: classIDs,
+              setID: stopClassSetID,
+              classSetRuntime: artifact.classSetRuntime
+            )
+            let stopMask = zip(stopMembership, validMask).map { membership, valid in
+              membership && valid
+            }
+            let computed = NextStopHelper.computeNextStop(
+              stopMask: stopMask,
+              validLen: validLen
+            )
+            nextStopBySetID[stopClassSetID] = computed
+            nextStop = computed
+          }
+        } else {
+          nextStop = nil
+        }
+
+        let candLen = PrefixedExecution.evaluatePrefixed(
+          bytes: bytes,
+          classIDs: classIDs,
+          validMask: validMask,
+          prefix: prefix,
+          bodyClassSetID: bodyClassSetID,
+          stopClassSetID: stopClassSetID,
+          classSetRuntime: artifact.classSetRuntime,
+          nextStop: nextStop
+        )
+        appendCandidateRow(
+          ruleID: rule.ruleID,
+          tokenKindID: rule.tokenKindID,
+          priorityRank: rule.priorityRank,
+          mode: modeByte(rule.mode),
+          candLenHost: candLen
+        )
+      }
     }
 
     return WinnerReduction.RuleTensorBatch(
