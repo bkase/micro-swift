@@ -675,10 +675,134 @@ private theorem fixpoint_unique_pointwise (winners : List Reduction.Winner) (val
     · rw [h_beyond i (by omega)]
       exact (maskAfter_false_beyond winners validLen validLen i (by omega)).symm
 
+/-- vectorizedSelect is maskAfter validLen when unfolded. -/
+private theorem vectorizedSelect_eq_maskAfter (winners : List Reduction.Winner) (validLen : Nat) :
+    vectorizedSelect winners validLen = maskAfter winners validLen validLen := by
+  simp only [vectorizedSelect_eq_iter, maskAfter]
+
+/-- extractSelected depends only on the pointwise values of the mask. -/
+private theorem extractSelected_ext (winners : List Reduction.Winner)
+    (mask₁ mask₂ : List Bool)
+    (h_len₁ : mask₁.length = winners.length) (h_len₂ : mask₂.length = winners.length)
+    (h : ∀ i, i < winners.length → mask₁.getD i false = mask₂.getD i false) :
+    extractSelected winners mask₁ = extractSelected winners mask₂ := by
+  unfold extractSelected
+  -- Both zip with the same range and winners, differing only in the mask
+  suffices h_eq : mask₁ = mask₂ by rw [h_eq]
+  apply List.ext_getElem
+  · rw [h_len₁, h_len₂]
+  · intro i h1 h2
+    have hi : i < winners.length := by rw [h_len₁] at h1; exact h1
+    have h_eq := h i hi
+    simp only [List.getD, List.getElem?_eq_getElem h1, List.getElem?_eq_getElem h2] at h_eq
+    simpa using h_eq
+
+/-- The scalar greedy mask satisfies the iterStep fixpoint equation at each position. -/
+private theorem scalarGreedyMask_is_fixpoint (winners : List Reduction.Winner) (validLen : Nat)
+    (h_valid : validLen ≤ winners.length) :
+    ∀ i, i < winners.length →
+      (scalarGreedyMask winners validLen).getD i false =
+      (iterStep winners validLen (scalarGreedyMask winners validLen)).getD i false := by
+  sorry
+
+private theorem scalarGreedyMaskAux_length (winners : List Reduction.Winner) (validLen : Nat)
+    (positions : List Nat) (coveredUntil : Nat) (mask : List Bool)
+    (h_mask : mask.length = winners.length)
+    (h_pos : ∀ p ∈ positions, p < winners.length) :
+    (scalarGreedyMaskAux winners validLen positions coveredUntil mask).2.length = winners.length := by
+  induction positions generalizing coveredUntil mask with
+  | nil => exact h_mask
+  | cons i rest ih =>
+    have hi : i < winners.length := h_pos i (by simp)
+    have h_rest : ∀ p ∈ rest, p < winners.length := fun p hp => h_pos p (by simp [hp])
+    simp only [scalarGreedyMaskAux]
+    cases hw : winners[i]? with
+    | none =>
+      simp only [hw]
+      exact ih coveredUntil mask h_mask h_rest
+    | some w =>
+      simp only [hw]
+      by_cases hcond : w.len > 0 ∧ i ≥ coveredUntil ∧ i < validLen
+      · simp only [hcond, and_self, decide_true, ite_true]
+        exact ih (i + w.len) (mask.set i true) (by simp [List.length_set, h_mask]) h_rest
+      · simp only [show ¬(w.len > 0 ∧ i ≥ coveredUntil ∧ i < validLen) from hcond, ite_false]
+        exact ih coveredUntil mask h_mask h_rest
+
+private theorem scalarGreedyMask_length (winners : List Reduction.Winner) (validLen : Nat) :
+    (scalarGreedyMask winners validLen).length = winners.length := by
+  unfold scalarGreedyMask
+  apply scalarGreedyMaskAux_length
+  · simp
+  · intro p hp; simp [List.mem_range] at hp; exact hp
+
+private theorem scalarGreedyMaskAux_false_beyond (winners : List Reduction.Winner) (validLen : Nat)
+    (positions : List Nat) (coveredUntil : Nat) (mask : List Bool)
+    (h_mask : mask.length = winners.length)
+    (h_pos : ∀ p ∈ positions, p < winners.length)
+    (h_init : ∀ i, i ≥ validLen → mask.getD i false = false) :
+    ∀ i, i ≥ validLen →
+    (scalarGreedyMaskAux winners validLen positions coveredUntil mask).2.getD i false = false := by
+  induction positions generalizing coveredUntil mask with
+  | nil => exact h_init
+  | cons p rest ih =>
+    have hp_len : p < winners.length := h_pos p (by simp)
+    have h_rest : ∀ q ∈ rest, q < winners.length := fun q hq => h_pos q (by simp [hq])
+    simp only [scalarGreedyMaskAux]
+    cases hw : winners[p]? with
+    | none =>
+      simp only [hw]
+      exact ih coveredUntil mask h_mask h_rest h_init
+    | some w =>
+      simp only [hw]
+      by_cases hcond : w.len > 0 ∧ p ≥ coveredUntil ∧ p < validLen
+      · simp only [hcond, and_self, decide_true, ite_true]
+        apply ih (p + w.len) (mask.set p true) (by simp [List.length_set, h_mask]) h_rest
+        intro i hi
+        simp only [List.getD, List.getElem?_set]
+        split
+        · rename_i heq; omega
+        · exact h_init i hi
+      · simp only [show ¬(w.len > 0 ∧ p ≥ coveredUntil ∧ p < validLen) from hcond, ite_false]
+        exact ih coveredUntil mask h_mask h_rest h_init
+
+private theorem scalarGreedyMask_false_beyond (winners : List Reduction.Winner) (validLen : Nat)
+    (h_valid : validLen ≤ winners.length) :
+    ∀ i, i ≥ validLen → (scalarGreedyMask winners validLen).getD i false = false := by
+  unfold scalarGreedyMask
+  apply scalarGreedyMaskAux_false_beyond
+  · simp
+  · intro p hp; simp [List.mem_range] at hp; exact hp
+  · intro i _
+    simp only [List.getD, List.getElem?_replicate]
+    split <;> simp
+
+/-- extractSelected on the scalar greedy mask gives the same list as scalarSelect. -/
+private theorem extractSelected_scalarGreedyMask (winners : List Reduction.Winner) (validLen : Nat)
+    (h_valid : validLen ≤ winners.length) :
+    extractSelected winners (scalarGreedyMask winners validLen) =
+    scalarSelect winners validLen := by
+  sorry
+
 theorem selection_equiv (winners : List Reduction.Winner) (validLen : Nat)
     (h_valid : validLen ≤ winners.length) :
     extractSelected winners (vectorizedSelect winners validLen) =
     scalarSelect winners validLen := by
-  sorry
+  -- Step 1: Show vectorizedSelect = maskAfter validLen
+  rw [vectorizedSelect_eq_maskAfter]
+  -- Step 2: By fixpoint uniqueness, maskAfter agrees with scalarGreedyMask
+  have h_mask_eq : ∀ i, i < winners.length →
+      (maskAfter winners validLen validLen).getD i false =
+      (scalarGreedyMask winners validLen).getD i false := by
+    intro i hi
+    rw [← fixpoint_unique_pointwise winners validLen h_valid
+      (scalarGreedyMask winners validLen)
+      (scalarGreedyMask_length winners validLen)
+      (scalarGreedyMask_is_fixpoint winners validLen h_valid)
+      (scalarGreedyMask_false_beyond winners validLen h_valid) i hi]
+  -- Step 3: extractSelected respects pointwise mask equality
+  rw [extractSelected_ext winners _ _ (maskAfter_length winners validLen validLen)
+      (scalarGreedyMask_length winners validLen) h_mask_eq]
+  -- Step 4: extractSelected on scalarGreedyMask = scalarSelect
+  exact extractSelected_scalarGreedyMask winners validLen h_valid
 
 end Selection
