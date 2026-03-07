@@ -101,13 +101,37 @@ def vectorizedRemap (tokenKindIDs : List Nat) (ruleIDs : List Nat) (lengths : Li
 
 /-! ## Equivalence -/
 
-theorem remap_equiv (tokens : List Selection.SelectedToken) (bytes : List Nat)
-    (validMask : List Bool) (tables : List RemapTable)
-    (h_bounds : ∀ t ∈ tokens, t.startPos + t.length ≤ bytes.length) :
-    -- The vectorized remap, when projected back to selected positions,
-    -- yields the same tokenKindIDs as scalar remap.
-    -- (Full statement requires aligning page-wide vs sparse representations.)
-    True := by
-  trivial
+/-- The vectorized remap, when projected back to selected tokens, yields
+    the same tokenKindIDs as the scalar remap.
+
+    Given `merged` winners and a `selectedMask` from vectorized selection,
+    the vectorized remap (operating on page-wide arrays) agrees with the
+    scalar remap (operating on sparse selected tokens) at each selected position.
+
+    Proof strategy: both fold over tables × entries; for each entry, the
+    vectorized shiftLeft byte-matching is equivalent to scalar sliceMatches;
+    since entries are effectively disjoint (different lexemes can't match
+    the same byte window), find? and fold agree. -/
+theorem remap_equiv (merged : List Reduction.Winner) (selectedMask : List Bool)
+    (bytes : List Nat) (validMask : List Bool) (tables : List RemapTable)
+    (h_sel_len : selectedMask.length = merged.length)
+    (h_merged_len : merged.length = bytes.length)
+    (h_valid_len : validMask.length = bytes.length)
+    (h_bounds : ∀ t ∈ Selection.extractSelected merged selectedMask,
+      t.startPos + t.length ≤ bytes.length)
+    (h_valid_bytes : ∀ t ∈ Selection.extractSelected merged selectedMask,
+      ∀ offset, offset < t.length →
+        (match validMask[t.startPos + offset]? with | some true => true | _ => false) = true) :
+    let selected := Selection.extractSelected merged selectedMask
+    let tokenKindIDs := merged.map (·.tokenKindID)
+    let ruleIDs := merged.map (·.ruleID)
+    let lengths := merged.map (·.len)
+    let remappedKinds := vectorizedRemap tokenKindIDs ruleIDs lengths
+      selectedMask bytes validMask tables
+    selected.map (fun tok =>
+      { tok with tokenKindID :=
+        match remappedKinds[tok.startPos]? with | some k => k | none => tok.tokenKindID })
+    = scalarRemap selected bytes tables := by
+  sorry
 
 end KeywordRemap
