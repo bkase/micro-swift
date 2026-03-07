@@ -48,9 +48,9 @@ public struct CompiledPageInput {
   public let classIDTensorDType: DType
   public let validMaskTensorDType: DType
 
-  private let hostPaddedBytesStorage: [UInt8]
-  private let hostClassIDsStorage: [UInt8]
-  private let hostValidMaskStorage: [Bool]
+  // Lazy host storage: only materialized when tests or legacy paths call extractHostExecutionView
+  private let rawBytes: [UInt8]
+  private let artifact: ArtifactRuntime
 
   public var byteCapacity: Int {
     Int(bucket.byteCapacity)
@@ -73,44 +73,35 @@ public struct CompiledPageInput {
     self.bucket = bucket
     self.validLen = min(validLen, bucket.byteCapacity)
     self.baseOffset = baseOffset
-
-    let paddedBytes = Self.padToBucket(bytes: bytes, bucket: bucket)
-    self.hostPaddedBytesStorage = paddedBytes
-    let hostClassIDs = ByteClassifier.classify(
-      bytes: paddedBytes,
-      byteToClassLUT: artifact.hostByteToClassLUT()
-    )
-    self.hostClassIDsStorage = hostClassIDs
-    let hostValidMask = Self.validMask(pageSize: capacity, validLen: self.validLen)
-    self.hostValidMaskStorage = hostValidMask
+    self.rawBytes = bytes
+    self.artifact = artifact
 
     self.byteTensorShape = [capacity]
     self.byteTensorDType = .uint8
-
+    self.classIDTensorShape = [capacity]
+    self.classIDTensorDType = .uint16
     self.validMaskTensorShape = [capacity]
     self.validMaskTensorDType = .bool
 
-    if Self.shouldUseHostClassificationFallback() {
-      self.byteTensor = nil
-      self.validMaskTensor = nil
-      self.classIDTensor = nil
+    // Build tensors natively — no CPU-side loops or host array allocation
+    let rawByteTensor = MLXArray(bytes, [bytes.count]).asType(.uint8)
+
+    let builtByteTensor: MLXArray
+    if bytes.count < capacity {
+      builtByteTensor = concatenated(
+        [rawByteTensor, zeros([capacity - bytes.count], dtype: .uint8)], axis: 0)
     } else {
-      let byteTensor = withMLXCPU {
-        MLXArray(paddedBytes, [capacity]).asType(.uint8)
-      }
-      let validMaskTensor = withMLXCPU {
-        MLXArray(hostValidMask, [capacity]).asType(.bool)
-      }
-      let classIDTensor = withMLXCPU {
-        let byteIndices = byteTensor.asType(.int32)
-        return artifact.mlxByteToClassLUT().take(byteIndices).asType(.uint16)
-      }
-      self.byteTensor = byteTensor
-      self.validMaskTensor = validMaskTensor
-      self.classIDTensor = classIDTensor
+      builtByteTensor = rawByteTensor
     }
-    self.classIDTensorShape = [capacity]
-    self.classIDTensorDType = .uint16
+
+    let boundedValidLen = self.validLen
+    let builtValidMask = arange(capacity, dtype: .int32) .< Int32(boundedValidLen)
+    let builtClassIDs = artifact.mlxByteToClassLUT()
+      .take(builtByteTensor.asType(.int32)).asType(.uint16)
+
+    self.byteTensor = builtByteTensor
+    self.validMaskTensor = builtValidMask
+    self.classIDTensor = builtClassIDs
   }
 
   public init(preparedPage: PreparedPage, artifact: ArtifactRuntime) {
@@ -140,11 +131,8 @@ public struct CompiledPageInput {
   }
 
   public func shiftedByteTensor(by shift: Int) -> MLXArray {
-    guard let byteTensor else {
-      return withMLXCPU { MLXArray(hostPaddedBytesStorage, [byteCapacity]).asType(.uint8) }
-    }
     return ShiftedTensorView.forward(
-      byteTensor,
+      byteTensor!,
       by: shift,
       padValue: PageBucket.neutralPaddingByte
     )
@@ -156,43 +144,41 @@ public struct CompiledPageInput {
   }
 
   public func deterministicTailZeroed(_ tensor: MLXArray) -> MLXArray {
-    guard let validMaskTensor else { return tensor }
     return withMLXCPU {
       let zerosTensor = zeros(like: tensor)
-      return which(validMaskTensor, tensor, zerosTensor)
+      return which(validMaskTensor!, tensor, zerosTensor)
     }
   }
 
   public func validRangeMask(dtype: DType = .bool) -> MLXArray {
-    guard let validMaskTensor else {
-      return withMLXCPU { MLXArray(hostValidMaskStorage, [byteCapacity]).asType(dtype) }
-    }
     if dtype == .bool {
-      return validMaskTensor
+      return validMaskTensor!
     }
-    return validMaskTensor.asType(dtype)
+    return validMaskTensor!.asType(dtype)
   }
 
   public func extractHostExecutionView(at boundary: HostExtractionBoundary) -> HostPageExecutionView
   {
     Self.recordHostExtraction(boundary)
+    let paddedBytes = Self.padToBucket(bytes: rawBytes, bucket: bucket)
+    let hostClassIDs = ByteClassifier.classify(
+      bytes: paddedBytes,
+      byteToClassLUT: artifact.hostByteToClassLUT()
+    )
+    let hostValidMask = Self.validMask(pageSize: byteCapacity, validLen: validLen)
     return HostPageExecutionView(
-      bytes: hostPaddedBytesStorage,
-      classIDs: hostClassIDsStorage,
-      validMask: hostValidMaskStorage
+      bytes: paddedBytes,
+      classIDs: hostClassIDs,
+      validMask: hostValidMask
     )
   }
 
   public func hostPaddedBytesForInspection() -> [UInt8] {
-    hostPaddedBytesStorage
+    Self.padToBucket(bytes: rawBytes, bucket: bucket)
   }
 
   static func hostExecutionViewForPipeline(_ page: CompiledPageInput) -> HostPageExecutionView {
-    HostPageExecutionView(
-      bytes: page.hostPaddedBytesStorage,
-      classIDs: page.hostClassIDsStorage,
-      validMask: page.hostValidMaskStorage
-    )
+    page.extractHostExecutionView(at: .transitionalFamilyExecution)
   }
 
   public static func resetHostExtractionCounts() {
@@ -208,11 +194,6 @@ public struct CompiledPageInput {
       testInspection: testInspection,
       transitionalFamilyExecution: transitionalFamilyExecution
     )
-  }
-
-  private static func shouldUseHostClassificationFallback() -> Bool {
-    let processInfo = ProcessInfo.processInfo
-    return processInfo.environment["MICROSWIFT_ENABLE_DEVICE_CLASSIFICATION"] != "1"
   }
 
   private static func recordHostExtraction(_ boundary: HostExtractionBoundary) {

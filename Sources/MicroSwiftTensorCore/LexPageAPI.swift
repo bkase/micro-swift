@@ -68,8 +68,7 @@ public enum TensorLexer {
       )
     }
 
-    let hostView = CompiledPageInput.hostExecutionViewForPipeline(compiledPage)
-    let pageSize = hostView.bytes.count
+    let pageSize = compiledPage.byteCapacity
 
     let cacheKey = makeFastPathCacheKey(
       compiledPage: compiledPage,
@@ -93,8 +92,10 @@ public enum TensorLexer {
 
     let fallbackResult: FallbackPageResult
     if options.runtimeProfile == .v1Fallback, let fallbackRunner = cacheEntry.fallbackRunner {
+      // Extract classIDs lazily from the tensor only when fallback needs them
+      let fallbackClassIDs = compiledPage.classIDTensor!.asArray(UInt16.self)
       fallbackResult = fallbackRunner.evaluatePage(
-        classIDs: hostView.classIDs.map(UInt16.init),
+        classIDs: fallbackClassIDs,
         validLen: Int32(boundedValidLen)
       )
     } else {
@@ -105,18 +106,8 @@ public enum TensorLexer {
       preconditionFailure("KernelCacheEntry missing fastPathGraph for fast-path execution")
     }
 
-    // Build tensors for the compiled graph
-    let byteTensor =
-      compiledPage.byteTensor
-      ?? withMLXCPU {
-        MLXArray(hostView.bytes, [pageSize]).asType(.uint8)
-      }
-    let classIDTensor =
-      compiledPage.classIDTensor
-      ?? withMLXCPU {
-        let byteIndices = byteTensor.asType(.int32)
-        return artifact.mlxByteToClassLUT().take(byteIndices).asType(.uint16)
-      }
+    let byteTensor = compiledPage.byteTensor!
+    let classIDTensor = compiledPage.classIDTensor!
     let validMaskTensor = compiledPage.validRangeMask(dtype: .bool)
 
     // Compiled candidate generation + winner reduction + fallback merge + greedy selection.
