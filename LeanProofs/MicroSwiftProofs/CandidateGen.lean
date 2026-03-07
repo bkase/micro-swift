@@ -177,16 +177,67 @@ private def scalarOffsetCheck (bytes : List Nat) (validMask : List Bool)
   | _, _, _ => false
 
 -- Sub-lemma: litStep at position i ANDs in scalarOffsetCheck at that offset
+set_option maxHeartbeats 800000 in
 private lemma litStep_getElem (bytes : List Nat) (validMask : List Bool)
     (literalBytes : List Nat) (pageLen : Nat) (mask : List Bool) (offset : Nat)
     (h_pg : pageLen = bytes.length) (h_len : bytes.length = validMask.length)
     (h_mask : mask.length = bytes.length) (h_off : offset ≤ bytes.length)
+    (h_offLt : offset < literalBytes.length)
     (i : Nat) (hi : i < bytes.length) :
     (litStep bytes validMask literalBytes pageLen mask offset)[i]'(by
       rw [litStep_length bytes validMask literalBytes pageLen mask offset h_pg h_len h_mask h_off]
       exact hi) =
       (mask[i]'(by omega) && scalarOffsetCheck bytes validMask literalBytes i offset) := by
-  sorry
+  -- Unfold both sides into primitive operations
+  unfold litStep scalarOffsetCheck
+  -- Simplify all list element access operations
+  simp only [List.getElem_zipWith, List.getElem_map, List.length_zipWith, List.length_map,
+    elemEq, MLX.full, List.getElem_replicate, MLX.shiftLeft,
+    List.getElem_append, List.length_drop, List.length_replicate,
+    List.getElem_drop', h_pg, h_len, h_mask]
+  -- Split on whether we're in the "real data" or "padding" region of shiftLeft
+  by_cases h_ib : i < bytes.length - offset
+  · -- In the drop region: access real data at position i + offset
+    have h_iv : i < validMask.length - offset := by omega
+    simp only [h_ib, h_iv, ↓reduceIte]
+    -- Now use getElem?_eq_getElem since i + offset is in bounds
+    simp only [List.getElem?_eq_getElem (show i + offset < validMask.length from by omega),
+               List.getElem?_eq_getElem (show i + offset < bytes.length from by omega)]
+    -- Both sides now use direct element access at position i+offset.
+    -- The remaining goal involves matching on literalBytes[offset]? and validMask[i+offset]
+    -- to show the vectorized comparison equals the scalar match expression.
+    -- Case split on literalBytes[offset]? and validMask[i+offset]
+    -- At this point, scalarOffsetCheck is unfolded into a match on
+    -- validMask[i+offset]?, bytes[i+offset]?, literalBytes[offset]?
+    -- But the LHS uses getElem (not getElem?) after the simp.
+    -- The LHS has: mask[i] && (decide(0 < if validMask[i+offset] = true then 1 else 0)
+    --              && bytes[i+offset] == (match literalBytes[offset]? with | some b => b | none => 0))
+    -- The RHS has the match expression from scalarOffsetCheck.
+    -- Both sides are decidable boolean equalities on Nat, so split and simplify.
+    -- The LHS still has (List.drop offset (List.map ...validMask))[i] form.
+    -- Need additional simp to reduce these to validMask[i+offset].
+    simp only [List.getElem_drop, List.getElem_map, Nat.add_comm offset i]
+    -- Now both sides should use i+offset consistently.
+    -- Use by_cases on boolean values (avoids generalize/dependent type issues)
+    -- We know offset < literalBytes.length, so literalBytes[offset]? = some _
+    simp only [List.getElem?_eq_getElem h_offLt]
+    -- Now both sides use i+offset consistently and literalBytes[offset]? is resolved.
+    -- Use suffices to abstract getElem values and close by case analysis.
+    suffices h : ∀ (vm : Bool) (bi lb : Nat),
+        (decide (0 < if vm = true then 1 else 0) && (bi == lb)) =
+        (match some vm, some bi, some lb with
+          | some true, some x1, some x2 => x1 == x2
+          | _, _, _ => false) by
+      simp [h]
+    intro vm bi lb
+    cases vm <;> simp
+  · -- In the padding region: shiftLeft returns pad value (0)
+    have h_niv : ¬(i < validMask.length - offset) := by omega
+    simp only [h_ib, h_niv, ↓reduceIte]
+    -- validHere uses padding 0, so decide(0 > 0) = false
+    -- scalarOffsetCheck: validMask[i+offset]? = none since i+offset >= validMask.length
+    simp only [List.getElem?_eq_none (show validMask.length ≤ i + offset from by omega)]
+    simp
 
 -- The fold invariant: after k steps, mask[i] = validMask[i] && all offsets 0..k-1 check out
 private lemma fold_invariant (bytes : List Nat) (validMask : List Bool)
@@ -213,7 +264,7 @@ private lemma fold_invariant (bytes : List Nat) (validMask : List Bool)
       fold_range_length _ _ _ _ _ _ h_pg h_len (by omega) (by omega)
     -- The step result at position i
     have h_step := litStep_getElem bytes validMask literalBytes pageLen fm_n n h_pg h_len
-        h_fm_n_len (by omega) i hi
+        h_fm_n_len (by omega) (by omega) i hi
     -- The IH gives us fm_n[i]
     have h_ih := ih (by omega)
     simp only [fm_n_def] at h_ih
