@@ -100,29 +100,58 @@ public enum GreedySelector {
     }
 
     return withMLXCPU {
-      let positions = arange(pageSize, dtype: .int32)
+      let n = pageSize
+      let sentinelScalar = Int32(n)
+      let sentinelArr = MLXArray([sentinelScalar])
+      let sentinelFill = MLXArray(Array(repeating: sentinelScalar, count: n))
+      let positions = arange(n, dtype: .int32)
       let validMask = positions .< Int32(boundedValidLen)
       let winnerLen = winnerTensors.len.asType(.int32)
       let positive = (winnerLen .> 0) .&& validMask
       let endExclusive = positions + winnerLen
 
-      // Fixed-point solve of greedy keep predicate using cumulative max of accepted ends.
-      var selectedMask = positive
-      for _ in 0..<boundedValidLen {
-        let selectedEnds = which(selectedMask, endExclusive, zeros([pageSize], dtype: .int32))
-        let coveredInclusive = selectedEnds.cummax(axis: 0)
-        let coveredBefore = {
-          let shiftedCore = coveredInclusive[0..<(pageSize - 1)]
-          let headPadding = zeros([1], dtype: .int32)
-          return concatenated([headPadding, shiftedCore], axis: 0)
-        }()
-        let nextMask = positive .&& (positions .>= coveredBefore)
-        selectedMask = nextMask
+      // --- Phase 1: Build successor links ---
+      // candPosOrN: candidates get their position, non-candidates get sentinel N
+      let candPosOrN = which(positive, positions, sentinelFill)
+      // nextCandAt: nearest candidate position >= each position (reverse cummin)
+      let nextCandAt = cummin(candPosOrN, axis: 0, reverse: true)
+      // Extended with sentinel for safe OOB gather
+      let nextCandAtExt = concatenated([nextCandAt, sentinelArr], axis: 0)
+      // succ[i] = next candidate at or after endExclusive[i], for candidates only
+      let succRaw = nextCandAtExt.take(minimum(endExclusive, sentinelScalar))
+      let succ = which(positive, succRaw, sentinelFill)
+
+      // --- Phase 2: Pointer jumping (O(log N) iterations) ---
+      // Compute ceil(log2(N)) without Foundation
+      var logN = 0
+      var v = n
+      while v > 1 {
+        v = (v + 1) / 2
+        logN += 1
+      }
+      logN = Swift.max(logN, 1)
+      var succLevels: [MLXArray] = [succ]
+      for k in 0..<logN {
+        let ext = concatenated([succLevels[k], sentinelArr], axis: 0)
+        let next = ext.take(minimum(succLevels[k], sentinelScalar))
+        succLevels.append(next)
       }
 
-      let zeroU16 = zeros([pageSize], dtype: .uint16)
-      let zeroU8 = zeros([pageSize], dtype: .uint8)
-      let zeroI32 = zeros([pageSize], dtype: .int32)
+      // --- Phase 3: Binary-search chain membership ---
+      // Start from the first candidate
+      let firstCand = nextCandAt[0..<1]  // 1-element tensor, broadcasts to [N]
+      var cursor = broadcast(firstCand, to: [n]).asType(.int32)
+      for k in stride(from: logN - 1, through: 0, by: -1) {
+        let ext = concatenated([succLevels[k], sentinelArr], axis: 0)
+        let jumped = ext.take(minimum(cursor, sentinelScalar))
+        let shouldAdvance = jumped .<= positions
+        cursor = which(shouldAdvance, jumped, cursor)
+      }
+      let selectedMask = positive .&& (cursor .== positions)
+
+      let zeroU16 = zeros([n], dtype: .uint16)
+      let zeroU8 = zeros([n], dtype: .uint8)
+      let zeroI32 = zeros([n], dtype: .int32)
       return SelectedTokenTensors(
         startPos: which(selectedMask, positions, zeroI32).asType(.int32),
         length: which(selectedMask, winnerTensors.len.asType(.uint16), zeroU16).asType(.uint16),
