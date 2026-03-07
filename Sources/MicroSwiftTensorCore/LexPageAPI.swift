@@ -130,7 +130,7 @@ public enum TensorLexer {
       selectedTokenTensors: selectedTensors,
       byteTensor: byteTensor,
       validLen: Int32(boundedValidLen),
-      remapTables: artifact.keywordRemaps,
+      remapTables: [],
       options: options,
       maxRowCapacity: Int32(boundedValidLen)
     )

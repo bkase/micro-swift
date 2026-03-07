@@ -150,7 +150,7 @@ public enum TransportEmitter {
     )
   }
 
-  private static func applyKeywordRemap(
+  static func applyKeywordRemap(
     tokenTensors: GreedySelector.SelectedTokenTensors,
     byteTensor: MLXArray,
     validLen: Int,

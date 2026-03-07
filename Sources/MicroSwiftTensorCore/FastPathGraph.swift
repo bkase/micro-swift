@@ -31,6 +31,7 @@ public struct FastPathCompiledGraph: Sendable {
 
     let buckets = RuleBuckets.build(from: artifact.rules)
     let classSetRuntime = artifact.classSetRuntime
+    let remapTables = artifact.keywordRemaps
 
     let modeByte: (RuleMode) -> UInt8 = { $0 == .skip ? 1 : 0 }
 
@@ -86,12 +87,14 @@ public struct FastPathCompiledGraph: Sendable {
     let capturedClassRunRules = classRunRules
     let capturedHeadTailRules = headTailRules
     let capturedPrefixedRules = prefixedRules
+    let capturedRemapTables = remapTables
     let rawGraph: @Sendable ([MLXArray]) -> [MLXArray] = { tensors in
       Self.candidateAndSelectGraph(
         tensors: tensors, pageSize: pageSize,
         literalRules: capturedLiteralRules, classRunRules: capturedClassRunRules,
         headTailRules: capturedHeadTailRules, prefixedRules: capturedPrefixedRules,
-        classSetRuntime: classSetRuntime
+        classSetRuntime: classSetRuntime,
+        remapTables: capturedRemapTables
       )
     }
     self.candidateAndSelectGraph =
@@ -170,7 +173,8 @@ public struct FastPathCompiledGraph: Sendable {
     classRunRules: [ClassRunRuleInfo],
     headTailRules: [HeadTailRuleInfo],
     prefixedRules: [PrefixedRuleInfo],
-    classSetRuntime: ClassSetRuntime
+    classSetRuntime: ClassSetRuntime,
+    remapTables: [KeywordRemapTable]
   ) -> [MLXArray] {
     precondition(tensors.count == 8, "compiled fast-path graph expects 8 inputs")
 
@@ -308,11 +312,19 @@ public struct FastPathCompiledGraph: Sendable {
     )
     let selected = GreedySelector.select(winnerTensors: merged, validLen: Int32(pageSize))
 
+    // Apply keyword remap inside the compiled graph so MLX traces/fuses the loops
+    let remappedTokenKindID = TransportEmitter.applyKeywordRemap(
+      tokenTensors: selected,
+      byteTensor: byteTensor,
+      validLen: pageSize,
+      remapTables: remapTables
+    )
+
     return [
       selected.startPos,
       selected.length,
       selected.ruleID,
-      selected.tokenKindID,
+      remappedTokenKindID,
       selected.mode,
       selected.selectedMask,
     ]
