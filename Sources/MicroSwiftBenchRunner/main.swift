@@ -104,7 +104,8 @@ func benchM3(source: SourceBuffer, runtime: ArtifactRuntime, warmup: Int, measur
 
 // --- M4 GPU benchmark: Full TensorLexer.lexPage with v1Fallback, MLX on GPU ---
 
-func benchM4GPU(bytes: [UInt8], runtime: ArtifactRuntime, warmup: Int, measure: Int) -> BenchResult {
+func benchM4GPU(bytes: [UInt8], runtime: ArtifactRuntime, warmup: Int, measure: Int) -> BenchResult
+{
   let validLen = Int32(bytes.count)
   let gpuOptions = LexOptions(runtimeProfile: .v1Fallback, useGPUReduction: true)
 
@@ -181,17 +182,16 @@ setbuf(stdout, nil)  // Unbuffer stdout so output appears before any crash
 do {
   let (_, runtime) = try buildArtifactAndRuntime()
 
-  // Metal executor crashes above ~12KB — stay under that
-  let sizes = [250, 500, 1_000, 2_500, 5_000, 10_000]
-  let warmup = 10
-  let measure = 200
+  let sizes = [250, 500, 1_000, 2_500, 5_000, 10_000, 25_000, 50_000]
+  let warmup = 5
+  let measure = 50
 
   print("=== MicroSwift Release Benchmark ===")
   print("Warmup: \(warmup), Measure: \(measure) iterations per size")
   print()
 
   var m3Results: [BenchResult] = []
-  var m4Results: [BenchResult] = []
+  var m4Results: [BenchResult?] = []
   var m4GPUResults: [BenchResult] = []
 
   for targetSize in sizes {
@@ -208,15 +208,24 @@ do {
     let m3 = benchM3(source: source, runtime: runtime, warmup: warmup, measure: measure)
     printResult(m3)
 
-    let m4 = benchM4(bytes: sourceBytes, runtime: runtime, warmup: warmup, measure: measure)
-    printResult(m4)
+    // Skip M4 Metal (CPU) path for sizes > 10KB to avoid Metal executor hang
+    let m4: BenchResult?
+    if targetSize <= 10_000 {
+      m4 = benchM4(bytes: sourceBytes, runtime: runtime, warmup: warmup, measure: measure)
+      printResult(m4!)
+    } else {
+      m4 = nil
+      print("    M4 Metal (v1-fallback) — skipped (>10KB)")
+    }
 
     let m4gpu = benchM4GPU(bytes: sourceBytes, runtime: runtime, warmup: warmup, measure: measure)
     printResult(m4gpu)
 
-    let cpuSpeedup = m4.bytesPerSecond / m3.bytesPerSecond
+    if let m4 {
+      let cpuSpeedup = m4.bytesPerSecond / m3.bytesPerSecond
+      print(String(format: "      M4-CPU speedup:   %.2fx", cpuSpeedup))
+    }
     let gpuSpeedup = m4gpu.bytesPerSecond / m3.bytesPerSecond
-    print(String(format: "      M4-CPU speedup:   %.2fx", cpuSpeedup))
     print(String(format: "      M4-GPU speedup:   %.2fx", gpuSpeedup))
     print()
 
@@ -235,12 +244,11 @@ do {
     } else {
       sizeLabel = "\(m3Results[i].inputBytes) B"
     }
-    let cpuSpeedup = m4Results[i].bytesPerSecond / m3Results[i].bytesPerSecond
     let gpuSpeedup = m4GPUResults[i].bytesPerSecond / m3Results[i].bytesPerSecond
     let m3Rate = formatRate(m3Results[i].bytesPerSecond)
-    let m4Rate = formatRate(m4Results[i].bytesPerSecond)
+    let m4Rate = m4Results[i].map { formatRate($0.bytesPerSecond) } ?? "—"
     let m4GPURate = formatRate(m4GPUResults[i].bytesPerSecond)
-    let cpuStr = String(format: "%.2fx", cpuSpeedup)
+    let cpuStr = m4Results[i].map { String(format: "%.2fx", $0.bytesPerSecond / m3Results[i].bytesPerSecond) } ?? "—"
     let gpuStr = String(format: "%.2fx", gpuSpeedup)
     print(
       "  \(sizeLabel.padding(toLength: 12, withPad: " ", startingAt: 0))  \(m3Rate.padding(toLength: 12, withPad: " ", startingAt: 0))  \(m4Rate.padding(toLength: 12, withPad: " ", startingAt: 0))  \(m4GPURate.padding(toLength: 12, withPad: " ", startingAt: 0))  \(cpuStr.padding(toLength: 6, withPad: " ", startingAt: 0))  \(gpuStr)"
