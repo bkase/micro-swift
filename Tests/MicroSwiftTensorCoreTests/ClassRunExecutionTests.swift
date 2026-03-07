@@ -1,4 +1,5 @@
 import Foundation
+import MLX
 import MicroSwiftLexerGen
 import Testing
 
@@ -124,5 +125,93 @@ struct ClassRunExecutionTests {
 
   private func decodeByteClasses(_ json: String) throws -> [ByteClassDecl] {
     try JSONDecoder().decode([ByteClassDecl].self, from: Data(json.utf8))
+  }
+
+  // MARK: - MLX differential tests
+
+  @Test(.enabled(if: requiresMLXEval))
+  func mlxMatchesHostForSingleRun() throws {
+    let runtime = try makeRuntime()
+    let classIDs: [UInt8] = [1, 1, 1, 0]
+    let validMask: [Bool] = [true, true, true, true]
+    try assertMLXMatchesHost(
+      classIDs: classIDs, validMask: validMask,
+      bodyClassSetID: 0, minLength: 1, runtime: runtime
+    )
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
+  func mlxMatchesHostForMultipleRuns() throws {
+    let runtime = try makeRuntime()
+    let classIDs: [UInt8] = [1, 1, 0, 1, 1, 1, 0, 1]
+    let validMask: [Bool] = [true, true, true, true, true, true, true, true]
+    try assertMLXMatchesHost(
+      classIDs: classIDs, validMask: validMask,
+      bodyClassSetID: 0, minLength: 1, runtime: runtime
+    )
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
+  func mlxMatchesHostWithMinLengthFilter() throws {
+    let runtime = try makeRuntime()
+    let classIDs: [UInt8] = [0, 1, 1, 0]
+    let validMask: [Bool] = [true, true, true, true]
+    try assertMLXMatchesHost(
+      classIDs: classIDs, validMask: validMask,
+      bodyClassSetID: 0, minLength: 3, runtime: runtime
+    )
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
+  func mlxMatchesHostWithValidLengthBoundary() throws {
+    let runtime = try makeRuntime()
+    let classIDs: [UInt8] = [1, 1, 1, 1, 1]
+    let validMask: [Bool] = [true, true, true, false, false]
+    try assertMLXMatchesHost(
+      classIDs: classIDs, validMask: validMask,
+      bodyClassSetID: 0, minLength: 1, runtime: runtime
+    )
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
+  func mlxMatchesHostWhitespaceRun() throws {
+    let runtime = try makeRuntime()
+    let classIDs: [UInt8] = [0, 2, 2, 2, 0]
+    let validMask: [Bool] = [true, true, true, true, true]
+    try assertMLXMatchesHost(
+      classIDs: classIDs, validMask: validMask,
+      bodyClassSetID: 1, minLength: 1, runtime: runtime
+    )
+  }
+
+  private func assertMLXMatchesHost(
+    classIDs: [UInt8],
+    validMask: [Bool],
+    bodyClassSetID: UInt16,
+    minLength: UInt16,
+    runtime: ClassSetRuntime
+  ) throws {
+    let hostResult = ClassRunExecution.evaluateClassRun(
+      classIDs: classIDs,
+      validMask: validMask,
+      bodyClassSetID: bodyClassSetID,
+      minLength: minLength,
+      classSetRuntime: runtime
+    )
+    let classIDTensor = withMLXCPU {
+      MLXArray(classIDs.map { UInt16($0) }, [classIDs.count]).asType(.uint16)
+    }
+    let validMaskTensor = withMLXCPU {
+      MLXArray(validMask, [validMask.count]).asType(.bool)
+    }
+    let mlxResult = ClassRunExecution.evaluateClassRunMLX(
+      classIDTensor: classIDTensor,
+      validMaskTensor: validMaskTensor,
+      bodyClassSetID: bodyClassSetID,
+      minLength: minLength,
+      classSetRuntime: runtime
+    )
+    let mlxHost = mlxResult.asType(.uint16).asArray(UInt16.self)
+    #expect(mlxHost == hostResult)
   }
 }

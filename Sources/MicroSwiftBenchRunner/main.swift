@@ -1,4 +1,5 @@
 import Foundation
+import MLX
 import MicroSwiftFrontend
 import MicroSwiftLexerGen
 import MicroSwiftTensorCore
@@ -101,6 +102,44 @@ func benchM3(source: SourceBuffer, runtime: ArtifactRuntime, warmup: Int, measur
   )
 }
 
+// --- M4 GPU benchmark: Full TensorLexer.lexPage with v1Fallback, MLX on GPU ---
+
+func benchM4GPU(bytes: [UInt8], runtime: ArtifactRuntime, warmup: Int, measure: Int) -> BenchResult {
+  let validLen = Int32(bytes.count)
+  let gpuOptions = LexOptions(runtimeProfile: .v1Fallback, useGPUReduction: true)
+
+  mlxDefaultDevice = .gpu
+  defer { mlxDefaultDevice = .cpu }
+
+  for _ in 0..<warmup {
+    _ = TensorLexer.lexPage(
+      bytes: bytes, validLen: validLen, baseOffset: 0,
+      artifact: runtime, options: gpuOptions)
+  }
+
+  let start = DispatchTime.now().uptimeNanoseconds
+  var tokenCount: Int32 = 0
+  for _ in 0..<measure {
+    let result = TensorLexer.lexPage(
+      bytes: bytes, validLen: validLen, baseOffset: 0,
+      artifact: runtime, options: gpuOptions)
+    tokenCount += result.rowCount
+  }
+  let elapsed = DispatchTime.now().uptimeNanoseconds - start
+
+  let totalBytes = bytes.count * measure
+  let bytesPerSec = Double(totalBytes) * 1_000_000_000 / Double(elapsed)
+
+  return BenchResult(
+    label: "M4 GPU (v1-fallback)",
+    inputBytes: bytes.count,
+    iterations: measure,
+    durationNanos: elapsed,
+    bytesPerSecond: bytesPerSec,
+    tokensPerIteration: Int(tokenCount) / max(1, measure)
+  )
+}
+
 // --- M4 benchmark: Full TensorLexer.lexPage with v1Fallback ---
 
 func benchM4(bytes: [UInt8], runtime: ArtifactRuntime, warmup: Int, measure: Int) -> BenchResult {
@@ -153,6 +192,7 @@ do {
 
   var m3Results: [BenchResult] = []
   var m4Results: [BenchResult] = []
+  var m4GPUResults: [BenchResult] = []
 
   for targetSize in sizes {
     let sourceText = generateSource(targetBytes: targetSize)
@@ -171,17 +211,23 @@ do {
     let m4 = benchM4(bytes: sourceBytes, runtime: runtime, warmup: warmup, measure: measure)
     printResult(m4)
 
-    let speedup = m4.bytesPerSecond / m3.bytesPerSecond
-    print(String(format: "      speedup:          %.2fx", speedup))
+    let m4gpu = benchM4GPU(bytes: sourceBytes, runtime: runtime, warmup: warmup, measure: measure)
+    printResult(m4gpu)
+
+    let cpuSpeedup = m4.bytesPerSecond / m3.bytesPerSecond
+    let gpuSpeedup = m4gpu.bytesPerSecond / m3.bytesPerSecond
+    print(String(format: "      M4-CPU speedup:   %.2fx", cpuSpeedup))
+    print(String(format: "      M4-GPU speedup:   %.2fx", gpuSpeedup))
     print()
 
     m3Results.append(m3)
     m4Results.append(m4)
+    m4GPUResults.append(m4gpu)
   }
 
   print("=== Summary Table ===")
-  print("  Input         M3 CPU         M4 Metal      Speedup")
-  print("  " + String(repeating: "-", count: 54))
+  print("  Input         M3 CPU         M4 CPU        M4 GPU        CPU-sp  GPU-sp")
+  print("  " + String(repeating: "-", count: 74))
   for i in 0..<m3Results.count {
     let sizeLabel: String
     if m3Results[i].inputBytes >= 1000 {
@@ -189,12 +235,15 @@ do {
     } else {
       sizeLabel = "\(m3Results[i].inputBytes) B"
     }
-    let speedup = m4Results[i].bytesPerSecond / m3Results[i].bytesPerSecond
+    let cpuSpeedup = m4Results[i].bytesPerSecond / m3Results[i].bytesPerSecond
+    let gpuSpeedup = m4GPUResults[i].bytesPerSecond / m3Results[i].bytesPerSecond
     let m3Rate = formatRate(m3Results[i].bytesPerSecond)
     let m4Rate = formatRate(m4Results[i].bytesPerSecond)
-    let speedupStr = String(format: "%.2fx", speedup)
+    let m4GPURate = formatRate(m4GPUResults[i].bytesPerSecond)
+    let cpuStr = String(format: "%.2fx", cpuSpeedup)
+    let gpuStr = String(format: "%.2fx", gpuSpeedup)
     print(
-      "  \(sizeLabel.padding(toLength: 12, withPad: " ", startingAt: 0))  \(m3Rate.padding(toLength: 12, withPad: " ", startingAt: 0))  \(m4Rate.padding(toLength: 12, withPad: " ", startingAt: 0))  \(speedupStr)"
+      "  \(sizeLabel.padding(toLength: 12, withPad: " ", startingAt: 0))  \(m3Rate.padding(toLength: 12, withPad: " ", startingAt: 0))  \(m4Rate.padding(toLength: 12, withPad: " ", startingAt: 0))  \(m4GPURate.padding(toLength: 12, withPad: " ", startingAt: 0))  \(cpuStr.padding(toLength: 6, withPad: " ", startingAt: 0))  \(gpuStr)"
     )
   }
 

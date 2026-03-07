@@ -78,6 +78,21 @@ public enum TensorLexer {
       artifact: artifact
     )
 
+    // Phase C: Device-resident winner reduction
+    let winnerTensors: WinnerReduction.WinnerTensors
+    if options.useGPUReduction {
+      winnerTensors = WinnerReduction.reduceGPU(
+        batch: candidateBatch,
+        pageSize: hostView.bytes.count
+      )
+    } else {
+      winnerTensors = WinnerReduction.reduce(
+        batch: candidateBatch,
+        pageSize: hostView.bytes.count
+      )
+    }
+    _ = WinnerReduction.hostWinners(from: winnerTensors, pageSize: hostView.bytes.count)
+
     let cacheKey = makeFastPathCacheKey(
       compiledPage: compiledPage,
       artifact: artifact,

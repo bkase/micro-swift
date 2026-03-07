@@ -1,3 +1,5 @@
+import MLX
+
 public enum MembershipKernels {
   /// For each position, check if its classID belongs to the given ClassSet.
   /// Returns a boolean mask [P].
@@ -17,6 +19,19 @@ public enum MembershipKernels {
   ) -> [[Bool]] {
     setIDs.map { setID in
       membershipMask(classIDs: classIDs, setID: setID, classSetRuntime: classSetRuntime)
+    }
+  }
+
+  /// MLX tensor membership: gather from the flat mask table.
+  /// classIDTensor is [P] of uint16, returns [P] of bool.
+  public static func membershipMaskTensor(
+    classIDTensor: MLXArray,
+    setID: UInt16,
+    classSetRuntime: ClassSetRuntime
+  ) -> MLXArray {
+    withMLXCPU {
+      let maskRow = classSetRuntime.mlxMask()[Int(setID)]
+      return maskRow.take(classIDTensor.asType(.int32)).asType(.bool)
     }
   }
 }

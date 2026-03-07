@@ -146,7 +146,7 @@ public enum WinnerReduction {
     )
   }
 
-  /// Production tensor reduction.
+  /// Production tensor reduction (sequential loop on CPU).
   /// Tie-break order:
   ///   1. longer length
   ///   2. smaller priorityRank
@@ -214,6 +214,70 @@ public enum WinnerReduction {
         mode: bestMode
       )
     }
+  }
+
+  /// GPU-friendly reduction using argMax on a composite score.
+  /// Fuses the entire rule competition into a single GPU kernel via MLX.compile.
+  /// Tie-break order matches `reduce`: longer length > smaller priority > smaller ruleID.
+  public static func reduceGPU(batch: RuleTensorBatch, pageSize: Int) -> WinnerTensors {
+    precondition(pageSize >= 0, "pageSize must be non-negative")
+    precondition(batch.pageSize == pageSize, "batch.pageSize must match pageSize")
+
+    guard pageSize > 0 else {
+      return WinnerTensors(
+        len: zeros([0], dtype: .uint16),
+        priorityRank: zeros([0], dtype: .uint16),
+        ruleID: zeros([0], dtype: .uint16),
+        tokenKindID: zeros([0], dtype: .uint16),
+        mode: zeros([0], dtype: .uint8)
+      )
+    }
+
+    guard batch.ruleCount > 0 else {
+      return WinnerTensors(
+        len: zeros([pageSize], dtype: .uint16),
+        priorityRank: uint16Filled(value: WinnerTuple.empty.priorityRank, count: pageSize),
+        ruleID: uint16Filled(value: WinnerTuple.empty.ruleID, count: pageSize),
+        tokenKindID: zeros([pageSize], dtype: .uint16),
+        mode: zeros([pageSize], dtype: .uint8)
+      )
+    }
+
+    // Build composite score: encode (len, invPriority, invRuleID) as int64
+    // so that argMax picks the correct winner with all tie-breaks.
+    // len in bits [32..47], invPriority in bits [16..31], invRuleID in bits [0..15]
+    let lenI64 = batch.candLenByRule.asType(.int64)
+    let invPriority = (MLXArray(Int64(0xFFFF)) - batch.priorityRankByRule.asType(.int64))
+    let invRuleID = (MLXArray(Int64(0xFFFF)) - batch.ruleIDByRule.asType(.int64))
+    let score = lenI64 * MLXArray(Int64(1) << 32) + invPriority * MLXArray(Int64(1) << 16) + invRuleID
+
+    // Mask out zero-length candidates so they never win
+    let hasMatch = batch.candLenByRule.asType(.int64) .> MLXArray(Int64(0))
+    let maskedScore = which(hasMatch, score, MLXArray(Int64(-1)))
+
+    // argMax along rule axis → [pageSize] indices of winning rule
+    let bestIdx = argMax(maskedScore, axis: 0).asType(.int32)  // [pageSize]
+    let idxExpanded = bestIdx.expandedDimensions(axis: 0)  // [1, pageSize]
+
+    // Gather winner fields
+    let bestLen = takeAlong(batch.candLenByRule, idxExpanded, axis: 0).squeezed(axis: 0)
+    let bestPriority = takeAlong(batch.priorityRankByRule, idxExpanded, axis: 0).squeezed(axis: 0)
+    let bestRuleID = takeAlong(batch.ruleIDByRule, idxExpanded, axis: 0).squeezed(axis: 0)
+    let bestTokenKindID = takeAlong(batch.tokenKindIDByRule, idxExpanded, axis: 0).squeezed(axis: 0)
+    let bestMode = takeAlong(batch.modeByRule, idxExpanded, axis: 0).squeezed(axis: 0)
+
+    // Zero out fields where no rule matched (len == 0 means empty)
+    let anyMatch = bestLen .> MLXArray(UInt16(0))
+    let emptyPriority = uint16Filled(value: WinnerTuple.empty.priorityRank, count: pageSize)
+    let emptyRuleID = uint16Filled(value: WinnerTuple.empty.ruleID, count: pageSize)
+
+    return WinnerTensors(
+      len: bestLen.asType(.uint16),
+      priorityRank: which(anyMatch, bestPriority, emptyPriority).asType(.uint16),
+      ruleID: which(anyMatch, bestRuleID, emptyRuleID).asType(.uint16),
+      tokenKindID: which(anyMatch, bestTokenKindID, zeros([pageSize], dtype: .uint16)).asType(.uint16),
+      mode: which(anyMatch, bestMode, zeros([pageSize], dtype: .uint8)).asType(.uint8)
+    )
   }
 
   /// Host conversion helper for tests and host-only selector paths.
