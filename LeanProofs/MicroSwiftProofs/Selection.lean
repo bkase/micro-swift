@@ -103,6 +103,12 @@ private def iterStep (winners : List Reduction.Winner) (validLen : Nat)
   selectionIteration (mkPositive winners validLen) (mkEndExclusive winners)
     winners.length (arange winners.length) mask
 
+private theorem length_scanl' {α β : Type*} (f : β → α → β) (b : β) (l : List α) :
+    (l.scanl f b).length = l.length + 1 := by
+  induction l generalizing b with
+  | nil => simp [List.scanl]
+  | cons x xs ih => simp [List.scanl, ih]
+
 /-! ## Fixpoint convergence helper lemmas -/
 
 /-- Unwinding vectorizedSelect to use iterStep. -/
@@ -246,12 +252,145 @@ private theorem cummaxFwd_prefix_eq (xs ys : List Nat) (n : Nat) (i : Nat)
 /-- iterStep at position i depends only on the input mask at positions j < i.
     This is the key locality property: coveredBefore[i] depends on cummaxFwd[i-1],
     which depends on selectedEnds[0..i-1], which depends on mask[0..i-1]. -/
+-- Helper: zipWith_ite on masks that agree at position j
+private theorem zipWith_ite_getD_eq (mask₁ mask₂ : List Bool) (vals : List Nat) (j : Nat)
+    (h : mask₁.getD j false = mask₂.getD j false) :
+    (List.zipWith (fun sel e => if sel then e else 0) mask₁ vals).getD j 0 =
+    (List.zipWith (fun sel e => if sel then e else 0) mask₂ vals).getD j 0 := by
+  simp only [List.getD, List.getElem?_zipWith]
+  cases hm1 : mask₁[j]? with
+  | none =>
+    simp only [List.getD, hm1, Option.getD] at h
+    -- h : false = mask₂.getD j false, so mask₂[j]? is none or some false
+    cases hm2 : mask₂[j]? with
+    | none => simp
+    | some v2 =>
+      simp only [hm2, Option.getD] at h; subst h
+      -- v2 = false, so both sides have "if false then e else 0" = 0
+      cases vals[j]? <;> simp
+  | some v1 =>
+    cases hm2 : mask₂[j]? with
+    | none =>
+      simp only [List.getD, hm1, hm2, Option.getD] at h
+      -- h : v1 = false
+      subst h
+      cases vals[j]? <;> simp
+    | some v2 =>
+      simp only [List.getD, hm1, hm2, Option.getD] at h
+      rw [h]
+
+-- Helper: getD of zipWith and
+private theorem getD_zipWith_and (a b : List Bool) (i : Nat) :
+    (List.zipWith and a b).getD i false =
+    (a.getD i false && b.getD i false) := by
+  simp only [List.getD]
+  rw [List.getElem?_zipWith]
+  cases ha : a[i]? with
+  | none => simp
+  | some va =>
+    cases hb : b[i]? with
+    | none =>
+      simp only [Option.map, Option.bind]
+      cases va <;> simp
+    | some vb => simp
+
+-- Helper: getD of zipWith for a binary function
+private theorem getD_zipWith_nat_bool (f : Nat → Nat → Bool) (a b : List Nat) (i : Nat) :
+    (List.zipWith f a b).getD i false =
+    match a[i]?, b[i]? with
+    | some va, some vb => f va vb
+    | _, _ => false := by
+  simp only [List.getD]
+  rw [List.getElem?_zipWith]
+  cases ha : a[i]? with
+  | none => simp
+  | some va =>
+    cases hb : b[i]? with
+    | none => simp
+    | some vb => simp
+
 private theorem iterStep_prefix_eq (winners : List Reduction.Winner) (validLen : Nat)
     (mask₁ mask₂ : List Bool) (i : Nat)
+    (h_len₁ : mask₁.length = winners.length) (h_len₂ : mask₂.length = winners.length)
     (h : ∀ j < i, mask₁.getD j false = mask₂.getD j false) :
     (iterStep winners validLen mask₁).getD i false =
     (iterStep winners validLen mask₂).getD i false := by
-  sorry
+  unfold iterStep selectionIteration
+  set pos := mkPositive winners validLen
+  set endExcl := mkEndExclusive winners
+  set ps := arange winners.length
+  set se₁ := List.zipWith (fun sel e => if sel then e else 0) mask₁ endExcl
+  set se₂ := List.zipWith (fun sel e => if sel then e else 0) mask₂ endExcl
+  set cb₁ := 0 :: (cummaxFwd se₁).take (winners.length - 1)
+  set cb₂ := 0 :: (cummaxFwd se₂).take (winners.length - 1)
+  -- Both cb₁ and cb₂ have length winners.length (since masks have same length)
+  have h_ee_len : endExcl.length = winners.length := by
+    simp [endExcl, mkEndExclusive, arange, MLX.arange, List.length_zipWith, List.length_range, List.length_map]
+  have h_se_len : se₁.length = winners.length := by
+    simp [se₁, List.length_zipWith, h_len₁, h_ee_len]
+  have h_se_len₂ : se₂.length = winners.length := by
+    simp [se₂, List.length_zipWith, h_len₂, h_ee_len]
+  -- Show cb₁[i]? = cb₂[i]?
+  suffices h_cb : cb₁[i]? = cb₂[i]? by
+    rw [getD_zipWith_and, getD_zipWith_and]
+    congr 1
+    rw [getD_zipWith_nat_bool, getD_zipWith_nat_bool]
+    rw [h_cb]
+  -- Prove cb₁[i]? = cb₂[i]?
+  cases i with
+  | zero => simp [cb₁, cb₂]
+  | succ i =>
+    simp only [cb₁, cb₂, List.getElem?_cons_succ]
+    -- Need: (cummaxFwd se₁).take(n-1)[i]? = (cummaxFwd se₂).take(n-1)[i]?
+    by_cases hi_range : i < winners.length - 1
+    · -- In range of take
+      simp only [List.getElem?_take, show i < winners.length - 1 from hi_range, ite_true]
+      -- cummaxFwd agreement at position i
+      have h_se : ∀ j ≤ i, se₁.getD j 0 = se₂.getD j 0 :=
+        fun j hj => zipWith_ite_getD_eq mask₁ mask₂ endExcl j (h j (by omega))
+      have h_eq := cummaxFwd_prefix_eq se₁ se₂ winners.length i h_se_len h_se_len₂ h_se
+      -- Both cummaxFwd have the same length
+      have h_cm_len₁ : (cummaxFwd se₁).length = winners.length := by
+        simp [cummaxFwd, MLX.cummaxFwd, List.length_drop, length_scanl', h_se_len]
+      have h_cm_len₂' : (cummaxFwd se₂).length = winners.length := by
+        simp [cummaxFwd, MLX.cummaxFwd, List.length_drop, length_scanl', h_se_len₂]
+      -- i is in range of both cummax results
+      have hi₁ : i < (cummaxFwd se₁).length := by omega
+      have hi₂ : i < (cummaxFwd se₂).length := by omega
+      rw [List.getElem?_eq_getElem hi₁, List.getElem?_eq_getElem hi₂]
+      -- Convert getD equality to getElem equality
+      simp only [List.getD, List.getElem?_eq_getElem hi₁, List.getElem?_eq_getElem hi₂] at h_eq
+      simpa using h_eq
+    · -- Out of range of take: both give none
+      have h_cm_len₁ : (cummaxFwd se₁).length = winners.length := by
+        simp [cummaxFwd, MLX.cummaxFwd, List.length_drop, length_scanl', h_se_len]
+      have h_cm_len₂ : (cummaxFwd se₂).length = winners.length := by
+        simp [cummaxFwd, MLX.cummaxFwd, List.length_drop, length_scanl', h_se_len₂]
+      rw [List.getElem?_eq_none (by simp [List.length_take, h_cm_len₁]; omega)]
+      rw [List.getElem?_eq_none (by simp [List.length_take, h_cm_len₂]; omega)]
+
+private theorem mkPositive_length (winners : List Reduction.Winner) (validLen : Nat) :
+    (mkPositive winners validLen).length = winners.length := by
+  simp [mkPositive, arange, MLX.arange, List.length_zipWith, List.length_map, List.length_range]
+
+private theorem mkEndExclusive_length (winners : List Reduction.Winner) :
+    (mkEndExclusive winners).length = winners.length := by
+  simp [mkEndExclusive, arange, MLX.arange, List.length_zipWith, List.length_map, List.length_range]
+
+private theorem iterStep_length (winners : List Reduction.Winner) (validLen : Nat)
+    (mask : List Bool) (h_len : mask.length = winners.length) :
+    (iterStep winners validLen mask).length = winners.length := by
+  unfold iterStep selectionIteration
+  simp only [List.length_zipWith, mkPositive_length, List.length_cons, List.length_take,
+    cummaxFwd, MLX.cummaxFwd, List.length_drop, arange, MLX.arange,
+    List.length_range, mkEndExclusive_length, length_scanl', h_len]
+  omega
+
+private theorem maskAfter_length (winners : List Reduction.Winner) (validLen k : Nat) :
+    (maskAfter winners validLen k).length = winners.length := by
+  induction k with
+  | zero => simp [maskAfter, mkPositive_length]
+  | succ k ih => rw [maskAfter_succ]; exact iterStep_length winners validLen _ ih
 
 /-- After j+1 iterations, position j has converged: further iterations don't change it.
     Uses the wave-front argument: iterStep at position j depends only on mask at positions < j.
@@ -282,7 +421,9 @@ private theorem mask_converges_at_strong (winners : List Reduction.Winner) (vali
           have h1 := ih_j p hp (by omega) k (by omega)
           have h2 := ih_j p hp (by omega) j (by omega)
           rw [h1, h2]
-        rw [iterStep_prefix_eq winners validLen _ _ j h_agree, ← maskAfter_succ]
+        rw [iterStep_prefix_eq winners validLen _ _ j
+          (maskAfter_length winners validLen k) (maskAfter_length winners validLen j)
+          h_agree, ← maskAfter_succ]
       · -- k = j
         have : k = j := by omega
         subst this; rfl
@@ -368,34 +509,6 @@ private theorem maskAfter_false_beyond (winners : List Reduction.Winner) (validL
     rw [maskAfter_succ]
     exact iterStep_false_beyond_validLen winners validLen _ i hi
 
-private theorem mkPositive_length (winners : List Reduction.Winner) (validLen : Nat) :
-    (mkPositive winners validLen).length = winners.length := by
-  simp [mkPositive, arange, MLX.arange, List.length_zipWith, List.length_map, List.length_range]
-
-private theorem mkEndExclusive_length (winners : List Reduction.Winner) :
-    (mkEndExclusive winners).length = winners.length := by
-  simp [mkEndExclusive, arange, MLX.arange, List.length_zipWith, List.length_map, List.length_range]
-
-private theorem length_scanl {α β : Type*} (f : β → α → β) (b : β) (l : List α) :
-    (l.scanl f b).length = l.length + 1 := by
-  induction l generalizing b with
-  | nil => simp [List.scanl]
-  | cons x xs ih => simp [List.scanl, ih]
-
-private theorem iterStep_length (winners : List Reduction.Winner) (validLen : Nat)
-    (mask : List Bool) (h_len : mask.length = winners.length) :
-    (iterStep winners validLen mask).length = winners.length := by
-  unfold iterStep selectionIteration
-  simp only [List.length_zipWith, mkPositive_length, List.length_cons, List.length_take,
-    cummaxFwd, MLX.cummaxFwd, List.length_drop, arange, MLX.arange,
-    List.length_range, mkEndExclusive_length, length_scanl, h_len]
-  omega
-
-private theorem maskAfter_length (winners : List Reduction.Winner) (validLen k : Nat) :
-    (maskAfter winners validLen k).length = winners.length := by
-  induction k with
-  | zero => simp [maskAfter, mkPositive_length]
-  | succ k ih => rw [maskAfter_succ]; exact iterStep_length winners validLen _ ih
 
 private theorem mono_decreasing_stabilizes (winners : List Reduction.Winner) (validLen : Nat)
     (h_bound : validLen ≤ winners.length) :
