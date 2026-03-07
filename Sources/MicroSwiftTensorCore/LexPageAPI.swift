@@ -134,7 +134,7 @@ public enum TensorLexer {
   ) -> KernelCacheKey {
     KernelCacheKey(
       deviceID: fastPathDefaultDeviceID,
-      artifactHash: artifactRuntimeHash(artifact),
+      artifactHash: artifact.artifactHash,
       pageBucket: compiledPage.byteCapacity,
       inputDType:
         "\(compiledPage.byteTensorDType)-\(compiledPage.classIDTensorDType)-\(compiledPage.validMaskTensorDType)",
@@ -566,5 +566,5 @@ private func mlxUInt8Filled(value: UInt8, count: Int) -> MLXArray {
 
 private func mlxStackRows(_ rows: [MLXArray], pageSize: Int, dtype: DType) -> MLXArray {
   guard !rows.isEmpty else { return zeros([0, pageSize], dtype: dtype) }
-    return stacked(rows.map { $0.asType(dtype) }, axis: 0)
+  return stacked(rows.map { $0.asType(dtype) }, axis: 0)
 }

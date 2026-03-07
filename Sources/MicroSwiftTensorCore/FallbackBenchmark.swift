@@ -103,7 +103,7 @@ public func runBenchmark(
   let logSink = BenchmarkLogSink()
   let cache = KernelCache(logSink: logSink.record)
 
-  let artifactHash = artifactRuntimeHash(artifact)
+  let artifactHash = artifact.artifactHash
 
   var observability = FallbackObservability()
 

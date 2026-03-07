@@ -13,6 +13,7 @@ public enum ArtifactRuntimeError: Error, Sendable, Equatable {
 
 public struct ArtifactRuntime: Sendable {
   public let specName: String
+  public let artifactHash: String
   public let ruleCount: Int
   public let runtimeHints: RuntimeHints
   private let hostByteToClassLUTStorage: [UInt16]
@@ -38,6 +39,7 @@ public struct ArtifactRuntime: Sendable {
 
   public init(
     specName: String,
+    artifactHash: String = "",
     ruleCount: Int,
     runtimeHints: RuntimeHints,
     byteToClassLUT: [UInt16],
@@ -49,6 +51,7 @@ public struct ArtifactRuntime: Sendable {
     fallback: FallbackRuntime?
   ) {
     self.specName = specName
+    self.artifactHash = artifactHash
     self.ruleCount = ruleCount
     self.runtimeHints = runtimeHints
     self.hostByteToClassLUTStorage = byteToClassLUT
@@ -80,6 +83,7 @@ public struct ArtifactRuntime: Sendable {
     let hostByteToClassLUT = artifact.byteToClass.map(UInt16.init)
     return ArtifactRuntime(
       specName: artifact.specName,
+      artifactHash: artifact.specHashHex,
       ruleCount: artifact.rules.count,
       runtimeHints: artifact.runtimeHints,
       byteToClassLUT: hostByteToClassLUT,
