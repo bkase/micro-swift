@@ -246,6 +246,31 @@ struct CandidateVerificationTests {
   }
 
   @Test(.enabled(if: requiresMLXEval))
+  func prefixedDoesNotMatchWhenPrefixWouldReadIntoInvalidTail() {
+    let runtime = makePrefixedRuntime()
+    let bytes = Array("/".utf8) + [UInt8(ascii: "/"), UInt8(ascii: "a")]
+    let validMask = [true, false, false]
+    let classIDs = classifyPrefixed(bytes)
+    let stopMask = zip(classIDs, validMask).map { classID, valid in
+      valid && runtime.contains(setID: 1, classID: classID)
+    }
+    let nextStop = NextStopHelper.computeNextStop(stopMask: stopMask, validLen: 1)
+
+    let actual = PrefixedExecution.evaluatePrefixed(
+      bytes: bytes,
+      classIDs: classIDs,
+      validMask: validMask,
+      prefix: Array("//".utf8),
+      bodyClassSetID: 0,
+      stopClassSetID: 1,
+      classSetRuntime: runtime,
+      nextStop: nextStop
+    )
+
+    #expect(actual == [0, 0, 0])
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
   func selectedRowsAreStrictlyIncreasingAndNonOverlapping() {
     var rng = LCG(seed: 0x1234_5678)
 

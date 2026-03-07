@@ -125,6 +125,60 @@ struct PageBoundaryTests {
 
     #expect(result == [2, 0, 0, 0, 0])
   }
+
+  @Test(.enabled(if: requiresMLXEval))
+  func prefixedStopAwareRuleStopsAtNewlineInsidePage() {
+    let runtime = makePrefixedClassRuntime()
+    let bytes = Array("//abc\nz".utf8)
+    let validMask = Array(repeating: true, count: bytes.count)
+    let classIDs = classifyPrefixedBoundary(bytes)
+    let stopMask = zip(classIDs, validMask).map { classID, valid in
+      valid && runtime.contains(setID: 1, classID: classID)
+    }
+    let nextStop = NextStopHelper.computeNextStop(stopMask: stopMask, validLen: Int32(bytes.count))
+
+    let lengths = PrefixedExecution.evaluatePrefixed(
+      bytes: bytes,
+      classIDs: classIDs,
+      validMask: validMask,
+      prefix: Array("//".utf8),
+      bodyClassSetID: 0,
+      stopClassSetID: 1,
+      classSetRuntime: runtime,
+      nextStop: nextStop
+    )
+
+    #expect(lengths[0] == 5)
+    #expect(lengths.dropFirst().allSatisfy { $0 == 0 })
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
+  func prefixedStopAwareRuleEndsAtValidBoundaryWithoutPaddedTailMatch() {
+    let runtime = makePrefixedClassRuntime()
+    let bytes = Array("//abc/".utf8) + [UInt8](repeating: PageBucket.neutralPaddingByte, count: 2)
+    let validLen = 6
+    let validMask = (0..<bytes.count).map { $0 < validLen }
+    let classIDs = classifyPrefixedBoundary(bytes)
+    let stopMask = zip(classIDs, validMask).map { classID, valid in
+      valid && runtime.contains(setID: 1, classID: classID)
+    }
+    let nextStop = NextStopHelper.computeNextStop(stopMask: stopMask, validLen: Int32(validLen))
+
+    let lengths = PrefixedExecution.evaluatePrefixed(
+      bytes: bytes,
+      classIDs: classIDs,
+      validMask: validMask,
+      prefix: Array("//".utf8),
+      bodyClassSetID: 0,
+      stopClassSetID: 1,
+      classSetRuntime: runtime,
+      nextStop: nextStop
+    )
+
+    #expect(lengths[0] == 6)
+    #expect(lengths[5] == 0)
+    #expect(lengths[6] == 0)
+  }
 }
 
 private func makeABFallbackArtifact(maxWidth: UInt16) -> LexerArtifact {
@@ -271,4 +325,19 @@ private func winner(
     tokenKindID: tokenKindID,
     mode: mode
   )
+}
+
+private func makePrefixedClassRuntime() -> ClassSetRuntime {
+  let body = [true, true, false, true]
+  let stop = [false, false, true, false]
+  return ClassSetRuntime(mask: [body, stop], numClassSets: 2, numByteClasses: 4)
+}
+
+private func classifyPrefixedBoundary(_ bytes: [UInt8]) -> [UInt8] {
+  bytes.map { byte in
+    if byte == UInt8(ascii: "/") { return 0 }
+    if byte == UInt8(ascii: "\n") { return 2 }
+    if byte == UInt8(ascii: " ") { return 3 }
+    return 1
+  }
 }

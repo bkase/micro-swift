@@ -149,6 +149,34 @@ struct LexPageTests {
     #expect(PackedToken.unpackTokenKindID(row) == 300)
     #expect(PackedToken.unpackLength(row) == 2)
   }
+
+  @Test
+  func lexPageIntegratesPrefixedCandidatesWithOtherFastRules() throws {
+    let runtime = try makePrefixedLexRuntime()
+    let bytes = Array("//ab\n".utf8)
+
+    let result = lexPage(
+      bytes: bytes,
+      validLen: Int32(bytes.count),
+      baseOffset: 0,
+      artifact: runtime,
+      options: LexOptions(runtimeProfile: .v0)
+    )
+
+    let packedRows = result.hostPackedRows()
+    #expect(result.rowCount == 2)
+    #expect(packedRows.count == bytes.count)
+
+    let first = try #require(packedRows.first)
+    #expect(PackedToken.unpackLocalStart(first) == 0)
+    #expect(PackedToken.unpackLength(first) == 4)
+    #expect(PackedToken.unpackTokenKindID(first) == 41)
+
+    let second = packedRows[1]
+    #expect(PackedToken.unpackLocalStart(second) == 4)
+    #expect(PackedToken.unpackLength(second) == 1)
+    #expect(PackedToken.unpackTokenKindID(second) == 42)
+  }
 }
 
 private func makeRuntime(maxLookahead: UInt16, tokenKindID: UInt16 = 9) throws -> ArtifactRuntime {
@@ -196,6 +224,71 @@ private func makeRuntime(maxLookahead: UInt16, tokenKindID: UInt16 = 9) throws -
     classes: [ByteClassDecl(classID: 0, bytes: [Character("a").asciiValue!])],
     classSets: [ClassSetDecl(classSetID: ClassSetID(0), classes: [0])],
     rules: [rule],
+    keywordRemaps: []
+  )
+
+  return try ArtifactRuntime.fromArtifact(artifact)
+}
+
+private func makePrefixedLexRuntime() throws -> ArtifactRuntime {
+  var byteToClass = Array(repeating: UInt8(1), count: 256)
+  byteToClass[Int(Character("/").asciiValue!)] = 0
+  byteToClass[Int(Character("\n").asciiValue!)] = 2
+  byteToClass[Int(Character(" ").asciiValue!)] = 3
+
+  let rules = [
+    LoweredRule(
+      ruleID: 10,
+      name: "line-comment",
+      tokenKindID: 41,
+      mode: .emit,
+      family: .run,
+      priorityRank: 0,
+      minWidth: 2,
+      maxWidth: nil,
+      firstClassSetID: 0,
+      plan: .runPrefixed(prefix: Array("//".utf8), bodyClassSetID: 0, stopClassSetID: 1)
+    ),
+    LoweredRule(
+      ruleID: 11,
+      name: "newline",
+      tokenKindID: 42,
+      mode: .emit,
+      family: .literal,
+      priorityRank: 1,
+      minWidth: 1,
+      maxWidth: 1,
+      firstClassSetID: 1,
+      plan: .literal(bytes: [UInt8(ascii: "\n")])
+    ),
+  ]
+
+  let artifact = LexerArtifact(
+    formatVersion: 1,
+    specName: "prefixed-lex-tests",
+    specHashHex: String(repeating: "0", count: 64),
+    generatorVersion: "tests",
+    runtimeHints: RuntimeHints(
+      maxLiteralLength: 1,
+      maxBoundedRuleWidth: 2,
+      maxDeterministicLookaheadBytes: 2
+    ),
+    tokenKinds: [
+      TokenKindDecl(tokenKindID: 41, name: "lineComment", defaultMode: .emit),
+      TokenKindDecl(tokenKindID: 42, name: "newline", defaultMode: .emit),
+    ],
+    byteToClass: byteToClass,
+    classes: [
+      ByteClassDecl(classID: 0, bytes: [Character("/").asciiValue!]),
+      ByteClassDecl(classID: 1, bytes: [Character("a").asciiValue!, Character("b").asciiValue!]),
+      ByteClassDecl(classID: 2, bytes: [Character("\n").asciiValue!]),
+      ByteClassDecl(classID: 3, bytes: [Character(" ").asciiValue!]),
+    ],
+    classSets: [
+      ClassSetDecl(classSetID: ClassSetID(0), classes: [0, 1, 3]),
+      ClassSetDecl(classSetID: ClassSetID(1), classes: [2]),
+    ],
+    rules: rules,
     keywordRemaps: []
   )
 
