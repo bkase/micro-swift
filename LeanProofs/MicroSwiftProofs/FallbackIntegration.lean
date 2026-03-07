@@ -51,6 +51,16 @@ theorem merge_equiv (fastWinners fallbackWinners : List Winner)
     (h_len : fastWinners.length = fallbackWinners.length) :
     vectorizedMerge fastWinners fallbackWinners =
     scalarMerge fastWinners fallbackWinners := by
-  sorry
+  unfold vectorizedMerge scalarMerge vectorizedCompare winnerWhich
+  induction fastWinners generalizing fallbackWinners with
+  | nil => simp [List.zipWith, List.zip]
+  | cons fast fws ih =>
+    cases fallbackWinners with
+    | nil => simp at h_len
+    | cons fb fbws =>
+      simp only [List.zipWith, List.zip, List.map]
+      congr 1
+      · rw [compare_eq_isBetter]
+      · exact ih fbws (by simp_all)
 
 end FallbackIntegration

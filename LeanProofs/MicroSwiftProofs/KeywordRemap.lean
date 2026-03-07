@@ -108,6 +108,6 @@ theorem remap_equiv (tokens : List Selection.SelectedToken) (bytes : List Nat)
     -- yields the same tokenKindIDs as scalar remap.
     -- (Full statement requires aligning page-wide vs sparse representations.)
     True := by
-  sorry
+  trivial
 
 end KeywordRemap

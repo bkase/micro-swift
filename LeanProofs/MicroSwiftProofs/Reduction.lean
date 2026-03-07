@@ -59,18 +59,20 @@ def scalarReducePage (pageCandidates : List (List Winner)) : List Winner :=
 
 /-! ## Vectorized Model -/
 
+/-- Per-element vectorized comparison expression. -/
+def compareExpr (cand best : Winner) : Bool :=
+  let longer := cand.len > best.len
+  let sameLen := cand.len == best.len
+  let positiveLen := cand.len > 0
+  let betterPriority := cand.priorityRank < best.priorityRank
+  let samePriority := cand.priorityRank == best.priorityRank
+  let betterRuleID := cand.ruleID < best.ruleID
+  let tieBreak := sameLen && positiveLen && (betterPriority || (samePriority && betterRuleID))
+  longer || tieBreak
+
 /-- Vectorized tie-breaking: mirrors the `.>`, `.==`, `.&&`, `.||` chain in Swift. -/
 def vectorizedCompare (candTensors bestTensors : List Winner) : List Bool :=
-  List.zipWith (fun cand best =>
-    let longer := cand.len > best.len
-    let sameLen := cand.len == best.len
-    let positiveLen := cand.len > 0
-    let betterPriority := cand.priorityRank < best.priorityRank
-    let samePriority := cand.priorityRank == best.priorityRank
-    let betterRuleID := cand.ruleID < best.ruleID
-    let tieBreak := sameLen && positiveLen && (betterPriority || (samePriority && betterRuleID))
-    longer || tieBreak
-  ) candTensors bestTensors
+  List.zipWith compareExpr candTensors bestTensors
 
 /-- Vectorized `which` over Winner structs. -/
 def winnerWhich (mask : List Bool) (tVals fVals : List Winner) : List Winner :=
@@ -125,15 +127,8 @@ theorem isBetter_iff_compare (cand best : Winner) :
 
 /-- Pointwise: the vectorized compare expression equals isBetter. -/
 theorem compare_eq_isBetter (cand best : Winner) :
-    (let longer := cand.len > best.len
-     let sameLen := cand.len == best.len
-     let positiveLen := cand.len > 0
-     let betterPriority := cand.priorityRank < best.priorityRank
-     let samePriority := cand.priorityRank == best.priorityRank
-     let betterRuleID := cand.ruleID < best.ruleID
-     let tieBreak := sameLen && positiveLen && (betterPriority || (samePriority && betterRuleID))
-     longer || tieBreak) = isBetter cand best := by
-  unfold isBetter
+    compareExpr cand best = isBetter cand best := by
+  unfold compareExpr isBetter
   by_cases h1 : cand.len = best.len <;>
     by_cases h2 : cand.len = 0 <;>
     by_cases h3 : cand.priorityRank = best.priorityRank <;>
