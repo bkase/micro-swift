@@ -1,3 +1,5 @@
+import MLX
+
 public enum PrefixedExecution {
   /// Evaluate a prefixed rule (e.g. line comments: prefix="//", body=notNewline, stop=newline).
   /// Computes page-local masks and boundaries, then emits candLen[P].
@@ -119,6 +121,121 @@ public enum PrefixedExecution {
     }
 
     return startMask
+  }
+
+  /// Pure MLX tensor evaluation of a prefixed rule. No host arrays produced.
+  /// nextInvalidTensor: precomputed [P] int32, index of nearest invalid position (cummin form).
+  /// nextStopTensor: precomputed [P] int32, index of nearest stop position (cummin form), or nil.
+  /// Returns candLen[P] as MLXArray (uint16).
+  public static func evaluatePrefixedMLX(
+    byteTensor: MLXArray,
+    classIDTensor: MLXArray,
+    validMaskTensor: MLXArray,
+    prefix: [UInt8],
+    bodyClassSetID: UInt16,
+    classSetRuntime: ClassSetRuntime,
+    nextInvalidTensor: MLXArray,
+    nextStopTensor: MLXArray?
+  ) -> MLXArray {
+    withMLXCPU {
+      let pageLen = Int(byteTensor.shape[0])
+      guard pageLen > 0 else { return zeros([0], dtype: .uint16) }
+
+      let prefixLen = prefix.count
+      guard prefixLen < pageLen else { return zeros([pageLen], dtype: .uint16) }
+
+      let indices = MLXArray(Int32(0)..<Int32(pageLen), [pageLen])
+      let sentinel = Int32(pageLen)
+      let sentinelFill = MLXArray(Array(repeating: sentinel, count: pageLen), [pageLen])
+
+      // 1. Prefix start mask: shifted byte comparisons
+      let prefixStartMask: MLXArray = {
+        var mask = validMaskTensor
+        for (offset, expectedByte) in prefix.enumerated() {
+          let shiftedBytes: MLXArray
+          let shiftedValid: MLXArray
+          if offset == 0 {
+            shiftedBytes = byteTensor
+            shiftedValid = validMaskTensor
+          } else {
+            shiftedBytes = concatenated(
+              [
+                byteTensor[offset..<pageLen],
+                zeros([offset], dtype: byteTensor.dtype),
+              ],
+              axis: 0
+            )
+            shiftedValid = concatenated(
+              [
+                validMaskTensor[offset..<pageLen],
+                MLXArray(Array(repeating: false, count: offset), [offset]),
+              ],
+              axis: 0
+            )
+          }
+          let byteMatch = shiftedBytes .== MLXArray(expectedByte)
+          let updated = mask .&& shiftedValid .&& byteMatch
+          mask = updated
+        }
+
+        // Zero out positions where prefix can't fit
+        if prefixLen > 0 {
+          let lastValidStart = pageLen - prefixLen
+          if lastValidStart + 1 < pageLen {
+            let tailMask = indices .<= MLXArray(Int32(lastValidStart))
+            let filtered = mask .&& tailMask
+            mask = filtered
+          }
+        }
+        return mask
+      }()
+
+      // 2. Body boundary: nextBodyBreak via cummin
+      let bodyMember = MembershipKernels.membershipMaskTensor(
+        classIDTensor: classIDTensor,
+        setID: bodyClassSetID,
+        classSetRuntime: classSetRuntime
+      )
+      let inBody = bodyMember .&& validMaskTensor
+      let bodyBreakIndices = which(.!inBody, indices, sentinelFill)
+      let nextBodyBreak = cummin(bodyBreakIndices, axis: 0, reverse: true)
+
+      // 3. Shift boundaries by prefixLen (look up at bodyStart = start + prefixLen)
+      let shiftedNextBodyBreak = concatenated(
+        [
+          nextBodyBreak[prefixLen..<pageLen],
+          MLXArray(Array(repeating: sentinel, count: prefixLen), [prefixLen]),
+        ],
+        axis: 0
+      )
+      let shiftedNextInvalid = concatenated(
+        [
+          nextInvalidTensor[prefixLen..<pageLen],
+          MLXArray(Array(repeating: sentinel, count: prefixLen), [prefixLen]),
+        ],
+        axis: 0
+      )
+
+      // 4. Compute cursor = min of all boundaries
+      let cursor: MLXArray = {
+        let base = minimum(shiftedNextBodyBreak, shiftedNextInvalid)
+        guard let nextStopTensor else { return base }
+        let shiftedNextStop = concatenated(
+          [
+            nextStopTensor[prefixLen..<pageLen],
+            MLXArray(Array(repeating: sentinel, count: prefixLen), [prefixLen]),
+          ],
+          axis: 0
+        )
+        return minimum(base, shiftedNextStop)
+      }()
+
+      // 5. totalLen = cursor - indices (since prefixLen + (cursor - (indices + prefixLen)) = cursor - indices)
+      let totalLen = (cursor - indices).asType(.uint16)
+
+      // 6. Mask by prefix start positions
+      return which(prefixStartMask, totalLen, zeros([pageLen], dtype: .uint16))
+    }
   }
 
   private static func normalizedNextStop(
