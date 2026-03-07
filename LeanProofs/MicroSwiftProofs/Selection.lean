@@ -697,7 +697,12 @@ private theorem extractSelected_ext (winners : List Reduction.Winner)
     simp only [List.getD, List.getElem?_eq_getElem h1, List.getElem?_eq_getElem h2] at h_eq
     simpa using h_eq
 
-/-- The scalar greedy mask satisfies the iterStep fixpoint equation at each position. -/
+/-- The scalar greedy mask satisfies the iterStep fixpoint equation at each position.
+    Proof strategy: Show that coveredUntil from the scalar walk at position i
+    equals coveredBefore(mask, i) from iterStep. Both compute
+    max{j + winners[j].len : j < i, mask[j] = true} ∪ {0}.
+    Then unfold iterStep to see mask[i] = positive[i] && (i >= coveredBefore),
+    which is exactly the scalar greedy criterion. -/
 private theorem scalarGreedyMask_is_fixpoint (winners : List Reduction.Winner) (validLen : Nat)
     (h_valid : validLen ≤ winners.length) :
     ∀ i, i < winners.length →
@@ -776,7 +781,11 @@ private theorem scalarGreedyMask_false_beyond (winners : List Reduction.Winner) 
     simp only [List.getD, List.getElem?_replicate]
     split <;> simp
 
-/-- extractSelected on the scalar greedy mask gives the same list as scalarSelect. -/
+/-- extractSelected on the scalar greedy mask gives the same list as scalarSelect.
+    Proof strategy: Both iterate over positions 0..n-1. extractSelected filters by
+    mask[i]=true and maps to SelectedToken. scalarSelect folds with coveredUntil state,
+    appending when w.len > 0 ∧ i ≥ coveredUntil. Since scalarGreedyMask marks exactly
+    the positions the scalar walk selects (by construction), the filtered lists agree. -/
 private theorem extractSelected_scalarGreedyMask (winners : List Reduction.Winner) (validLen : Nat)
     (h_valid : validLen ≤ winners.length) :
     extractSelected winners (scalarGreedyMask winners validLen) =
