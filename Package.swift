@@ -14,6 +14,7 @@ let package = Package(
     .library(name: "MicroSwiftWasm", targets: ["MicroSwiftWasm"]),
     .library(name: "MicroSwiftBench", targets: ["MicroSwiftBench"]),
     .executable(name: "micro-swift", targets: ["MicroSwiftCLI"]),
+    .executable(name: "micro-swift-bench", targets: ["MicroSwiftBenchRunner"]),
   ],
   dependencies: [
     .package(url: "https://github.com/apple/swift-argument-parser", from: "1.5.0"),
@@ -53,6 +54,15 @@ let package = Package(
         .target(name: "MicroSwiftSpec"),
         .target(name: "MicroSwiftLexerGen"),
         .target(name: "MicroSwiftTensorCore"),
+      ]
+    ),
+    .executableTarget(
+      name: "MicroSwiftBenchRunner",
+      dependencies: [
+        "MicroSwiftLexerGen",
+        "MicroSwiftTensorCore",
+        "MicroSwiftFrontend",
+        .product(name: "MLX", package: "mlx-swift"),
       ]
     ),
     .testTarget(
