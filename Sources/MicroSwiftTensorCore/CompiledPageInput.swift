@@ -129,26 +129,16 @@ public struct CompiledPageInput {
     guard let byteTensor else {
       return withMLXCPU { MLXArray(hostPaddedBytesStorage, [byteCapacity]).asType(.uint8) }
     }
-    guard shift != 0 else { return byteTensor }
-
-    let capacity = byteCapacity
-    guard capacity > 0 else { return byteTensor }
-
-    var shifted = [UInt8](
-      repeating: PageBucket.neutralPaddingByte,
-      count: capacity
+    return ShiftedTensorView.forward(
+      byteTensor,
+      by: shift,
+      padValue: PageBucket.neutralPaddingByte
     )
+  }
 
-    for index in 0..<capacity {
-      let source = index - shift
-      if source >= 0 && source < capacity {
-        shifted[index] = hostPaddedBytesStorage[source]
-      }
-    }
-
-    return withMLXCPU {
-      MLXArray(shifted, [capacity]).asType(.uint8)
-    }
+  public func shiftedValidMaskTensor(by shift: Int) -> MLXArray {
+    let mask = validRangeMask(dtype: .bool)
+    return ShiftedTensorView.forwardValidMask(mask, by: shift)
   }
 
   public func deterministicTailZeroed(_ tensor: MLXArray) -> MLXArray {

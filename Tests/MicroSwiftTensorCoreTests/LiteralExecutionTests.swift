@@ -1,4 +1,5 @@
 import Testing
+import MicroSwiftLexerGen
 
 @testable import MicroSwiftTensorCore
 
@@ -81,4 +82,84 @@ struct LiteralExecutionTests {
 
     #expect(result == [2, 2, 0])
   }
+
+  @Test
+  func compiledPageLiteralMasksOutTailBeyondValidLen() throws {
+    let artifact = try makeLiteralArtifactRuntime()
+    let bytes = Array("abc==".utf8)
+    let bucket = PageBucket(byteCapacity: Int32(bytes.count))
+    let compiled = CompiledPageInput(
+      bytes: bytes,
+      validLen: 4,
+      baseOffset: 0,
+      bucket: bucket,
+      artifact: artifact
+    )
+
+    let tensor = LiteralExecution.evaluateLiteral(
+      compiledPage: compiled,
+      literalBytes: Array("==".utf8)
+    )
+
+    #expect(tensor.asArray(UInt16.self) == [0, 0, 0, 0, 0])
+  }
+
+  @Test
+  func shiftedByteTensorPadsWithNeutralTail() throws {
+    let artifact = try makeLiteralArtifactRuntime()
+    let bytes = Array("abcd".utf8)
+    let bucket = PageBucket(byteCapacity: Int32(bytes.count))
+    let compiled = CompiledPageInput(
+      bytes: bytes,
+      validLen: Int32(bytes.count),
+      baseOffset: 0,
+      bucket: bucket,
+      artifact: artifact
+    )
+
+    let shifted = compiled.shiftedByteTensor(by: 2).asArray(UInt8.self)
+    #expect(shifted == [UInt8(ascii: "c"), UInt8(ascii: "d"), 0, 0])
+  }
+
+  @Test
+  func literalBucketTensorPreservesRuleOrdering() throws {
+    let artifact = try makeLiteralArtifactRuntime()
+    let bytes = Array("==!=".utf8)
+    let bucket = PageBucket(byteCapacity: Int32(bytes.count))
+    let compiled = CompiledPageInput(
+      bytes: bytes,
+      validLen: Int32(bytes.count),
+      baseOffset: 0,
+      bucket: bucket,
+      artifact: artifact
+    )
+
+    let candidates = LiteralExecution.evaluateLiteralBucket(
+      compiledPage: compiled,
+      rules: [
+        (ruleIndex: 10, literalBytes: Array("==".utf8)),
+        (ruleIndex: 11, literalBytes: Array("!=".utf8)),
+      ]
+    )
+
+    #expect(candidates.map(\.ruleIndex) == [10, 11])
+    #expect(candidates[0].candLenTensor.asArray(UInt16.self) == [2, 0, 0, 0])
+    #expect(candidates[1].candLenTensor.asArray(UInt16.self) == [0, 0, 2, 0])
+  }
+}
+
+private func makeLiteralArtifactRuntime() throws -> ArtifactRuntime {
+  let declared = microSwiftV0.declare()
+  let normalized = DeclaredSpec.normalize(declared)
+  let validated = try NormalizedSpec.validate(normalized)
+  let byteClasses = validated.buildByteClasses()
+  let classSets = validated.buildClassSets(using: byteClasses)
+  let classified = try validated.classifyRules(byteClasses: byteClasses, classSets: classSets)
+  let artifact = try ArtifactSerializer.build(
+    classified: classified,
+    byteClasses: byteClasses,
+    classSets: classSets,
+    generatorVersion: "test"
+  )
+  return try ArtifactLoader.load(artifact)
 }

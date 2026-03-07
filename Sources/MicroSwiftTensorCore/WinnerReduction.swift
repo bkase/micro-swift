@@ -1,3 +1,4 @@
+import MLX
 import MicroSwiftLexerGen
 
 public enum WinnerReduction {
@@ -8,6 +9,7 @@ public enum WinnerReduction {
     public let priorityRank: UInt16
     public let mode: UInt8
     public let candLen: [UInt16]
+    public let candLenTensor: MLXArray?
 
     public init(
       ruleID: UInt16,
@@ -21,6 +23,35 @@ public enum WinnerReduction {
       self.priorityRank = priorityRank
       self.mode = mode
       self.candLen = candLen
+      self.candLenTensor = nil
+    }
+
+    public init(
+      ruleID: UInt16,
+      tokenKindID: UInt16,
+      priorityRank: UInt16,
+      mode: UInt8,
+      candLenTensor: MLXArray
+    ) {
+      self.ruleID = ruleID
+      self.tokenKindID = tokenKindID
+      self.priorityRank = priorityRank
+      self.mode = mode
+      self.candLen = []
+      self.candLenTensor = candLenTensor
+    }
+
+    public func hostCandLen(pageSize: Int) -> [UInt16] {
+      if !candLen.isEmpty {
+        precondition(candLen.count == pageSize, "RuleCandidate candLen count must equal pageSize")
+        return candLen
+      }
+      guard let candLenTensor else {
+        return Array(repeating: 0, count: pageSize)
+      }
+      let values = candLenTensor.asType(.uint16).asArray(UInt16.self)
+      precondition(values.count == pageSize, "RuleCandidate candLen tensor count must equal pageSize")
+      return values
     }
   }
 
@@ -37,12 +68,7 @@ public enum WinnerReduction {
     }
 
     var levels = candidates.map { candidate -> [WinnerTuple] in
-      precondition(
-        candidate.candLen.count == pageSize,
-        "RuleCandidate candLen count must equal pageSize"
-      )
-
-      return candidate.candLen.map { len in
+      candidate.hostCandLen(pageSize: pageSize).map { len in
         if len == 0 {
           return .empty
         }

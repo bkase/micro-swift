@@ -44,13 +44,11 @@ public enum TensorLexer {
 
     // Phase A: Byte classification
     let classIDs = hostView.classIDs
-    let validMask = hostView.validMask
 
     // Phase B: Per-rule candidate generation (using RuleBuckets)
     let candidates = makeFastCandidates(
-      bytes: hostView.bytes,
-      classIDs: classIDs,
-      validMask: validMask,
+      compiledPage: compiledPage,
+      hostView: hostView,
       validLen: Int32(boundedValidLen),
       artifact: artifact
     )
@@ -89,6 +87,40 @@ public enum TensorLexer {
   }
 
   fileprivate static func makeFastCandidates(
+    compiledPage: CompiledPageInput,
+    hostView: HostPageExecutionView,
+    validLen: Int32,
+    artifact: ArtifactRuntime
+  ) -> [WinnerReduction.RuleCandidate] {
+    makeFastCandidates(
+      literalPage: compiledPage,
+      bytes: hostView.bytes,
+      classIDs: hostView.classIDs,
+      validMask: hostView.validMask,
+      validLen: validLen,
+      artifact: artifact
+    )
+  }
+
+  fileprivate static func makeFastCandidates(
+    bytes: [UInt8],
+    classIDs: [UInt8],
+    validMask: [Bool],
+    validLen: Int32,
+    artifact: ArtifactRuntime
+  ) -> [WinnerReduction.RuleCandidate] {
+    makeFastCandidates(
+      literalPage: nil,
+      bytes: bytes,
+      classIDs: classIDs,
+      validMask: validMask,
+      validLen: validLen,
+      artifact: artifact
+    )
+  }
+
+  private static func makeFastCandidates(
+    literalPage: CompiledPageInput?,
     bytes: [UInt8],
     classIDs: [UInt8],
     validMask: [Bool],
@@ -103,19 +135,33 @@ public enum TensorLexer {
       guard let rules = buckets.literalBuckets[literalLength] else { continue }
       for rule in rules {
         guard case .literal(let literalBytes) = rule.plan else { continue }
-        let candLen = LiteralExecution.evaluateLiteral(
-          bytes: bytes,
-          validMask: validMask,
-          literalBytes: literalBytes
-        )
-        candidates.append(
-          WinnerReduction.RuleCandidate(
+        let candidate: WinnerReduction.RuleCandidate
+        if let literalPage {
+          candidate = WinnerReduction.RuleCandidate(
             ruleID: rule.ruleID,
             tokenKindID: rule.tokenKindID,
             priorityRank: rule.priorityRank,
             mode: modeByte(rule.mode),
-            candLen: candLen
+            candLenTensor: LiteralExecution.evaluateLiteral(
+              compiledPage: literalPage,
+              literalBytes: literalBytes
+            )
           )
+        } else {
+          candidate = WinnerReduction.RuleCandidate(
+            ruleID: rule.ruleID,
+            tokenKindID: rule.tokenKindID,
+            priorityRank: rule.priorityRank,
+            mode: modeByte(rule.mode),
+            candLen: LiteralExecution.evaluateLiteral(
+              bytes: bytes,
+              validMask: validMask,
+              literalBytes: literalBytes
+            )
+          )
+        }
+        candidates.append(
+          candidate
         )
       }
     }
