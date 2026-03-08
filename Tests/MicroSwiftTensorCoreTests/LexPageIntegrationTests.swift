@@ -121,6 +121,7 @@ struct LexPageIntegrationTests {
     let countsBeforeTransport = TransportEmitter.hostMaterializationCounts()
     #expect(totalRows > 0)
     #expect(countsBeforeTransport.packedRows == 0)
+    #expect(countsBeforeTransport.unknownMask == 0)
 
     let materialized = TensorLexer.materialize(
       deviceResult: TensorLexer.lexPageDevice(
@@ -136,6 +137,38 @@ struct LexPageIntegrationTests {
 
     let countsAfterTransport = TransportEmitter.hostMaterializationCounts()
     #expect(countsAfterTransport.packedRows == 1)
+    #expect(countsAfterTransport.unknownMask == 1)
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
+  func endToEndLexPageStillMaterializesDiagnosticsForUnknownBytes() throws {
+    let runtime = try makeMicroSwiftRuntime()
+    let bytes = Array("@".utf8)
+    let bucket =
+      PageBucket.bucket(for: Int32(bytes.count))
+      ?? PageBucket(byteCapacity: Int32(max(bytes.count, 1)))
+    let compiledPage = CompiledPageInput(
+      bytes: bytes,
+      validLen: Int32(bytes.count),
+      baseOffset: 0,
+      bucket: bucket,
+      artifact: runtime
+    )
+    let options = LexOptions(emitSkipTokens: false, runtimeProfile: .v1Fallback)
+
+    TransportEmitter.resetHostMaterializationCounts()
+
+    let result = TensorLexer.lexPage(
+      compiledPage: compiledPage,
+      artifact: runtime,
+      options: options
+    )
+
+    #expect(result.errorSpans == [ErrorSpan(start: 0, end: 1)])
+
+    let counts = TransportEmitter.hostMaterializationCounts()
+    #expect(counts.unknownMask == 1)
+    #expect(counts.packedRows == 1)
   }
 
   private func makeMicroSwiftRuntime() throws -> ArtifactRuntime {
