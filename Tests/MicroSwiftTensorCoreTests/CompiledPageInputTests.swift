@@ -112,6 +112,68 @@ struct CompiledPageInputTests {
     #expect(finalView.validMask.prefix(3).allSatisfy { $0 })
     #expect(finalView.validMask[3] == false)
   }
+
+  @Test(.enabled(if: requiresMLXEval))
+  func compiledPageReuseHoistsBenchmarkPageConstruction() throws {
+    let runtime = try makeMicroSwiftRuntime()
+    let bytes = Array("func f() { let x = 1 }\n".utf8)
+    let bucket =
+      PageBucket.bucket(for: Int32(bytes.count))
+      ?? PageBucket(byteCapacity: Int32(max(bytes.count, 1)))
+    let options = LexOptions(runtimeProfile: .v1Fallback, useGPUReduction: true)
+
+    CompiledPageInput.resetConstructionCount()
+
+    let compiledPage = CompiledPageInput(
+      bytes: bytes,
+      validLen: Int32(bytes.count),
+      baseOffset: 0,
+      bucket: bucket,
+      artifact: runtime
+    )
+
+    for _ in 0..<2 {
+      _ = TensorLexer.lexPage(compiledPage: compiledPage, artifact: runtime, options: options)
+    }
+    for _ in 0..<3 {
+      _ = TensorLexer.lexPage(compiledPage: compiledPage, artifact: runtime, options: options)
+    }
+
+    #expect(CompiledPageInput.constructionCount() == 1)
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
+  func compiledPagePathMatchesByteEntryPointForBenchmarkInputs() throws {
+    let runtime = try makeMicroSwiftRuntime()
+    let bytes = Array("func fib(_ n: Int) -> Int { n < 2 ? n : fib(n - 1) + fib(n - 2) }\n".utf8)
+    let bucket =
+      PageBucket.bucket(for: Int32(bytes.count))
+      ?? PageBucket(byteCapacity: Int32(max(bytes.count, 1)))
+    let options = LexOptions(runtimeProfile: .v1Fallback, useGPUReduction: true)
+
+    let compiledPage = CompiledPageInput(
+      bytes: bytes,
+      validLen: Int32(bytes.count),
+      baseOffset: 0,
+      bucket: bucket,
+      artifact: runtime
+    )
+
+    let bytePath = TensorLexer.lexPage(
+      bytes: bytes,
+      validLen: Int32(bytes.count),
+      baseOffset: 0,
+      artifact: runtime,
+      options: options
+    )
+    let compiledPath = TensorLexer.lexPage(
+      compiledPage: compiledPage,
+      artifact: runtime,
+      options: options
+    )
+
+    #expect(compiledPath == bytePath)
+  }
 }
 
 private struct CompiledPageLCRNG {

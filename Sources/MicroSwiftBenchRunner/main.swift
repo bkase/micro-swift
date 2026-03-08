@@ -110,18 +110,29 @@ func benchM4GPU(bytes: [UInt8], runtime: ArtifactRuntime, warmup: Int, measure: 
   let gpuOptions = LexOptions(runtimeProfile: .v1Fallback, useGPUReduction: true)
 
   return Device.withDefaultDevice(.gpu) {
+    let bucket =
+      PageBucket.bucket(for: validLen)
+      ?? PageBucket(byteCapacity: Int32(max(validLen, 1)))
+    let compiledPage = CompiledPageInput(
+      bytes: bytes,
+      validLen: validLen,
+      baseOffset: 0,
+      bucket: bucket,
+      artifact: runtime
+    )
+
     for _ in 0..<warmup {
-      _ = TensorLexer.lexPage(
-        bytes: bytes, validLen: validLen, baseOffset: 0,
-        artifact: runtime, options: gpuOptions)
+      _ = TensorLexer.lexPage(compiledPage: compiledPage, artifact: runtime, options: gpuOptions)
     }
 
     let start = DispatchTime.now().uptimeNanoseconds
     var tokenCount: Int32 = 0
     for _ in 0..<measure {
       let result = TensorLexer.lexPage(
-        bytes: bytes, validLen: validLen, baseOffset: 0,
-        artifact: runtime, options: gpuOptions)
+        compiledPage: compiledPage,
+        artifact: runtime,
+        options: gpuOptions
+      )
       tokenCount += result.rowCount
     }
     let elapsed = DispatchTime.now().uptimeNanoseconds - start

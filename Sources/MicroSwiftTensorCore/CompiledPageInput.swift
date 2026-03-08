@@ -33,6 +33,7 @@ public struct HostPageExecutionView: Sendable {
 
 public struct CompiledPageInput {
   private static let hostExtractionCounter = HostExtractionCounter()
+  private static let constructionCounter = ConstructionCounter()
 
   public let bucket: PageBucket
   public let validLen: Int32
@@ -102,6 +103,8 @@ public struct CompiledPageInput {
     self.byteTensor = builtByteTensor
     self.validMaskTensor = builtValidMask
     self.classIDTensor = builtClassIDs
+
+    Self.recordConstruction()
   }
 
   public init(preparedPage: PreparedPage, artifact: ArtifactRuntime) {
@@ -183,6 +186,14 @@ public struct CompiledPageInput {
     hostExtractionCounter.reset()
   }
 
+  public static func resetConstructionCount() {
+    constructionCounter.reset()
+  }
+
+  public static func constructionCount() -> Int {
+    constructionCounter.value()
+  }
+
   public static func hostExtractionCounts() -> HostExtractionCounts {
     let finalPackedRows = hostExtractionCounter.count(for: .finalPackedRows)
     let testInspection = hostExtractionCounter.count(for: .testInspection)
@@ -196,6 +207,10 @@ public struct CompiledPageInput {
 
   private static func recordHostExtraction(_ boundary: HostExtractionBoundary) {
     hostExtractionCounter.record(boundary)
+  }
+
+  private static func recordConstruction() {
+    constructionCounter.record()
   }
 }
 
@@ -220,5 +235,29 @@ private final class HostExtractionCounter: @unchecked Sendable {
     let value = counts[boundary] ?? 0
     lock.unlock()
     return value
+  }
+}
+
+private final class ConstructionCounter: @unchecked Sendable {
+  private let lock = NSLock()
+  private var count = 0
+
+  func reset() {
+    lock.lock()
+    count = 0
+    lock.unlock()
+  }
+
+  func record() {
+    lock.lock()
+    count += 1
+    lock.unlock()
+  }
+
+  func value() -> Int {
+    lock.lock()
+    let snapshot = count
+    lock.unlock()
+    return snapshot
   }
 }
