@@ -1,3 +1,4 @@
+import MLX
 import Testing
 
 @testable import MicroSwiftTensorCore
@@ -145,6 +146,59 @@ struct TransportEmitterTests {
       unpacked == [
         LogicalToken(kind: 7, flags: 3, startByte: 101, endByte: 103, payloadA: 0, payloadB: 0),
         LogicalToken(kind: 8, flags: 0, startByte: 104, endByte: 105, payloadA: 0, payloadB: 0),
+      ])
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
+  func deviceBackedPageLexResultDefersHostMaterialization() {
+    PageLexResult.resetHostMaterializationCounts()
+
+    let result = PageLexResult(
+      packedRowsTensor: MLXArray([
+        PackedToken.pack(localStart: 1, length: 2, tokenKindID: 7, flags: 3),
+        0,
+      ]),
+      rowCount: 1
+    )
+
+    let countsBeforeExtraction = PageLexResult.hostMaterializationCounts()
+    #expect(countsBeforeExtraction.finalTransport == 0)
+    #expect(countsBeforeExtraction.testInspection == 0)
+
+    _ = result.mlxPackedRows()
+
+    let countsAfterDeviceAccess = PageLexResult.hostMaterializationCounts()
+    #expect(countsAfterDeviceAccess.finalTransport == 0)
+    #expect(countsAfterDeviceAccess.testInspection == 0)
+
+    let rows = result.hostPackedRows()
+    #expect(rows[0] != 0)
+
+    let countsAfterHostExtraction = PageLexResult.hostMaterializationCounts()
+    #expect(countsAfterHostExtraction.finalTransport == 1)
+    #expect(countsAfterHostExtraction.testInspection == 0)
+
+    _ = result.hostPackedRows()
+    let countsAfterRepeatedExtraction = PageLexResult.hostMaterializationCounts()
+    #expect(countsAfterRepeatedExtraction.finalTransport == 1)
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
+  func deviceBackedPageLexResultStillSupportsEqualityAndUnpacking() {
+    let packedRows = [
+      PackedToken.pack(localStart: 2, length: 3, tokenKindID: 21, flags: 0),
+      0,
+    ]
+    let hostResult = PageLexResult(packedRows: packedRows, rowCount: 1)
+    let deviceResult = PageLexResult(
+      packedRowsTensor: MLXArray(packedRows),
+      rowCount: 1
+    )
+
+    #expect(deviceResult == hostResult)
+    #expect(
+      TokenUnpacker.unpack(result: deviceResult, baseOffset: 10) == [
+        LogicalToken(kind: 21, flags: 0, startByte: 12, endByte: 15, payloadA: 0, payloadB: 0)
       ])
   }
 
