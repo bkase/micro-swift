@@ -332,4 +332,72 @@ theorem cumminRev_length (xs : List Nat) (s : Nat) :
     (cumminRev xs s).length = xs.length + 1 := by
   simp [cumminRev, List.length_scanr]
 
+/-! ### Shifted run length (for head-tail evaluation) -/
+
+/-- When we shift breakPositions left by 1, the foldr over the dropped list
+    still reduces to foldr_break_eq but at i+1 instead of i. -/
+private theorem shiftLeft_drop_foldr (bp : List Nat) (n : Nat) (i : Nat)
+    (h_bp_len : bp.length = n) (hi : i < n) :
+    ((shiftLeft bp 1 n).drop i).foldr min n =
+    (bp.drop (i + 1)).foldr min n := by
+  simp only [shiftLeft]
+  -- shiftLeft bp 1 n = bp.drop 1 ++ List.replicate 1 n
+  -- (bp.drop 1 ++ [n]).drop i
+  have h_drop1_len : (bp.drop 1).length = n - 1 := by simp [h_bp_len]
+  -- i < n, so i ≤ n - 1 = (bp.drop 1).length
+  have h_i_le : i ≤ (bp.drop 1).length := by omega
+  rw [List.drop_append_of_le_length h_i_le]
+  -- Now: (bp.drop 1).drop i ++ [n] = bp.drop (1+i) ++ [n]
+  rw [List.drop_drop, show 1 + i = i + 1 from Nat.add_comm 1 i]
+  -- foldr min n (bp.drop (i+1) ++ [n]) = foldr min n (bp.drop (i+1))
+  -- because appending [n] doesn't change foldr min n
+  rw [List.foldr_append]
+  -- The RHS fold produces min n n = n as initial value
+  change (List.drop (i + 1) bp).foldr min (min n n) = _
+  rw [Nat.min_self]
+
+/-- Shifted variant of vec_runLength_at for head-tail evaluation.
+    With shiftLeft of breakPositions by 1, the run length at position i
+    equals 1 + runLenFrom mask (i+1). -/
+theorem vec_runLength_at_shifted (mask : List Bool) (i : Nat)
+    (hi : i < mask.length) :
+    let n := mask.length
+    let isBreak := elemNot mask
+    let breakPositions := which isBreak (arange n) (full n n)
+    let shiftedBreaks := shiftLeft breakPositions 1 n
+    let nextBreakPos := cumminRev shiftedBreaks n
+    let runLength := elemSub nextBreakPos (arange n)
+    runLength.getD i 0 = 1 + runLenFrom mask (i + 1) := by
+  simp only []
+  set bp := which (elemNot mask) (arange mask.length) (full mask.length mask.length)
+  have h_bp_len : bp.length = mask.length := bp_length mask
+  -- shiftLeft length
+  have h_sl_len : (shiftLeft bp 1 mask.length).length = mask.length := by
+    simp only [shiftLeft, List.length_append, List.length_drop, List.length_replicate, h_bp_len]
+    omega
+  -- elemSub getD
+  simp only [elemSub, List.getD, List.getElem?_zipWith, cumminRev]
+  -- scanr getD → foldr drop
+  have h_scanr_len : (List.scanr min mask.length (shiftLeft bp 1 mask.length)).length =
+      (shiftLeft bp 1 mask.length).length + 1 := List.length_scanr ..
+  have h_i_lt_scanr : i < (List.scanr min mask.length (shiftLeft bp 1 mask.length)).length := by
+    omega
+  rw [List.getElem?_eq_getElem h_i_lt_scanr]
+  simp only [arange]
+  rw [List.getElem?_eq_getElem (by simp; exact hi)]
+  simp only [List.getElem_range]
+  -- scanr value = foldr of drop
+  have h_scanr_val : (List.scanr min mask.length (shiftLeft bp 1 mask.length))[i] =
+      ((shiftLeft bp 1 mask.length).drop i).foldr min mask.length := by
+    have := scanr_getD_eq_foldr_drop (shiftLeft bp 1 mask.length) mask.length i (by omega)
+    simp only [List.getD, List.getElem?_eq_getElem h_i_lt_scanr] at this
+    simpa using this
+  simp only [h_scanr_val]
+  -- Reduce shifted foldr to unshifted foldr at i+1
+  rw [shiftLeft_drop_foldr bp mask.length i h_bp_len hi]
+  -- Use foldr_break_eq at i+1
+  rw [foldr_break_eq mask (i + 1) (by omega)]
+  simp only [Option.getD]
+  omega
+
 end RunLenHelpers

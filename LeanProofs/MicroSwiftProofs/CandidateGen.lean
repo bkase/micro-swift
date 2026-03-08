@@ -921,6 +921,62 @@ Verified by `#eval` on test vectors including:
 - Head subset of tail, invalid mask gaps, head at end, multiple tokens
 -/
 
+set_option linter.unusedSimpArgs false in
+/-- Bridge: the elaborated scalar head-tail foldl equals 1 + runLenFrom isTail (i+1).
+    The scalar extension loop folds over offsets 0..pageLen-i-2, checking tail membership
+    at position i+1+offset. This is exactly foldStep isTail (i+1) with initial (true,1). -/
+private lemma ht_elaborated_foldl_eq_runLen
+    (validMask : List Bool) (classIDs : List Nat)
+    (tailSetID : Nat) (membership : ClassSetMembership)
+    (h_len : classIDs.length = validMask.length)
+    (i : Nat) (hi : i < classIDs.length)
+    (isTail : List Bool)
+    (h_isTail : isTail = List.zipWith and validMask (classIDs.map (membership tailSetID))) :
+    (List.foldl
+      (fun x offset =>
+        if (!x.fst) = true then (false, x.snd)
+        else
+          if ((match validMask[i + 1 + offset]? with | some true => true | x => false) &&
+             membership tailSetID (match classIDs[i + 1 + offset]? with | some c => c | none => 0)) = true
+          then (true, x.snd + 1) else (false, x.snd))
+      (true, 1) (List.range (classIDs.length - i - 1))).2 =
+    1 + RunLenHelpers.runLenFrom isTail (i + 1) := by
+  have h_funs_eq : (fun x offset =>
+        if (!x.fst) = true then (false, x.snd)
+        else
+          if ((match validMask[i + 1 + offset]? with | some true => true | x => false) &&
+             membership tailSetID (match classIDs[i + 1 + offset]? with | some c => c | none => 0)) = true
+          then (true, x.snd + 1) else (false, x.snd)) =
+      RunLenHelpers.foldStep (List.zipWith and validMask (classIDs.map (membership tailSetID))) (i + 1) := by
+    funext ⟨a, b⟩ offset
+    simp only [RunLenHelpers.foldStep, Bool.not_eq_true',
+      List.getD, List.getElem?_zipWith, List.getElem?_map]
+    cases a
+    · simp
+    · simp only [ite_false, Bool.true_eq_false, Bool.not_true, Bool.false_eq_true]
+      cases h1 : validMask[i + 1 + offset]? with
+      | none => simp
+      | some v =>
+        cases h2 : classIDs[i + 1 + offset]? with
+        | none =>
+          exfalso
+          have hv : i + 1 + offset < validMask.length := by
+            by_contra hc; push_neg at hc
+            rw [List.getElem?_eq_none (by omega)] at h1; exact Option.noConfusion h1
+          have hc : ¬(i + 1 + offset < classIDs.length) := by
+            intro h; rw [List.getElem?_eq_getElem h] at h2; exact Option.noConfusion h2
+          omega
+        | some c => cases v <;> simp [Bool.and_eq_true]
+  rw [h_funs_eq]
+  subst h_isTail
+  set it := List.zipWith and validMask (classIDs.map (membership tailSetID))
+  have h_it_len : it.length = classIDs.length := by
+    simp [it, List.length_zipWith, h_len]
+  have h_eq : i + 1 + (classIDs.length - i - 1) = it.length := by omega
+  rw [RunLenHelpers.fold_range_eq_runLen it (classIDs.length - i - 1) (i + 1) 1 h_eq]
+
+set_option maxHeartbeats 3200000 in
+set_option linter.unusedSimpArgs false in
 /-- Core semantic equivalence for head-tail evaluation.
     The proof structure mirrors the class-run case, with the break mask
     excluding both head and tail positions (since the head position itself
@@ -931,7 +987,108 @@ private lemma headtail_semantic
     (h_len : classIDs.length = validMask.length) :
     vectorizedHeadTailEval classIDs validMask headSetID tailSetID membership =
     scalarHeadTailEval classIDs validMask headSetID tailSetID membership := by
-  sorry
+  open RunLenHelpers MLX in
+  unfold vectorizedHeadTailEval scalarHeadTailEval
+  simp only []
+  set isTail := List.zipWith and validMask (classIDs.map (membership tailSetID)) with isTail_def
+  set isHead := List.zipWith and validMask (classIDs.map (membership headSetID)) with isHead_def
+  have h_it_len : isTail.length = classIDs.length := by
+    rw [isTail_def]; simp [List.length_zipWith, h_len]
+  have h_ih_len : isHead.length = classIDs.length := by
+    rw [isHead_def]; simp [List.length_zipWith, h_len]
+  -- Length lemmas for vectorized layers
+  have h_enot_sr_len : (elemNot (shiftRight isTail 1 false)).length = max 1 classIDs.length := by
+    rw [elemNot_length, shiftRight_length, h_it_len]
+  have h_isStart_len : (elemAnd isHead (elemNot (shiftRight isTail 1 false))).length
+      = classIDs.length := by
+    simp only [elemAnd, List.length_zipWith, h_ih_len, h_enot_sr_len]; omega
+  have h_rl_len : (elemSub (cumminRev (shiftLeft (which (elemNot isTail) (arange classIDs.length)
+      (full classIDs.length classIDs.length)) 1 classIDs.length) classIDs.length)
+      (arange classIDs.length)).length = classIDs.length := by
+    simp only [elemSub, List.length_zipWith, cumminRev, List.length_scanr,
+      shiftLeft, List.length_append, List.length_drop,
+      which, List.length_map, List.length_zip, elemNot, arange, List.length_range,
+      full, List.length_replicate, h_it_len]; omega
+  have h_vec_len : (which (elemAnd isHead (elemNot (shiftRight isTail 1 false)))
+      (elemSub (cumminRev (shiftLeft (which (elemNot isTail) (arange classIDs.length)
+        (full classIDs.length classIDs.length)) 1 classIDs.length) classIDs.length)
+        (arange classIDs.length))
+      (full classIDs.length 0)).length = classIDs.length := by
+    rw [which_length _ _ _ (by rw [h_isStart_len, h_rl_len]) (by rw [h_rl_len, full_length])]
+    exact h_isStart_len
+  apply List.ext_getElem
+  · simp [h_vec_len]
+  · intro i h1 h2
+    have hi : i < classIDs.length := by rw [h_vec_len] at h1; exact h1
+    rw [List.getElem_map, List.getElem_range]
+    -- Convert LHS getElem to getD
+    have h_getElem_eq_getD : ∀ (l : List Nat) (h' : i < l.length),
+        l[i]'h' = l.getD i 0 := fun l h' => by
+      simp [List.getD, List.getElem?_eq_getElem h']
+    rw [h_getElem_eq_getD _ h1]
+    -- Unfold vectorized layers on LHS
+    rw [which_getD_nat _ _ _ i (by rw [h_isStart_len, h_rl_len])
+      (by rw [h_rl_len, full_length]) (by rw [h_isStart_len]; omega)]
+    rw [full_getD _ 0 0 i hi]
+    rw [elemAnd_getD _ _ i (by rw [h_ih_len, h_enot_sr_len]; omega) (by rw [h_ih_len]; omega)]
+    rw [elemNot_getD _ i (by rw [shiftRight_length, h_it_len]; omega)]
+    rw [shiftRight_getD isTail i (by rw [h_it_len]; omega)]
+    -- runLength at position i = 1 + runLenFrom isTail (i+1)
+    have h_rl_eq : (elemSub (cumminRev (shiftLeft (which (elemNot isTail) (arange classIDs.length)
+        (full classIDs.length classIDs.length)) 1 classIDs.length) classIDs.length)
+        (arange classIDs.length)).getD i 0 = 1 + runLenFrom isTail (i + 1) := by
+      rw [show classIDs.length = isTail.length from h_it_len.symm]
+      exact vec_runLength_at_shifted isTail i (by omega)
+    rw [h_rl_eq]
+    -- Normalize getElem? to getElem at position i on RHS
+    simp only [List.getElem?_eq_getElem (show i < validMask.length from by omega),
+               List.getElem?_eq_getElem hi]
+    -- Now case split on validMask[i] and membership headSetID
+    cases h_vm : (validMask[i]'(by omega))
+    · -- validMask[i] = false => isHead[i] = false => output 0
+      have h_ih_f : isHead.getD i false = false := by
+        rw [isHead_def]; rw [inBody_getD validMask classIDs (membership headSetID) i h_len hi]
+        simp [List.getD, List.getElem?_eq_getElem (show i < validMask.length from by omega), h_vm]
+      rw [h_ih_f]; simp only [Bool.false_and, ite_false]; simp [h_vm]
+    · -- validMask[i] = true
+      cases h_memH : membership headSetID (classIDs[i]'hi)
+      · -- membership headSetID = false => isHead[i] = false
+        have h_ih_f : isHead.getD i false = false := by
+          rw [isHead_def]; rw [inBody_getD validMask classIDs (membership headSetID) i h_len hi]
+          simp [List.getD, List.getElem?_eq_getElem (show i < validMask.length from by omega),
+                List.getElem?_eq_getElem hi, h_vm, h_memH]
+        rw [h_ih_f]; simp only [Bool.false_and, ite_false]; simp [h_vm, h_memH]
+      · -- isHead[i] = true
+        have h_ih_t : isHead.getD i false = true := by
+          rw [isHead_def]; rw [inBody_getD validMask classIDs (membership headSetID) i h_len hi]
+          simp [List.getD, List.getElem?_eq_getElem (show i < validMask.length from by omega),
+                List.getElem?_eq_getElem hi, h_vm, h_memH]
+        simp only [h_vm, h_memH, h_ih_t, Bool.true_and, Bool.and_true]
+        -- Now need to handle prevIsTail
+        cases i with
+        | zero =>
+          -- i = 0: prevIsTail = false, start condition = isHead
+          simp only [ite_true]
+          -- Rewrite foldl to runLenFrom
+          rw [ht_elaborated_foldl_eq_runLen validMask classIDs tailSetID membership h_len 0 hi
+              isTail isTail_def]
+        | succ n =>
+          simp only [show n + 1 ≠ 0 from Nat.succ_ne_zero n, ite_false,
+                     show n + 1 - 1 = n from Nat.succ_sub_one n]
+          have hn : n < classIDs.length := by omega
+          -- Bridge: the scalar prevIsTail matches isTail.getD n false
+          have h_prev_it := cr_inBody_matches validMask classIDs tailSetID membership h_len n hn
+          rw [show List.zipWith and validMask (classIDs.map (membership tailSetID)) = isTail
+            from isTail_def.symm] at h_prev_it
+          simp only [h_prev_it]
+          cases h_nd : (!isTail.getD n false)
+          · -- prevIsTail = true, so !prevIsTail = false, isHead && false = false, output 0
+            simp [h_nd, Bool.and_eq_true, decide_eq_true_eq]
+          · -- prevIsTail = false, start position
+            simp only [h_nd, Bool.and_true, ite_true]
+            -- Rewrite foldl to runLenFrom
+            rw [ht_elaborated_foldl_eq_runLen validMask classIDs tailSetID membership h_len
+                (n + 1) hi isTail isTail_def]
 
 theorem headtail_eval_equiv (classIDs : List Nat) (validMask : List Bool)
     (headSetID tailSetID : Nat) (membership : ClassSetMembership)
@@ -1076,15 +1233,161 @@ Verified by `#eval` on test vectors with stopSetID = none including:
 - Prefix with no body extension
 -/
 
-/-- Core semantic equivalence for prefixed evaluation (stopSetID = none case).
+/-! ### Prefixed helper lemmas -/
 
-    Proof sketch:
-    1. Both use the same shifted-comparison technique for prefix matching.
-    2. For body extension, the vectorized `cumminRev` approach propagates
-       break and invalid boundaries backward, matching the scalar reverse scans.
-    3. With `stopSetID = none`, the stop boundary is `full n n` (no effect),
-       so `combinedEnd = elemMin nextBodyBreak nextInvalid`, which matches
-       the scalar `min bodyEndByBreak bodyEndByInvalid`. -/
+/-- A foldr that builds a "next-break" list from a mask satisfies the
+    runLenFrom recurrence. Covers both `nextBreak` and `nextInvalid`. -/
+private lemma foldr_next_acc (mask : List Bool) (d k : Nat)
+    (hdk : k + d = mask.length) :
+    let n := mask.length
+    let acc_k := (List.range' k d).foldr (fun i acc =>
+      (if mask.getD i false then acc.getD 0 n else i) :: acc) ([] : List Nat)
+    acc_k.length = d ∧
+    (∀ j, k ≤ j → j < n → acc_k.getD (j - k) n = j + RunLenHelpers.runLenFrom mask j) := by
+  induction d generalizing k with
+  | zero =>
+    dsimp only; simp [List.range']
+    intro j hj1 hj2; omega
+  | succ m ih =>
+    dsimp only
+    rw [List.range'_succ]
+    simp only [List.foldr_cons]
+    set n := mask.length
+    have hk_lt : k < n := by omega
+    set acc_k1 := (List.range' (k + 1) m).foldr (fun i acc =>
+      (if mask.getD i false then acc.getD 0 n else i) :: acc) ([] : List Nat)
+    have ih_inst := ih (k + 1) (by omega)
+    dsimp only at ih_inst
+    obtain ⟨h_len_k1, h_val_k1⟩ := ih_inst
+    have h_len_k1' : acc_k1.length = m := h_len_k1
+    refine ⟨by simp [List.length_cons, h_len_k1'], ?_⟩
+    intro j hj1 hj2
+    by_cases hjk : j = k
+    · -- j = k: first element
+      rw [hjk, show k - k = 0 from Nat.sub_self k]
+      simp only [List.getD_cons_zero]
+      cases h_mask : mask.getD k false
+      · -- mask[k] = false → break at k
+        simp only [h_mask, Bool.false_eq_true, ↓reduceIte]
+        have : mask[k] = false := by
+          simp only [List.getD, List.getElem?_eq_getElem hk_lt] at h_mask; exact h_mask
+        rw [RunLenHelpers.runLenFrom_false mask k hk_lt this]; omega
+      · -- mask[k] = true → continue
+        simp only [h_mask, ite_true]
+        by_cases hk1_lt : k + 1 < n
+        · have hval := h_val_k1 (k + 1) le_rfl hk1_lt
+          simp only [show k + 1 - (k + 1) = 0 from Nat.sub_self _, List.getD_cons_zero] at hval
+          -- acc_k1.getD 0 n = (k+1) + runLenFrom mask (k+1)
+          rw [hval]
+          have : mask[k] = true := by
+            simp only [List.getD, List.getElem?_eq_getElem hk_lt] at h_mask; exact h_mask
+          rw [RunLenHelpers.runLenFrom_true mask k hk_lt this]; omega
+        · -- k + 1 ≥ n: acc_k1 is empty
+          have hm0 : m = 0 := by omega
+          have h_empty : acc_k1 = [] := by
+            subst hm0; simp [acc_k1, List.range']
+          rw [show acc_k1.getD 0 n = n from by simp [List.getD, h_empty]]
+          have : mask[k] = true := by
+            simp only [List.getD, List.getElem?_eq_getElem hk_lt] at h_mask; exact h_mask
+          rw [RunLenHelpers.runLenFrom_true mask k hk_lt this]
+          rw [RunLenHelpers.runLenFrom_ge mask (k + 1) (by omega)]; omega
+    · -- j > k: tail element
+      rw [show j - k = (j - (k + 1)) + 1 from by omega, List.getD_cons_succ]
+      exact h_val_k1 j (by omega) hj2
+
+/-- The normalized foldr at position j gives j + runLenFrom mask j. -/
+private lemma foldr_next_getD (mask : List Bool) (j : Nat) (hj : j < mask.length) :
+    ((List.range mask.length).foldr (fun i acc =>
+      (if mask.getD i false then acc.getD 0 mask.length else i) :: acc) ([] : List Nat)).getD j mask.length
+    = j + RunLenHelpers.runLenFrom mask j := by
+  have key := (foldr_next_acc mask mask.length 0 (by omega)).2 j (Nat.zero_le _) hj
+  rwa [show List.range' 0 mask.length = List.range mask.length from by
+    simp [List.range_eq_range'], show j - 0 = j from Nat.sub_zero j] at key
+
+/-- nextBreak bodyMask validMask at position j equals j + runLenFrom bodyMask j,
+    provided bodyMask implies validity. -/
+private lemma nextBreak_getD_eq (bodyMask validMask : List Bool)
+    (h_len : bodyMask.length = validMask.length)
+    (h_impl : ∀ j, (hj : j < bodyMask.length) → bodyMask[j] = true →
+      validMask[j]'(h_len ▸ hj) = true)
+    (j : Nat) (hj : j < bodyMask.length) :
+    (nextBreak bodyMask validMask).getD j bodyMask.length
+    = j + RunLenHelpers.runLenFrom bodyMask j := by
+  simp only [nextBreak]
+  -- Show the two-condition foldr (valid && inBody) equals the single-condition foldr (inBody)
+  -- when bodyMask implies validMask
+  suffices h_eq : (fun (i : Nat) (acc : List Nat) =>
+      let valid := match validMask[i]? with | some true => true | _ => false
+      let inBody := match bodyMask[i]? with | some true => true | _ => false
+      let next := match acc[0]? with | some v => v | none => bodyMask.length
+      (if valid && inBody then next else i) :: acc) =
+    (fun (i : Nat) (acc : List Nat) =>
+      (if bodyMask.getD i false then acc.getD 0 bodyMask.length else i) :: acc) by
+    simp only [h_eq]
+    exact foldr_next_getD bodyMask j hj
+  funext i acc
+  have h1 : (match bodyMask[i]? with | some true => true | _ => false) = bodyMask.getD i false := by
+    simp [List.getD]; cases bodyMask[i]? with | none => rfl | some b => cases b <;> rfl
+  have h2 : (match acc[0]? with | some (v : Nat) => v | none => bodyMask.length) = acc.getD 0 bodyMask.length := by
+    simp [List.getD]; cases acc[0]? <;> rfl
+  simp only [h1, h2]
+  by_cases h_bm : bodyMask.getD i false
+  · -- bodyMask[i] = true → validMask[i] = true → valid && inBody = true
+    by_cases h_i : i < bodyMask.length
+    · have h_bm_idx : bodyMask[i] = true := by
+        simp only [List.getD, List.getElem?_eq_getElem h_i] at h_bm; exact h_bm
+      have h_valid_idx := h_impl i h_i h_bm_idx
+      have h_valid : (match validMask[i]? with | some true => true | _ => false) = true := by
+        rw [List.getElem?_eq_getElem (h_len ▸ h_i)]; simp [h_valid_idx]
+      simp [h_valid, h_bm]
+    · simp [List.getD, List.getElem?_eq_none (by omega : bodyMask.length ≤ i)] at h_bm
+  · -- bodyMask[i] = false → inBody = false → condition is false either way
+    have h_bm' : bodyMask.getD i false = false := by
+      cases h : bodyMask.getD i false <;> simp_all
+    -- The goal has getElem?.getD form; convert to getD form
+    simp only [List.getD] at h_bm' h1 h2 ⊢
+    simp [h_bm']
+
+/-- nextInvalid foldr at position j gives j + runLenFrom validMask j. -/
+private lemma nextInvalid_getD_eq (validMask : List Bool) (n : Nat)
+    (h_n : n = validMask.length)
+    (j : Nat) (hj : j < n) :
+    ((List.range n).foldr (fun i acc =>
+      let valid := match validMask[i]? with | some true => true | _ => false
+      let next := match acc[0]? with | some v => v | none => n
+      (if valid then next else i) :: acc) ([] : List Nat)).getD j 0
+    = j + RunLenHelpers.runLenFrom validMask j := by
+  subst h_n
+  -- Show the foldr function is extensionally equal to the canonical form
+  have h_fun_eq : (fun (i : Nat) (acc : List Nat) =>
+      let valid := match validMask[i]? with | some true => true | _ => false
+      let next := match acc[0]? with | some v => v | none => validMask.length
+      (if valid then next else i) :: acc) =
+    (fun (i : Nat) (acc : List Nat) =>
+      (if validMask.getD i false then acc.getD 0 validMask.length else i) :: acc) := by
+    funext i acc
+    have h1 : (match validMask[i]? with | some true => true | _ => false) = validMask.getD i false := by
+      simp [List.getD]; cases validMask[i]? with | none => rfl | some b => cases b <;> rfl
+    have h2 : (match acc[0]? with | some (v : Nat) => v | none => validMask.length) = acc.getD 0 validMask.length := by
+      simp [List.getD]; cases acc[0]? <;> rfl
+    simp only [h1, h2]
+  simp only [h_fun_eq]
+  -- Now use the canonical result with different default
+  have h_acc := foldr_next_acc validMask validMask.length 0 (by omega)
+  rw [show List.range' 0 validMask.length = List.range validMask.length from by
+    simp [List.range_eq_range']] at h_acc
+  obtain ⟨h_len, h_val⟩ := h_acc
+  have key := h_val j (Nat.zero_le _) hj
+  simp only [Nat.sub_zero] at key
+  -- key: getD j validMask.length = j + runLenFrom, goal: getD j 0 = j + runLenFrom
+  -- Both agree because j is in-bounds
+  set theList := (List.range validMask.length).foldr _ _
+  have hj_lt : j < theList.length := by omega
+  simp only [List.getD, List.getElem?_eq_getElem hj_lt] at key ⊢
+  exact key
+
+set_option maxHeartbeats 6400000 in
+set_option linter.unusedSimpArgs false in
 private lemma prefixed_semantic
     (bytes : List Nat) (classIDs : List Nat) (validMask : List Bool)
     (prefix_ : List Nat) (bodySetID : Nat)
