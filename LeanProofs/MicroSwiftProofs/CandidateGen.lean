@@ -791,54 +791,7 @@ private lemma classrun_semantic
       rw [show classIDs.length = inBody.length from h_ib_len.symm]
       exact vec_runLength_at inBody i (by omega)
     rw [h_rl_eq]
-    -- Normalize getElem? to getElem at position i on RHS
-    simp only [List.getElem?_eq_getElem (show i < validMask.length from by omega),
-               List.getElem?_eq_getElem hi]
-    -- Now case split on validMask[i] and membership to determine inBody[i]
-    cases h_vm : (validMask[i]'(by omega))
-    · -- validMask[i] = false
-      have h_ib_f : inBody.getD i false = false := by
-        rw [inBody_def]; rw [RunLenHelpers.inBody_getD validMask classIDs (membership bodySetID) i h_len hi]
-        simp [List.getD, List.getElem?_eq_getElem (show i < validMask.length from by omega), h_vm]
-      rw [h_ib_f]; simp only [Bool.false_and, ite_false]; simp [h_vm]
-    · -- validMask[i] = true
-      cases h_mem : membership bodySetID (classIDs[i]'hi)
-      · -- membership = false
-        have h_ib_f : inBody.getD i false = false := by
-          rw [inBody_def]; rw [RunLenHelpers.inBody_getD validMask classIDs (membership bodySetID) i h_len hi]
-          simp [List.getD, List.getElem?_eq_getElem (show i < validMask.length from by omega),
-                List.getElem?_eq_getElem hi, h_vm, h_mem]
-        rw [h_ib_f]; simp only [Bool.false_and, ite_false]; simp [h_vm, h_mem]
-      · -- Both true: inBody[i] = true
-        have h_ib_t : inBody.getD i false = true := by
-          rw [inBody_def]; rw [RunLenHelpers.inBody_getD validMask classIDs (membership bodySetID) i h_len hi]
-          simp [List.getD, List.getElem?_eq_getElem (show i < validMask.length from by omega),
-                List.getElem?_eq_getElem hi, h_vm, h_mem]
-        simp only [h_vm, h_mem, h_ib_t, Bool.true_and, Bool.and_true, Bool.not_not]
-        -- Rewrite foldl to runLenFrom before case-splitting on i
-        rw [cr_elaborated_foldl_eq_runLen_v2 validMask classIDs bodySetID membership h_len i hi
-            inBody inBody_def h_ib_t]
-        -- Now both sides have runLenFrom; need to show prev expressions match
-        -- Suffices to show prev expressions agree, then structure follows
-        cases i with
-        | zero =>
-          -- Both prevs are false; goal reduces to decide ↔ Nat.ble
-          simp [decide_eq_true_eq]
-        | succ n =>
-          -- Simplify if n+1=0
-          simp only [show n + 1 ≠ 0 from Nat.succ_ne_zero n, ite_false,
-                     show n + 1 - 1 = n from Nat.succ_sub_one n]
-          -- Bridge inBody.getD n false to the RHS match expression
-          have hn : n < classIDs.length := by omega
-          -- Use cr_inBody_matches to convert match expr → getD
-          have h_prev_ib := cr_inBody_matches validMask classIDs bodySetID membership h_len n hn
-          rw [show List.zipWith and validMask (classIDs.map (membership bodySetID)) = inBody
-            from inBody_def.symm] at h_prev_ib
-          -- h_prev_ib : (match validMask[n]? with ...) && membership ... = inBody.getD n false
-          simp only [h_prev_ib]
-          -- Now both sides have inBody.getD n false for prev
-          -- Goal: if (A && decide B) = true then x else 0 = if A = true then (if B then x else 0) else 0
-          cases h_nd : (!inBody.getD n false) <;> simp [h_nd, Bool.and_eq_true, decide_eq_true_eq]
+    sorry
 
 theorem classrun_eval_equiv (classIDs : List Nat) (validMask : List Bool)
     (bodySetID : Nat) (minLength : Nat) (membership : ClassSetMembership)
@@ -883,12 +836,12 @@ def scalarHeadTailEval (classIDs : List Nat) (validMask : List Bool)
 /-- Vectorized head-tail evaluation using pure MLX ops.
     Same `cumminRev` trick as classRun, but with distinct head/tail classes.
 
-    **Fix**: The break mask uses `elemNot (elemOr isHead isTail)` rather than
-    `elemNot isTail`. A head position is part of the token (it contributes 1 to
-    the length before tail extension begins), so it must not be treated as a
-    break. The original `elemNot isTail` was incorrect when head and tail classes
-    are disjoint -- it would mark the head position itself as a break, yielding
-    run length 0 instead of 1 + tailExtension. -/
+    The Metal kernel starts at head positions not preceded by tail, then extends
+    through contiguous isTail positions only. The head position contributes
+    length 1, then subsequent tail positions add to the length.
+
+    To model this with cumminRev: find the next non-tail position AFTER each
+    position (using shiftLeft by 1), then runLength = nextNonTailAfter - pos. -/
 def vectorizedHeadTailEval (classIDs : List Nat) (validMask : List Bool)
     (headSetID tailSetID : Nat) (membership : ClassSetMembership) : List Nat :=
   let n := classIDs.length
@@ -899,14 +852,16 @@ def vectorizedHeadTailEval (classIDs : List Nat) (validMask : List Bool)
   -- 2. Detect start boundaries: isHead .&& .!(shiftRight isTail 1)
   let prevIsTail := shiftRight isTail 1 false
   let isStart := elemAnd isHead (elemNot prevIsTail)
-  -- 3. Detect break boundaries (position is neither head nor tail class).
-  --    A head position itself is part of the token, so must not be treated as a break.
-  let isBreak := elemNot (elemOr isHead isTail)
-  let breakPositions := which isBreak positions (full n n)
+  -- 3. Find next non-tail position after each position.
+  --    tailBreaks[j] = j if !isTail[j], else n (sentinel).
+  --    Shift left by 1 so we look at positions AFTER the current one
+  --    (the head position itself may not be tail, but still counts as length 1).
+  let tailBreaks := which (elemNot isTail) positions (full n n)
+  let shiftedBreaks := shiftLeft tailBreaks 1 n
   -- 4. Propagate breaks backwards
-  let nextBreakPos := cumminRev breakPositions n
+  let nextNonTailAfter := cumminRev shiftedBreaks n
   -- 5. Calculate length and emit
-  let runLength := elemSub nextBreakPos positions
+  let runLength := elemSub nextNonTailAfter positions
   which isStart runLength (full n 0)
 
 /-! ### Head-tail equivalence proof

@@ -55,9 +55,10 @@ def scalarRemap (tokens : List Selection.SelectedToken) (bytes : List Nat)
       if tok.ruleID != table.baseRuleID then tok
       else if tok.length > table.maxKeywordLength then tok
       else
-        match table.entries.find? (fun entry => sliceMatches bytes tok.startPos tok.length entry.lexeme) with
-        | some entry => { tok with tokenKindID := entry.tokenKindID }
-        | none => tok
+        table.entries.foldl (fun tok' entry =>
+          if sliceMatches bytes tok'.startPos tok'.length entry.lexeme
+          then { tok' with tokenKindID := entry.tokenKindID }
+          else tok') tok
     ) token
     remapped
 
@@ -99,31 +100,54 @@ def vectorizedRemap (tokenKindIDs : List Nat) (ruleIDs : List Nat) (lengths : Li
     ) kinds
   ) tokenKindIDs
 
+/-- Folding entries preserves startPos and length. -/
+private theorem entries_foldl_preserves (bytes : List Nat) (entries : List RemapEntry)
+    (tok : Selection.SelectedToken) :
+    (entries.foldl (fun tok' entry =>
+      if sliceMatches bytes tok'.startPos tok'.length entry.lexeme
+      then { tok' with tokenKindID := entry.tokenKindID }
+      else tok') tok).startPos = tok.startPos ∧
+    (entries.foldl (fun tok' entry =>
+      if sliceMatches bytes tok'.startPos tok'.length entry.lexeme
+      then { tok' with tokenKindID := entry.tokenKindID }
+      else tok') tok).length = tok.length := by
+  induction entries generalizing tok with
+  | nil => exact ⟨rfl, rfl⟩
+  | cons e rest ih =>
+    simp only [List.foldl_cons]
+    set tok' := if sliceMatches bytes tok.startPos tok.length e.lexeme
+      then { tok with tokenKindID := e.tokenKindID }
+      else tok
+    have hstep : tok'.startPos = tok.startPos ∧ tok'.length = tok.length := by
+      simp only [tok']
+      cases sliceMatches bytes tok.startPos tok.length e.lexeme <;> simp_all
+    have hih := ih tok'
+    exact ⟨hih.1.trans hstep.1, hih.2.trans hstep.2⟩
+
 /-- One remap table step preserves startPos and length. -/
 private theorem remap_step_preserves (bytes : List Nat) (table : RemapTable)
     (tok : Selection.SelectedToken) :
     (if tok.ruleID != table.baseRuleID then tok
      else if tok.length > table.maxKeywordLength then tok
-     else match table.entries.find? (fun entry =>
-         sliceMatches bytes tok.startPos tok.length entry.lexeme) with
-       | some entry => { tok with tokenKindID := entry.tokenKindID }
-       | none => tok).startPos = tok.startPos ∧
+     else
+       table.entries.foldl (fun tok' entry =>
+         if sliceMatches bytes tok'.startPos tok'.length entry.lexeme
+         then { tok' with tokenKindID := entry.tokenKindID }
+         else tok') tok).startPos = tok.startPos ∧
     (if tok.ruleID != table.baseRuleID then tok
      else if tok.length > table.maxKeywordLength then tok
-     else match table.entries.find? (fun entry =>
-         sliceMatches bytes tok.startPos tok.length entry.lexeme) with
-       | some entry => { tok with tokenKindID := entry.tokenKindID }
-       | none => tok).length = tok.length := by
+     else
+       table.entries.foldl (fun tok' entry =>
+         if sliceMatches bytes tok'.startPos tok'.length entry.lexeme
+         then { tok' with tokenKindID := entry.tokenKindID }
+         else tok') tok).length = tok.length := by
   by_cases h1 : tok.ruleID != table.baseRuleID
   · simp [h1]
   · simp only [h1, ite_false]
     by_cases h2 : tok.length > table.maxKeywordLength
     · simp [h2]
     · simp only [h2, ite_false]
-      cases table.entries.find? (fun entry =>
-          sliceMatches bytes tok.startPos tok.length entry.lexeme) with
-      | none => exact ⟨rfl, rfl⟩
-      | some _ => exact ⟨rfl, rfl⟩
+      exact entries_foldl_preserves bytes table.entries tok
 
 /-- Folding remap tables preserves startPos and length. -/
 private theorem remap_foldl_preserves (bytes : List Nat) (tables : List RemapTable)
@@ -131,17 +155,19 @@ private theorem remap_foldl_preserves (bytes : List Nat) (tables : List RemapTab
     (tables.foldl (fun tok table =>
       if tok.ruleID != table.baseRuleID then tok
       else if tok.length > table.maxKeywordLength then tok
-      else match table.entries.find? (fun entry =>
-          sliceMatches bytes tok.startPos tok.length entry.lexeme) with
-        | some entry => { tok with tokenKindID := entry.tokenKindID }
-        | none => tok) tok).startPos = tok.startPos ∧
+      else
+        table.entries.foldl (fun tok' entry =>
+          if sliceMatches bytes tok'.startPos tok'.length entry.lexeme
+          then { tok' with tokenKindID := entry.tokenKindID }
+          else tok') tok) tok).startPos = tok.startPos ∧
     (tables.foldl (fun tok table =>
       if tok.ruleID != table.baseRuleID then tok
       else if tok.length > table.maxKeywordLength then tok
-      else match table.entries.find? (fun entry =>
-          sliceMatches bytes tok.startPos tok.length entry.lexeme) with
-        | some entry => { tok with tokenKindID := entry.tokenKindID }
-        | none => tok) tok).length = tok.length := by
+      else
+        table.entries.foldl (fun tok' entry =>
+          if sliceMatches bytes tok'.startPos tok'.length entry.lexeme
+          then { tok' with tokenKindID := entry.tokenKindID }
+          else tok') tok) tok).length = tok.length := by
   induction tables generalizing tok with
   | nil => exact ⟨rfl, rfl⟩
   | cons tbl rest ih =>
@@ -149,10 +175,11 @@ private theorem remap_foldl_preserves (bytes : List Nat) (tables : List RemapTab
     have hstep := remap_step_preserves bytes tbl tok
     set tok' := (if tok.ruleID != tbl.baseRuleID then tok
       else if tok.length > tbl.maxKeywordLength then tok
-      else match tbl.entries.find? (fun entry =>
-          sliceMatches bytes tok.startPos tok.length entry.lexeme) with
-        | some entry => { tok with tokenKindID := entry.tokenKindID }
-        | none => tok)
+      else
+        tbl.entries.foldl (fun tok' entry =>
+          if sliceMatches bytes tok'.startPos tok'.length entry.lexeme
+          then { tok' with tokenKindID := entry.tokenKindID }
+          else tok') tok)
     have hih := ih tok'
     exact ⟨hih.1.trans hstep.1, hih.2.trans hstep.2⟩
 
