@@ -791,7 +791,54 @@ private lemma classrun_semantic
       rw [show classIDs.length = inBody.length from h_ib_len.symm]
       exact vec_runLength_at inBody i (by omega)
     rw [h_rl_eq]
-    sorry
+    -- Normalize getElem? to getElem at position i on RHS
+    simp only [List.getElem?_eq_getElem (show i < validMask.length from by omega),
+               List.getElem?_eq_getElem hi]
+    -- Now case split on validMask[i] and membership to determine inBody[i]
+    cases h_vm : (validMask[i]'(by omega))
+    · -- validMask[i] = false
+      have h_ib_f : inBody.getD i false = false := by
+        rw [inBody_def]; rw [RunLenHelpers.inBody_getD validMask classIDs (membership bodySetID) i h_len hi]
+        simp [List.getD, List.getElem?_eq_getElem (show i < validMask.length from by omega), h_vm]
+      rw [h_ib_f]; simp only [Bool.false_and, ite_false]; simp [h_vm]
+    · -- validMask[i] = true
+      cases h_mem : membership bodySetID (classIDs[i]'hi)
+      · -- membership = false
+        have h_ib_f : inBody.getD i false = false := by
+          rw [inBody_def]; rw [RunLenHelpers.inBody_getD validMask classIDs (membership bodySetID) i h_len hi]
+          simp [List.getD, List.getElem?_eq_getElem (show i < validMask.length from by omega),
+                List.getElem?_eq_getElem hi, h_vm, h_mem]
+        rw [h_ib_f]; simp only [Bool.false_and, ite_false]; simp [h_vm, h_mem]
+      · -- Both true: inBody[i] = true
+        have h_ib_t : inBody.getD i false = true := by
+          rw [inBody_def]; rw [RunLenHelpers.inBody_getD validMask classIDs (membership bodySetID) i h_len hi]
+          simp [List.getD, List.getElem?_eq_getElem (show i < validMask.length from by omega),
+                List.getElem?_eq_getElem hi, h_vm, h_mem]
+        simp only [h_vm, h_mem, h_ib_t, Bool.true_and, Bool.and_true, Bool.not_not]
+        -- Rewrite foldl to runLenFrom before case-splitting on i
+        rw [cr_elaborated_foldl_eq_runLen_v2 validMask classIDs bodySetID membership h_len i hi
+            inBody inBody_def h_ib_t]
+        -- Now both sides have runLenFrom; need to show prev expressions match
+        -- Suffices to show prev expressions agree, then structure follows
+        cases i with
+        | zero =>
+          -- Both prevs are false; goal reduces to decide ↔ Nat.ble
+          simp [decide_eq_true_eq]
+        | succ n =>
+          -- Simplify if n+1=0
+          simp only [show n + 1 ≠ 0 from Nat.succ_ne_zero n, ite_false,
+                     show n + 1 - 1 = n from Nat.succ_sub_one n]
+          -- Bridge inBody.getD n false to the RHS match expression
+          have hn : n < classIDs.length := by omega
+          -- Use cr_inBody_matches to convert match expr → getD
+          have h_prev_ib := cr_inBody_matches validMask classIDs bodySetID membership h_len n hn
+          rw [show List.zipWith and validMask (classIDs.map (membership bodySetID)) = inBody
+            from inBody_def.symm] at h_prev_ib
+          -- h_prev_ib : (match validMask[n]? with ...) && membership ... = inBody.getD n false
+          simp only [h_prev_ib]
+          -- Now both sides have inBody.getD n false for prev
+          -- Goal: if (A && decide B) = true then x else 0 = if A = true then (if B then x else 0) else 0
+          cases h_nd : (!inBody.getD n false) <;> simp [h_nd, Bool.and_eq_true, decide_eq_true_eq]
 
 theorem classrun_eval_equiv (classIDs : List Nat) (validMask : List Bool)
     (bodySetID : Nat) (minLength : Nat) (membership : ClassSetMembership)
