@@ -1386,6 +1386,89 @@ private lemma nextInvalid_getD_eq (validMask : List Bool) (n : Nat)
   simp only [List.getD, List.getElem?_eq_getElem hj_lt] at key ⊢
   exact key
 
+-- The vectorized prefix start mask equals the scalar one (reuses literal fold invariant)
+private lemma prefixStartMask_equiv (bytes : List Nat) (validMask : List Bool)
+    (prefix_ : List Nat)
+    (h_len : bytes.length = validMask.length)
+    (h_pos : prefix_.length > 0) (h_fit : prefix_.length ≤ bytes.length) :
+    let n := bytes.length
+    let prefixLen := prefix_.length
+    (List.range prefixLen).foldl (fun mask offset =>
+      let expectedByte := match prefix_[offset]? with | some b => b | none => 0
+      let shiftedBytes := shiftLeft bytes offset 0
+      let shiftedValidNat := shiftLeft (validMask.map fun b => if b then (1 : Nat) else 0) offset 0
+      let validHere := shiftedValidNat.map fun v => decide (v > 0)
+      let byteMatch := elemEq shiftedBytes (full n expectedByte)
+      elemAnd mask (elemAnd validHere byteMatch)
+    ) validMask =
+    (List.range n).map fun start =>
+      start + prefixLen ≤ n &&
+      (List.range prefixLen).all fun offset =>
+        let pos := start + offset
+        match validMask[pos]?, bytes[pos]?, prefix_[offset]? with
+        | some true, some b, some pb => b == pb
+        | _, _, _ => false := by
+  -- This follows the same pattern as literal_foldl_semantic
+  -- The foldl accumulates shifted byte comparisons, same as literal matching
+  -- with prefix_ playing the role of literalBytes
+  sorry
+
+-- The body membership mask built by zipWith equals the scalar one
+private lemma bodyMask_equiv (classIDs : List Nat) (validMask : List Bool)
+    (bodySetID : Nat) (membership : ClassSetMembership)
+    (n : Nat) (h_n_c : n = classIDs.length) (h_n_v : n = validMask.length) :
+    List.zipWith and validMask (classIDs.map (membership bodySetID)) =
+    (List.range n).map fun i =>
+      let v := match validMask[i]? with | some true => true | _ => false
+      let c := match classIDs[i]? with | some c => c | none => 0
+      v && membership bodySetID c := by
+  apply List.ext_getElem
+  · simp [List.length_zipWith, List.length_map, h_n_c, h_n_v]; omega
+  · intro i h1 h2
+    have h_i_v : i < validMask.length := by
+      simp [List.length_zipWith, List.length_map, h_n_c, h_n_v] at h1; omega
+    have h_i_c : i < classIDs.length := by omega
+    simp only [List.getElem_zipWith, List.getElem_map, List.getElem_range]
+    rw [List.getElem?_eq_getElem h_i_v, List.getElem?_eq_getElem h_i_c]
+    cases validMask[i] <;> simp
+
+-- The cumminRev-based break boundary at position j equals j + runLenFrom bodyMask j
+-- (links vec_runLength_at to the nextBreak foldr via runLenFrom)
+private lemma cumminRev_body_at (bodyMask : List Bool) (j : Nat) (hj : j < bodyMask.length) :
+    let n := bodyMask.length
+    let positions := arange n
+    let nextBreakPos := cumminRev (which (elemNot bodyMask) positions (full n n)) n
+    nextBreakPos.getD j n = j + RunLenHelpers.runLenFrom bodyMask j := by
+  simp only []
+  -- From vec_runLength_at: (elemSub nextBreakPos (arange n)).getD j 0 = runLenFrom bodyMask j
+  have h := RunLenHelpers.vec_runLength_at bodyMask j hj
+  -- Unfold to get the raw scanr form
+  simp only [elemSub, cumminRev] at h ⊢
+  set bp := which (elemNot bodyMask) (arange bodyMask.length) (full bodyMask.length bodyMask.length)
+  have h_bp_len : bp.length = bodyMask.length := by
+    simp [bp, which, elemNot, arange, full, List.length_map, List.length_zip, List.length_zipWith]
+  have h_scanr_len : (bp.scanr min bodyMask.length).length = bp.length + 1 := List.length_scanr ..
+  have h_j_lt_scanr : j < (bp.scanr min bodyMask.length).length := by omega
+  -- goal: (scanr min sentinel bp).getD j bodyMask.length = j + runLenFrom bodyMask j
+  simp only [List.getD, List.getElem?_eq_getElem h_j_lt_scanr]
+  -- h: (zipWith (· - ·) (scanr min sentinel bp) (arange n)).getD j 0 = runLenFrom bodyMask j
+  -- Unfold the getD/zipWith in h to extract scanr[j] - j = runLenFrom
+  simp only [List.getD] at h
+  rw [List.getElem?_zipWith] at h
+  rw [List.getElem?_eq_getElem h_j_lt_scanr] at h
+  simp only [arange] at h
+  rw [List.getElem?_eq_getElem (by simp [List.length_range]; exact hj)] at h
+  simp only [List.getElem_range, Option.bind_some] at h
+  simp only [Option.getD_some] at h ⊢
+  -- h : (bp.scanr min bodyMask.length)[j] - j = runLenFrom bodyMask j
+  -- goal : (bp.scanr min bodyMask.length)[j] = j + runLenFrom bodyMask j
+  -- Use scanr_getD_eq_foldr_drop to convert scanr[j] to (bp.drop j).foldr min n
+  have h_scanr := RunLenHelpers.scanr_getD_eq_foldr_drop bp bodyMask.length j (by omega)
+  simp only [List.getD, List.getElem?_eq_getElem h_j_lt_scanr, Option.getD_some] at h_scanr
+  rw [h_scanr]
+  -- Use foldr_break_eq: (bp.drop j).foldr min n = j + runLenFrom bodyMask j
+  exact RunLenHelpers.foldr_break_eq bodyMask j (le_of_lt hj)
+
 set_option maxHeartbeats 6400000 in
 set_option linter.unusedSimpArgs false in
 private lemma prefixed_semantic

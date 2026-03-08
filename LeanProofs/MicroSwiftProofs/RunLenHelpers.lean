@@ -119,7 +119,7 @@ theorem fold_range_eq_runLen (inBody : List Bool) (k base count : Nat)
 
 /-! ### Vectorized run length = runLenFrom -/
 
-private theorem scanr_getD_eq_foldr_drop (xs : List Nat) (s : Nat) (i : Nat)
+theorem scanr_getD_eq_foldr_drop (xs : List Nat) (s : Nat) (i : Nat)
     (hi : i ≤ xs.length) :
     (xs.scanr min s).getD i 0 =
     (xs.drop i).foldr min s := by
@@ -133,12 +133,12 @@ private theorem scanr_getD_eq_foldr_drop (xs : List Nat) (s : Nat) (i : Nat)
       simp only [List.drop_succ_cons, List.scanr_cons, List.getD_cons_succ]
       apply ih; simp [List.length_cons] at hi; omega
 
-private theorem bp_length (inBody : List Bool) :
+theorem bp_length (inBody : List Bool) :
     (which (elemNot inBody) (arange inBody.length) (full inBody.length inBody.length)).length
     = inBody.length := by
   simp [which, elemNot, arange, full, List.length_map, List.length_zip]
 
-private theorem bp_getElem (inBody : List Bool) (i : Nat) (hi : i < inBody.length) :
+theorem bp_getElem (inBody : List Bool) (i : Nat) (hi : i < inBody.length) :
     let bp := which (elemNot inBody) (arange inBody.length) (full inBody.length inBody.length)
     bp[i]'(by rw [bp_length]; exact hi) = if inBody[i] then inBody.length else i := by
   simp only [which, elemNot, arange, full]
@@ -146,7 +146,7 @@ private theorem bp_getElem (inBody : List Bool) (i : Nat) (hi : i < inBody.lengt
     List.getElem_range, List.getElem_replicate]
   cases inBody[i] <;> simp
 
-private theorem foldr_break_eq (inBody : List Bool) (i : Nat) (hi : i ≤ inBody.length) :
+theorem foldr_break_eq (inBody : List Bool) (i : Nat) (hi : i ≤ inBody.length) :
     ((which (elemNot inBody) (arange inBody.length) (full inBody.length inBody.length)).drop i).foldr
       min inBody.length
     = i + runLenFrom inBody i := by
