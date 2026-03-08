@@ -1,218 +1,343 @@
-import Foundation
-import MicroSwiftFrontend
-import MicroSwiftLexerGen
+import MicroSwiftTensorCore
 import Testing
 
-@testable import MicroSwiftTensorCore
+@testable import MicroSwiftLexerGen
 
 @Suite
 struct PageBoundaryTests {
-  @Test
-  func eqEqAtPageEdge() throws {
-    let fixture = try lexWithTinyPaging(input: "x==\nlet a = 1\n", emitSkipTokens: false)
+  private let scalar = ScalarFallbackEvaluator()
 
-    #expect(fixture.pages.count == 2)
-    #expect(fixture.pages[0].sourcePage.end.rawValue == 4)
-    #expect(
-      fixture.tokens == [
-        .init(kind: "ident", lexeme: "x", start: 0, end: 1),
-        .init(kind: "eqEq", lexeme: "==", start: 1, end: 3),
-        .init(kind: "kwLet", lexeme: "let", start: 4, end: 7),
-        .init(kind: "ident", lexeme: "a", start: 8, end: 9),
-        .init(kind: "eq", lexeme: "=", start: 10, end: 11),
-        .init(kind: "int", lexeme: "1", start: 12, end: 13),
-      ])
-    #expect(fixture.errorSpans.isEmpty)
-    #expect(fixture.overflows.isEmpty)
+  @Test(.enabled(if: requiresMLXEval))
+  func fallbackMatchEndingExactlyAtPageEndUsesValidLen() throws {
+    let artifact = makeBoundedFallbackArtifact(
+      FallbackFixtures.singleRuleFallback(),
+      fallbackMaxWidth: 8
+    )
+    let bytes = Array("12abc".utf8)
+    let validLen = bytes.count
+
+    let result = try evaluateFallback(bytes: bytes, validLen: validLen, artifact: artifact)
+    assertMatchesScalar(bytes: bytes, validLen: validLen, artifact: artifact, result: result)
+
+    #expect(result.fallbackLen[2] == 3)
+    #expect(result.fallbackRuleID[2] == 0)
   }
 
-  @Test
-  func arrowAtPageEdge() throws {
-    let fixture = try lexWithTinyPaging(input: "f->\nlet b = 2\n", emitSkipTokens: false)
+  @Test(.enabled(if: requiresMLXEval))
+  func fallbackPrefixNearPageEndFailsWhenPageEnds() throws {
+    let artifact = makeABFallbackArtifact(maxWidth: 2)
+    let bytes = Array("xxa".utf8)
+    let validLen = bytes.count
 
-    #expect(fixture.pages.count == 2)
-    #expect(fixture.pages[0].sourcePage.end.rawValue == 4)
-    #expect(
-      fixture.tokens == [
-        .init(kind: "ident", lexeme: "f", start: 0, end: 1),
-        .init(kind: "arrow", lexeme: "->", start: 1, end: 3),
-        .init(kind: "kwLet", lexeme: "let", start: 4, end: 7),
-        .init(kind: "ident", lexeme: "b", start: 8, end: 9),
-        .init(kind: "eq", lexeme: "=", start: 10, end: 11),
-        .init(kind: "int", lexeme: "2", start: 12, end: 13),
-      ])
-    #expect(fixture.errorSpans.isEmpty)
-    #expect(fixture.overflows.isEmpty)
+    let result = try evaluateFallback(bytes: bytes, validLen: validLen, artifact: artifact)
+    assertMatchesScalar(bytes: bytes, validLen: validLen, artifact: artifact, result: result)
+
+    #expect(result.fallbackLen[2] == 0)
+    #expect(result.fallbackRuleID[2] == 0)
   }
 
-  @Test
-  func identifierEndingExactlyAtPageBoundary() throws {
-    let fixture = try lexWithTinyPaging(input: "boundary", emitSkipTokens: false)
+  @Test(.enabled(if: requiresMLXEval))
+  func fallbackCandidateFullyContainedInsidePage() throws {
+    let artifact = makeABFallbackArtifact(maxWidth: 2)
+    let bytes = Array("zabz".utf8)
+    let validLen = bytes.count
 
-    #expect(fixture.pages.count == 1)
-    #expect(fixture.pages[0].validLen == 8)
-    #expect(fixture.pages[0].bucket?.byteCapacity == 8)
-    #expect(
-      fixture.tokens == [
-        .init(kind: "ident", lexeme: "boundary", start: 0, end: 8)
-      ])
-    #expect(fixture.tokens[0].end == fixture.pages[0].sourcePage.end.rawValue)
+    let result = try evaluateFallback(bytes: bytes, validLen: validLen, artifact: artifact)
+    assertMatchesScalar(bytes: bytes, validLen: validLen, artifact: artifact, result: result)
+
+    #expect(result.fallbackLen[1] == 2)
+    #expect(result.fallbackRuleID[1] == 7)
+    #expect(result.fallbackLen[2] == 0)
   }
 
-  @Test
-  func integerEndingExactlyAtPageBoundary() throws {
-    let fixture = try lexWithTinyPaging(input: "12345678", emitSkipTokens: false)
+  @Test(.enabled(if: requiresMLXEval))
+  func fallbackFastOverlapNearPageBoundaryResolvesToFastWinner() throws {
+    let artifact = makeBoundedFallbackArtifact(
+      FallbackFixtures.overlappingFastFallback(),
+      fallbackMaxWidth: 4
+    )
+    let bytes = Array("1if".utf8)
+    let validLen = bytes.count
 
-    #expect(fixture.pages.count == 1)
-    #expect(fixture.pages[0].validLen == 8)
-    #expect(fixture.pages[0].bucket?.byteCapacity == 8)
-    #expect(
-      fixture.tokens == [
-        .init(kind: "int", lexeme: "12345678", start: 0, end: 8)
-      ])
-    #expect(fixture.tokens[0].end == fixture.pages[0].sourcePage.end.rawValue)
-  }
-
-  @Test
-  func whitespaceSpanningNewlineCut() throws {
-    let fixture = try lexWithTinyPaging(input: "x \n   yyyyy\n", emitSkipTokens: true)
-
-    #expect(fixture.pages.count == 2)
-    #expect(fixture.pages[0].sourcePage.end.rawValue == 3)
-    #expect(
-      fixture.tokens == [
-        .init(kind: "ident", lexeme: "x", start: 0, end: 1),
-        .init(kind: "ws", lexeme: " \n", start: 1, end: 3),
-        .init(kind: "ws", lexeme: "   ", start: 3, end: 6),
-        .init(kind: "ident", lexeme: "yyyyy", start: 6, end: 11),
-        .init(kind: "ws", lexeme: "\n", start: 11, end: 12),
-      ])
-    #expect(fixture.errorSpans.isEmpty)
-    #expect(fixture.overflows.isEmpty)
-  }
-
-  @Test
-  func lineCommentEndingJustBeforeCut() throws {
-    let fixture = try lexWithTinyPaging(input: "//a\nlet d = 4\n", emitSkipTokens: true)
-
-    #expect(fixture.pages.count == 2)
-    #expect(fixture.pages[0].sourcePage.end.rawValue == 4)
-    #expect(
-      fixture.tokens == [
-        .init(kind: "lineComment", lexeme: "//a", start: 0, end: 3),
-        .init(kind: "ws", lexeme: "\n", start: 3, end: 4),
-        .init(kind: "kwLet", lexeme: "let", start: 4, end: 7),
-        .init(kind: "ws", lexeme: " ", start: 7, end: 8),
-        .init(kind: "ident", lexeme: "d", start: 8, end: 9),
-        .init(kind: "ws", lexeme: " ", start: 9, end: 10),
-        .init(kind: "eq", lexeme: "=", start: 10, end: 11),
-        .init(kind: "ws", lexeme: " ", start: 11, end: 12),
-        .init(kind: "int", lexeme: "4", start: 12, end: 13),
-        .init(kind: "ws", lexeme: "\n", start: 13, end: 14),
-      ])
-    #expect(fixture.errorSpans.isEmpty)
-    #expect(fixture.overflows.isEmpty)
-  }
-
-  @Test
-  func longLineCommentUsesLargerBucket() throws {
-    let fixture = try lexWithTinyPaging(input: "//1234567890\n", emitSkipTokens: true)
-
-    #expect(fixture.pages.count == 1)
-    #expect(fixture.pages[0].validLen == 13)
-    #expect(fixture.pages[0].bucket?.byteCapacity == 16)
-    #expect(
-      fixture.tokens == [
-        .init(kind: "lineComment", lexeme: "//1234567890", start: 0, end: 12),
-        .init(kind: "ws", lexeme: "\n", start: 12, end: 13),
-      ])
-    #expect(fixture.errorSpans.isEmpty)
-    #expect(fixture.overflows.isEmpty)
-  }
-
-  @Test
-  func overlongLineExceedingLargestBucketOverflows() throws {
-    let fixture = try lexWithTinyPaging(input: "//aaaaaaaaaaaaaaaaaaaa\n", emitSkipTokens: true)
-
-    #expect(fixture.pages.count == 1)
-    #expect(fixture.pages[0].bucket == nil)
-    #expect(fixture.tokens.isEmpty)
-    #expect(fixture.errorSpans.isEmpty)
-    #expect(fixture.overflows.count == 1)
-    #expect(
-      fixture.overflows[0].message
-        == "lex-page-overflow: line exceeds maximum supported page bucket")
-    #expect(fixture.overflows[0].pageByteCount == fixture.pages[0].validLen)
-    #expect(fixture.overflows[0].maxBucketSize == 16)
-  }
-
-  private func lexWithTinyPaging(input: String, emitSkipTokens: Bool) throws -> BoundaryFixture {
-    let bytes = [UInt8](input.utf8)
-    let source = SourceBuffer(
-      fileID: FileID(rawValue: 1),
-      path: "boundary.swift",
-      bytes: Data(bytes)
+    let fallbackResult = try evaluateFallback(bytes: bytes, validLen: validLen, artifact: artifact)
+    assertMatchesScalar(
+      bytes: bytes,
+      validLen: validLen,
+      artifact: artifact,
+      result: fallbackResult
     )
 
-    let runtime = try makeMicroSwiftRuntime()
-    let pagingShell = PagingShell(
-      pagePolicy: PagePolicy(targetBytes: 8),
-      maxBucketSize: 16,
-      buckets: [PageBucket(byteCapacity: 8), PageBucket(byteCapacity: 16)]
+    let fastWinners = [
+      winner(position: 1, len: 2, priorityRank: 0, ruleID: 0, tokenKindID: 0)
+    ]
+    let integrated = integrateWithFallback(
+      fastWinners: fastWinners,
+      fallbackResult: fallbackResult,
+      pageWidth: validLen
     )
-    let shell = LexingShell(pagingShell: pagingShell)
-    let result = shell.lexSource(
-      source: source,
-      artifact: runtime,
-      options: LexOptions(emitSkipTokens: emitSkipTokens)
+    let selected = greedyNonOverlapSelect(winners: integrated, validLen: validLen)
+
+    #expect(selected.count == 1)
+    #expect(selected[0] == winner(position: 1, len: 2, priorityRank: 0, ruleID: 0, tokenKindID: 0))
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
+  func classRunDoesNotLeakIntoPaddedTailBytes() {
+    let runtime = ClassSetRuntime(
+      mask: [[false, true]],
+      numClassSets: 1,
+      numByteClasses: 2
+    )
+    let classIDs: [UInt8] = [1, 1, 1, 1, 1, 1]
+    let validMask: [Bool] = [true, true, true, false, false, false]
+
+    let result = ClassRunExecution.evaluateClassRun(
+      classIDs: classIDs,
+      validMask: validMask,
+      bodyClassSetID: 0,
+      minLength: 1,
+      classSetRuntime: runtime
     )
 
-    let kindByID = Dictionary(
-      uniqueKeysWithValues: runtime.tokenKinds.map { ($0.tokenKindID, $0.name) })
-    let tokens = result.tokenTape.tokens.map { token in
-      BoundaryToken(
-        kind: kindByID[token.kind] ?? "<unknown>",
-        lexeme: String(decoding: bytes[Int(token.startByte)..<Int(token.endByte)], as: UTF8.self),
-        start: token.startByte,
-        end: token.endByte
-      )
+    #expect(result == [3, 0, 0, 0, 0, 0])
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
+  func headTailDoesNotLeakIntoPaddedTailBytes() {
+    let runtime = ClassSetRuntime(
+      mask: [
+        [false, true, false],
+        [false, true, true],
+      ],
+      numClassSets: 2,
+      numByteClasses: 3
+    )
+    let classIDs: [UInt8] = [1, 2, 2, 2, 2]
+    let validMask: [Bool] = [true, true, false, false, false]
+
+    let result = HeadTailExecution.evaluateHeadTail(
+      classIDs: classIDs,
+      validMask: validMask,
+      headClassSetID: 0,
+      tailClassSetID: 1,
+      classSetRuntime: runtime
+    )
+
+    #expect(result == [2, 0, 0, 0, 0])
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
+  func prefixedStopAwareRuleStopsAtNewlineInsidePage() {
+    let runtime = makePrefixedClassRuntime()
+    let bytes = Array("//abc\nz".utf8)
+    let validMask = Array(repeating: true, count: bytes.count)
+    let classIDs = classifyPrefixedBoundary(bytes)
+    let stopMask = zip(classIDs, validMask).map { classID, valid in
+      valid && runtime.contains(setID: 1, classID: classID)
     }
+    let nextStop = NextStopHelper.computeNextStop(stopMask: stopMask, validLen: Int32(bytes.count))
 
-    return BoundaryFixture(
-      pages: pagingShell.planAndPreparePages(source: source),
-      tokens: tokens,
-      errorSpans: result.tokenTape.errorSpans,
-      overflows: result.tokenTape.overflows
+    let lengths = PrefixedExecution.evaluatePrefixed(
+      bytes: bytes,
+      classIDs: classIDs,
+      validMask: validMask,
+      prefix: Array("//".utf8),
+      bodyClassSetID: 0,
+      stopClassSetID: 1,
+      classSetRuntime: runtime,
+      nextStop: nextStop
     )
+
+    #expect(lengths[0] == 5)
+    #expect(lengths.dropFirst().allSatisfy { $0 == 0 })
   }
 
-  private func makeMicroSwiftRuntime() throws -> ArtifactRuntime {
-    let declared = microSwiftV0.declare()
-    let normalized = DeclaredSpec.normalize(declared)
-    let validated = try NormalizedSpec.validate(normalized)
-    let byteClasses = validated.buildByteClasses()
-    let classSets = validated.buildClassSets(using: byteClasses)
-    let classified = try validated.classifyRules(byteClasses: byteClasses, classSets: classSets)
-    let artifact = try ArtifactSerializer.build(
-      classified: classified,
-      byteClasses: byteClasses,
-      classSets: classSets,
-      generatorVersion: "test"
+  @Test(.enabled(if: requiresMLXEval))
+  func prefixedStopAwareRuleEndsAtValidBoundaryWithoutPaddedTailMatch() {
+    let runtime = makePrefixedClassRuntime()
+    let bytes = Array("//abc/".utf8) + [UInt8](repeating: PageBucket.neutralPaddingByte, count: 2)
+    let validLen = 6
+    let validMask = (0..<bytes.count).map { $0 < validLen }
+    let classIDs = classifyPrefixedBoundary(bytes)
+    let stopMask = zip(classIDs, validMask).map { classID, valid in
+      valid && runtime.contains(setID: 1, classID: classID)
+    }
+    let nextStop = NextStopHelper.computeNextStop(stopMask: stopMask, validLen: Int32(validLen))
+
+    let lengths = PrefixedExecution.evaluatePrefixed(
+      bytes: bytes,
+      classIDs: classIDs,
+      validMask: validMask,
+      prefix: Array("//".utf8),
+      bodyClassSetID: 0,
+      stopClassSetID: 1,
+      classSetRuntime: runtime,
+      nextStop: nextStop
     )
-    return try ArtifactLoader.load(artifact)
+
+    #expect(lengths[0] == 6)
+    #expect(lengths[5] == 0)
+    #expect(lengths[6] == 0)
   }
 }
 
-private struct BoundaryFixture {
-  let pages: [PreparedPage]
-  let tokens: [BoundaryToken]
-  let errorSpans: [ErrorSpan]
-  let overflows: [OverflowDiagnostic]
+private func makeABFallbackArtifact(maxWidth: UInt16) -> LexerArtifact {
+  var byteToClass = Array(repeating: UInt8(2), count: 256)
+  byteToClass[Int(Character("a").asciiValue!)] = 0
+  byteToClass[Int(Character("b").asciiValue!)] = 1
+
+  let rule = LoweredRule(
+    ruleID: 7,
+    name: "abFallback",
+    tokenKindID: 1,
+    mode: .emit,
+    family: .fallback,
+    priorityRank: 10,
+    minWidth: 2,
+    maxWidth: maxWidth,
+    firstClassSetID: 0,
+    plan: .fallback(
+      stateCount: 4,
+      classCount: 3,
+      transitionRowStride: 3,
+      startState: 0,
+      acceptingStates: [2],
+      transitions: [
+        1, 3, 3,
+        3, 2, 3,
+        3, 3, 3,
+        3, 3, 3,
+      ]
+    )
+  )
+
+  return LexerArtifact(
+    formatVersion: 1,
+    specName: "ab-fallback",
+    specHashHex: String(repeating: "0", count: 64),
+    generatorVersion: "tests",
+    runtimeHints: RuntimeHints(
+      maxLiteralLength: 0,
+      maxBoundedRuleWidth: maxWidth,
+      maxDeterministicLookaheadBytes: maxWidth
+    ),
+    tokenKinds: [TokenKindDecl(tokenKindID: 1, name: "abTok", defaultMode: .emit)],
+    byteToClass: byteToClass,
+    classes: [],
+    classSets: [],
+    rules: [rule],
+    keywordRemaps: []
+  )
 }
 
-private struct BoundaryToken: Equatable {
-  let kind: String
-  let lexeme: String
-  let start: Int64
-  let end: Int64
+private func evaluateFallback(
+  bytes: [UInt8],
+  validLen: Int,
+  artifact: LexerArtifact
+) throws -> FallbackPageResult {
+  return scalarEvaluateFallbackPage(
+    bytes: bytes,
+    validLen: validLen,
+    artifact: artifact
+  )
+}
+
+private func assertMatchesScalar(
+  bytes: [UInt8],
+  validLen: Int,
+  artifact: LexerArtifact,
+  result: FallbackPageResult
+) {
+  let scalar = ScalarFallbackEvaluator()
+  for start in 0..<bytes.count {
+    let winner = scalar.evaluate(
+      bytes: bytes,
+      startPosition: start,
+      validLen: validLen,
+      byteToClass: artifact.byteToClass,
+      artifact: artifact
+    )
+    #expect(result.fallbackLen[start] == winner.len)
+    #expect(result.fallbackPriorityRank[start] == winner.priorityRank)
+    #expect(result.fallbackRuleID[start] == winner.ruleID)
+    #expect(result.fallbackTokenKindID[start] == winner.tokenKindID)
+    #expect(result.fallbackMode[start] == winner.mode)
+  }
+}
+
+private func makeBoundedFallbackArtifact(
+  _ artifact: LexerArtifact,
+  fallbackMaxWidth: UInt16
+) -> LexerArtifact {
+  let rules = artifact.rules.map { rule in
+    guard case .fallback = rule.plan else {
+      return rule
+    }
+    return LoweredRule(
+      ruleID: rule.ruleID,
+      name: rule.name,
+      tokenKindID: rule.tokenKindID,
+      mode: rule.mode,
+      family: rule.family,
+      priorityRank: rule.priorityRank,
+      minWidth: rule.minWidth,
+      maxWidth: fallbackMaxWidth,
+      firstClassSetID: rule.firstClassSetID,
+      plan: rule.plan
+    )
+  }
+
+  return LexerArtifact(
+    formatVersion: artifact.formatVersion,
+    specName: artifact.specName,
+    specHashHex: artifact.specHashHex,
+    generatorVersion: artifact.generatorVersion,
+    runtimeHints: RuntimeHints(
+      maxLiteralLength: artifact.runtimeHints.maxLiteralLength,
+      maxBoundedRuleWidth: max(artifact.runtimeHints.maxBoundedRuleWidth, fallbackMaxWidth),
+      maxDeterministicLookaheadBytes: max(
+        artifact.runtimeHints.maxDeterministicLookaheadBytes,
+        fallbackMaxWidth
+      )
+    ),
+    tokenKinds: artifact.tokenKinds,
+    byteToClass: artifact.byteToClass,
+    classes: artifact.classes,
+    classSets: artifact.classSets,
+    rules: rules,
+    keywordRemaps: artifact.keywordRemaps
+  )
+}
+
+private func winner(
+  position: Int,
+  len: UInt16,
+  priorityRank: UInt16,
+  ruleID: UInt16,
+  tokenKindID: UInt16 = 1,
+  mode: UInt8 = 0
+) -> CandidateWinner {
+  CandidateWinner(
+    position: position,
+    len: len,
+    priorityRank: priorityRank,
+    ruleID: ruleID,
+    tokenKindID: tokenKindID,
+    mode: mode
+  )
+}
+
+private func makePrefixedClassRuntime() -> ClassSetRuntime {
+  let body = [true, true, false, true]
+  let stop = [false, false, true, false]
+  return ClassSetRuntime(mask: [body, stop], numClassSets: 2, numByteClasses: 4)
+}
+
+private func classifyPrefixedBoundary(_ bytes: [UInt8]) -> [UInt8] {
+  bytes.map { byte in
+    if byte == UInt8(ascii: "/") { return 0 }
+    if byte == UInt8(ascii: "\n") { return 2 }
+    if byte == UInt8(ascii: " ") { return 3 }
+    return 1
+  }
 }

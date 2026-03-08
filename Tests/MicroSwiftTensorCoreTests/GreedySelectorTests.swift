@@ -1,136 +1,180 @@
+import MLX
+import MicroSwiftTensorCore
 import Testing
-
-@testable import MicroSwiftTensorCore
 
 @Suite
 struct GreedySelectorTests {
-  @Test
-  func simpleNonOverlappingTokensSelected() {
-    let winners: [WinnerTuple] = [
-      w(len: 2, ruleID: 10, tokenKindID: 100, mode: 1),
-      .empty,
-      w(len: 1, ruleID: 11, tokenKindID: 101, mode: 1),
-      .empty,
-      w(len: 3, ruleID: 12, tokenKindID: 102, mode: 2),
-      .empty,
-      .empty,
+
+  // MARK: - Differential tests: host vs tensor greedy selector
+
+  @Test(.enabled(if: requiresMLXEval))
+  func differentialPlanExample1() {
+    // len=[2,7,2,7,2,7,2,1] → selects {0,2,4,6}
+    let lens: [UInt16] = [2, 7, 2, 7, 2, 7, 2, 1]
+    assertHostTensorMatch(lens: lens)
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
+  func differentialPlanExample2() {
+    // len=[4,2,0,3,1,0,2,0] → selects {0,4,6}
+    let lens: [UInt16] = [4, 2, 0, 3, 1, 0, 2, 0]
+    assertHostTensorMatch(lens: lens)
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
+  func differentialAllLen1() {
+    // Pathological: every position has len=1, all selected
+    let lens: [UInt16] = Array(repeating: 1, count: 64)
+    assertHostTensorMatch(lens: lens)
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
+  func differentialDenseOverlap() {
+    // Every position has len=N, only position 0 selected
+    let n = 32
+    let lens: [UInt16] = Array(repeating: UInt16(n), count: n)
+    assertHostTensorMatch(lens: lens)
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
+  func differentialSingleCandidate() {
+    let lens: [UInt16] = [0, 0, 3, 0, 0, 0, 0, 0]
+    assertHostTensorMatch(lens: lens)
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
+  func differentialNoCandidates() {
+    let lens: [UInt16] = Array(repeating: 0, count: 16)
+    assertHostTensorMatch(lens: lens)
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
+  func differentialPartialValid() {
+    // Only first 4 of 8 positions are valid
+    let lens: [UInt16] = [2, 1, 3, 1, 2, 1, 3, 1]
+    assertHostTensorMatch(lens: lens, validLen: 4)
+  }
+
+  // MARK: - Differential helper
+
+  private func assertHostTensorMatch(
+    lens: [UInt16],
+    validLen: Int32? = nil,
+    sourceLocation: SourceLocation = #_sourceLocation
+  ) {
+    let pageSize = lens.count
+    let vl = validLen ?? Int32(pageSize)
+
+    // Build WinnerTuples with distinct ruleIDs
+    let winners = lens.enumerated().map { i, len in
+      WinnerTuple(
+        len: len, priorityRank: 0, ruleID: UInt16(i + 1),
+        tokenKindID: UInt16(i + 10), mode: 0
+      )
+    }
+
+    // Host reference
+    let hostResult = GreedySelector.select(winners: winners, validLen: vl)
+
+    // Tensor path
+    let winnerTensors = WinnerReduction.WinnerTensors(
+      len: MLXArray(lens.map { Int32($0) }),
+      priorityRank: MLXArray(Array(repeating: Int32(0), count: pageSize)),
+      ruleID: MLXArray((0..<pageSize).map { Int32($0 + 1) }),
+      tokenKindID: MLXArray((0..<pageSize).map { Int32($0 + 10) }),
+      mode: MLXArray(Array(repeating: Int32(0), count: pageSize))
+    )
+    let tensorResult = GreedySelector.select(winnerTensors: winnerTensors, validLen: vl)
+    eval(tensorResult.selectedMask)
+
+    // Extract selected positions from tensor result
+    let maskArr = tensorResult.selectedMask.asArray(Bool.self)
+    let startPosArr = tensorResult.startPos.asArray(Int32.self)
+    let lenArr = tensorResult.length.asArray(UInt16.self)
+    let ruleArr = tensorResult.ruleID.asArray(UInt16.self)
+
+    var tensorSelected: [GreedySelector.SelectedToken] = []
+    for i in 0..<pageSize where maskArr[i] {
+      tensorSelected.append(
+        GreedySelector.SelectedToken(
+          startPos: startPosArr[i], length: lenArr[i], ruleID: ruleArr[i],
+          tokenKindID: tensorResult.tokenKindID.asArray(UInt16.self)[i],
+          mode: tensorResult.mode.asArray(UInt8.self)[i]
+        )
+      )
+    }
+
+    #expect(tensorSelected == hostResult, sourceLocation: sourceLocation)
+  }
+
+  // MARK: - Original tests
+  @Test(.enabled(if: requiresMLXEval))
+  func selectsNonOverlappingWinnersInSourceOrder() {
+    let winners = [
+      winner(position: 0, len: 4, priorityRank: 0, ruleID: 10),
+      winner(position: 1, len: 2, priorityRank: 0, ruleID: 11),
+      winner(position: 3, len: 3, priorityRank: 0, ruleID: 12),
+      winner(position: 4, len: 1, priorityRank: 0, ruleID: 13),
+      winner(position: 6, len: 2, priorityRank: 0, ruleID: 14),
     ]
 
-    let selected = GreedySelector.select(winners: winners, validLen: 7)
+    let selected = greedyNonOverlapSelect(winners: winners, validLen: 8)
 
     #expect(
       selected == [
-        .init(startPos: 0, length: 2, ruleID: 10, tokenKindID: 100, mode: 1),
-        .init(startPos: 2, length: 1, ruleID: 11, tokenKindID: 101, mode: 1),
-        .init(startPos: 4, length: 3, ruleID: 12, tokenKindID: 102, mode: 2),
+        winner(position: 0, len: 4, priorityRank: 0, ruleID: 10),
+        winner(position: 4, len: 1, priorityRank: 0, ruleID: 13),
+        winner(position: 6, len: 2, priorityRank: 0, ruleID: 14),
       ])
   }
 
-  @Test
-  func tripleEqualsWithDoubleAndSingleEquals() {
-    // "===" with winners from rules "==" and "=".
-    let winners: [WinnerTuple] = [
-      w(len: 2, ruleID: 20, tokenKindID: 200),
-      w(len: 2, ruleID: 20, tokenKindID: 200),
-      w(len: 1, ruleID: 21, tokenKindID: 201),
+  @Test(.enabled(if: requiresMLXEval))
+  func rejectsFallbackStartInsideAcceptedFastToken() {
+    let fastWinners = [
+      winner(position: 0, len: 3, priorityRank: 0, ruleID: 10),
+      winner(position: 1, len: 0, priorityRank: 0, ruleID: 0),
+      winner(position: 2, len: 0, priorityRank: 0, ruleID: 0),
+      winner(position: 3, len: 2, priorityRank: 0, ruleID: 11),
+      winner(position: 4, len: 0, priorityRank: 0, ruleID: 0),
     ]
 
-    let selected = GreedySelector.select(winners: winners, validLen: 3)
+    let fallbackResult = FallbackPageResult(
+      fallbackLen: [2, 4, 2, 1, 1],
+      fallbackPriorityRank: [2, 1, 1, 3, 0],
+      fallbackRuleID: [80, 81, 82, 83, 84],
+      fallbackTokenKindID: [8, 8, 8, 8, 8],
+      fallbackMode: [0, 0, 0, 0, 0]
+    )
+
+    let integrated = integrateWithFallback(
+      fastWinners: fastWinners,
+      fallbackResult: fallbackResult,
+      pageWidth: 5
+    )
+    let selected = greedyNonOverlapSelect(winners: integrated, validLen: 5)
 
     #expect(
       selected == [
-        .init(startPos: 0, length: 2, ruleID: 20, tokenKindID: 200, mode: 0),
-        .init(startPos: 2, length: 1, ruleID: 21, tokenKindID: 201, mode: 0),
+        winner(position: 0, len: 3, priorityRank: 0, ruleID: 10),
+        winner(position: 3, len: 2, priorityRank: 0, ruleID: 11),
       ])
   }
 
-  @Test
-  func overlapCaseTripleEqualsArrow() {
-    // "===>": accept at 0, reject overlapping starts 1 and 2, then accept at 3.
-    let winners: [WinnerTuple] = [
-      w(len: 3, ruleID: 30, tokenKindID: 300),
-      w(len: 3, ruleID: 31, tokenKindID: 301),
-      w(len: 2, ruleID: 32, tokenKindID: 302),
-      w(len: 1, ruleID: 33, tokenKindID: 303),
-    ]
-
-    let selected = GreedySelector.select(winners: winners, validLen: 4)
-
-    #expect(
-      selected == [
-        .init(startPos: 0, length: 3, ruleID: 30, tokenKindID: 300, mode: 0),
-        .init(startPos: 3, length: 1, ruleID: 33, tokenKindID: 303, mode: 0),
-      ])
-  }
-
-  @Test
-  func overlapCaseFourDashesArrow() {
-    // "---->": accept at 0, reject overlapping starts 1..3, then accept at 4.
-    let winners: [WinnerTuple] = [
-      w(len: 4, ruleID: 40, tokenKindID: 400),
-      w(len: 4, ruleID: 41, tokenKindID: 401),
-      w(len: 3, ruleID: 42, tokenKindID: 402),
-      w(len: 2, ruleID: 43, tokenKindID: 403),
-      w(len: 1, ruleID: 44, tokenKindID: 404),
-    ]
-
-    let selected = GreedySelector.select(winners: winners, validLen: 5)
-
-    #expect(
-      selected == [
-        .init(startPos: 0, length: 4, ruleID: 40, tokenKindID: 400, mode: 0),
-        .init(startPos: 4, length: 1, ruleID: 44, tokenKindID: 404, mode: 0),
-      ])
-  }
-
-  @Test
-  func noWinnersReturnsEmptySelection() {
-    let winners = Array(repeating: WinnerTuple.empty, count: 6)
-
-    let selected = GreedySelector.select(winners: winners, validLen: 6)
-
-    #expect(selected.isEmpty)
-  }
-
-  @Test
-  func adjacentTokensWithNoGapAreAccepted() {
-    let winners: [WinnerTuple] = [
-      w(len: 2, ruleID: 50, tokenKindID: 500),
-      .empty,
-      w(len: 2, ruleID: 51, tokenKindID: 501),
-      .empty,
-    ]
-
-    let selected = GreedySelector.select(winners: winners, validLen: 4)
-
-    #expect(
-      selected == [
-        .init(startPos: 0, length: 2, ruleID: 50, tokenKindID: 500, mode: 0),
-        .init(startPos: 2, length: 2, ruleID: 51, tokenKindID: 501, mode: 0),
-      ])
-  }
-
-  @Test
-  func laterValidTokenAcceptedAfterInternalRejectedCandidate() {
-    // Accept at 0 with len=3, reject candidate at 1, still accept at 3.
-    let winners: [WinnerTuple] = [
-      w(len: 3, ruleID: 60, tokenKindID: 600),
-      w(len: 5, ruleID: 61, tokenKindID: 601),
-      .empty,
-      w(len: 2, ruleID: 62, tokenKindID: 602),
-      .empty,
-    ]
-
-    let selected = GreedySelector.select(winners: winners, validLen: 5)
-
-    #expect(
-      selected == [
-        .init(startPos: 0, length: 3, ruleID: 60, tokenKindID: 600, mode: 0),
-        .init(startPos: 3, length: 2, ruleID: 62, tokenKindID: 602, mode: 0),
-      ])
-  }
-
-  private func w(len: UInt16, ruleID: UInt16, tokenKindID: UInt16, mode: UInt8 = 0) -> WinnerTuple {
-    WinnerTuple(len: len, priorityRank: 0, ruleID: ruleID, tokenKindID: tokenKindID, mode: mode)
+  private func winner(
+    position: Int,
+    len: UInt16,
+    priorityRank: UInt16,
+    ruleID: UInt16,
+    tokenKindID: UInt16 = 1,
+    mode: UInt8 = 0
+  ) -> CandidateWinner {
+    CandidateWinner(
+      position: position,
+      len: len,
+      priorityRank: priorityRank,
+      ruleID: ruleID,
+      tokenKindID: tokenKindID,
+      mode: mode
+    )
   }
 }

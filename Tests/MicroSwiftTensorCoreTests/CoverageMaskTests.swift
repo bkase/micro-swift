@@ -4,7 +4,7 @@ import Testing
 
 @Suite
 struct CoverageMaskTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func allBytesCoveredProducesNoErrorSpans() {
     let tokens = [
       token(start: 0, length: 3),
@@ -20,7 +20,7 @@ struct CoverageMaskTests {
     #expect(spans.isEmpty)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func gapBetweenTokensProducesSingleErrorSpan() {
     let tokens = [
       token(start: 0, length: 2),
@@ -35,7 +35,7 @@ struct CoverageMaskTests {
     #expect(spans == [ErrorSpan(start: 2, end: 4)])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func uncoveredPrefixProducesErrorSpan() {
     let tokens = [token(start: 2, length: 3)]
 
@@ -47,7 +47,7 @@ struct CoverageMaskTests {
     #expect(spans == [ErrorSpan(start: 0, end: 2)])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func uncoveredSuffixProducesErrorSpan() {
     let tokens = [token(start: 0, length: 3)]
 
@@ -59,7 +59,7 @@ struct CoverageMaskTests {
     #expect(spans == [ErrorSpan(start: 3, end: 5)])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func multipleGapsProduceMultipleErrorSpans() {
     let tokens = [
       token(start: 1, length: 1),
@@ -81,7 +81,7 @@ struct CoverageMaskTests {
       ])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func emptyTokensMakeAllValidBytesUnknown() {
     let covered = CoverageMask.build(tokens: [], pageSize: 6, validLen: 4)
     let unknown = CoverageMask.unknownBytes(covered: covered, validLen: 4)
@@ -92,7 +92,7 @@ struct CoverageMaskTests {
     #expect(spans == [ErrorSpan(start: 0, end: 4)])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func skipTokensStillContributeToCoverage() {
     let tokens = [
       token(start: 0, length: 2, mode: 1),  // skip token

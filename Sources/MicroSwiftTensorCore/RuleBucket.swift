@@ -26,7 +26,7 @@ public struct RuleBuckets: Sendable {
   }
 
   /// Build deterministic buckets from lowered rules.
-  /// Unsupported families/plans are rejected at bucketing time with a fast-fail runtime error.
+  /// Unsupported families/plans are ignored here and should be rejected by capability validation.
   public static func build(from rules: [LoweredRule]) -> RuleBuckets {
     let sortedRules = rules.sorted { lhs, rhs in
       if lhs.ruleID != rhs.ruleID {
@@ -51,9 +51,7 @@ public struct RuleBuckets: Sendable {
       case .runPrefixed:
         prefixedRules.append(rule)
       case .localWindow, .fallback:
-        preconditionFailure(
-          "artifact-capability-error: unsupported rule family for runtime profile v0, " +
-            "ruleID=\(rule.ruleID), name=\(rule.name), family=\(rule.family.rawValue)")
+        continue
       }
     }
 

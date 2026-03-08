@@ -1,3 +1,5 @@
+import MLX
+
 public enum ClassRunExecution {
   /// Evaluate a classRun rule.
   /// inBody = validMask && classSetContains(bodyClassSetID, classID)
@@ -10,42 +12,85 @@ public enum ClassRunExecution {
     minLength: UInt16,
     classSetRuntime: ClassSetRuntime
   ) -> [UInt16] {
-    let positionCount = min(classIDs.count, validMask.count)
-    guard positionCount > 0 else { return [] }
-
-    var inBody = Array(repeating: false, count: positionCount)
-    for index in 0..<positionCount {
-      inBody[index] =
-        validMask[index]
-        && classSetRuntime.contains(setID: bodyClassSetID, classID: classIDs[index])
+    do {
+      return try RunFamilyMetalExecutorProvider.shared.evaluateClassRun(
+        classIDs: classIDs,
+        validMask: validMask,
+        bodyClassSetID: bodyClassSetID,
+        minLength: minLength,
+        classSetRuntime: classSetRuntime
+      )
+    } catch {
+      preconditionFailure("classRun Metal execution failed: \(error)")
     }
+  }
 
-    var starts: [Int] = []
-    var ends: [Int] = []
-    starts.reserveCapacity(positionCount)
-    ends.reserveCapacity(positionCount)
+  /// Pure MLX tensor evaluation of a classRun rule. No host arrays produced.
+  /// Returns candLen[P] as MLXArray (uint16).
+  public static func evaluateClassRunMLX(
+    classIDTensor: MLXArray,
+    validMaskTensor: MLXArray,
+    bodyClassSetID: UInt16,
+    minLength: UInt16,
+    classSetRuntime: ClassSetRuntime
+  ) -> MLXArray {
+    let pageLen = Int(classIDTensor.shape[0])
+    guard pageLen > 0 else { return zeros([0], dtype: .uint16) }
 
-    for index in 0..<positionCount {
-      if inBody[index] && (index == 0 || !inBody[index - 1]) {
-        starts.append(index)
-      }
-      if inBody[index] && (index == positionCount - 1 || !inBody[index + 1]) {
-        ends.append(index)
-      }
+    let indices = MLXArray(Int32(0)..<Int32(pageLen), [pageLen])
+
+    // 1. Membership gather: inBody = classSetContains(bodyClassSetID, classID) && valid
+    let memberMask = MembershipKernels.membershipMaskTensor(
+      classIDTensor: classIDTensor,
+      setID: bodyClassSetID,
+      classSetRuntime: classSetRuntime
+    )
+    let inBody = memberMask .&& validMaskTensor
+
+    // 2. isStart = inBody && !prev_inBody (edge detection)
+    let prevInBody = concatenated(
+      [MLXArray([false], [1]), inBody[0..<(pageLen - 1)]],
+      axis: 0
+    )
+    let isStart = inBody .&& .!prevInBody
+
+    // 3. isEnd = inBody && !next_inBody
+    let nextInBody = concatenated(
+      [inBody[1..<pageLen], MLXArray([false], [1])],
+      axis: 0
+    )
+    let isEnd = inBody .&& .!nextInBody
+
+    // 4. endPos = where isEnd, index, sentinel pageLen
+    let sentinelFill = broadcast(MLXArray(Int32(pageLen)), to: [pageLen])
+    let endPos = which(isEnd, indices, sentinelFill)
+
+    // 5. propagatedEnds = cummin(endPos, reverse=true) → nearest end for each position
+    let propagatedEnds = cummin(endPos, axis: 0, reverse: true)
+
+    // 6. lengths = propagatedEnds - indices + 1
+    let lengths = (propagatedEnds - indices + MLXArray(Int32(1))).asType(.uint16)
+
+    // 7. candLen = where isStart, lengths, 0
+    let candLen = which(isStart, lengths, zeros([pageLen], dtype: .uint16))
+
+    // 8. Apply minLength filter
+    if minLength <= 1 {
+      return candLen
     }
+    let minLenTensor = MLXArray(minLength)
+    return which(candLen .>= minLenTensor, candLen, zeros([pageLen], dtype: .uint16))
+  }
 
-    var candidateLengths = Array(repeating: UInt16(0), count: positionCount)
-    let runCount = min(starts.count, ends.count)
+  public static func backendNameForTesting() -> String {
+    RunFamilyMetalExecutorProvider.shared.backendName
+  }
 
-    for runIndex in 0..<runCount {
-      let start = starts[runIndex]
-      let end = ends[runIndex]
-      let length = UInt16(end - start + 1)
-      if length >= minLength {
-        candidateLengths[start] = length
-      }
-    }
+  public static func resetDispatchMetrics() {
+    RunFamilyMetalExecutorProvider.resetDispatchMetrics()
+  }
 
-    return candidateLengths
+  public static func dispatchMetrics() -> RunFamilyDispatchMetrics {
+    RunFamilyMetalExecutorProvider.dispatchMetrics()
   }
 }

@@ -7,7 +7,7 @@ import Testing
 
 @Suite
 struct GoldenTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func letAssignmentGolden() throws {
     let snapshot = try lexSnapshot(input: "let x = 42\n", emitSkipTokens: true)
 
@@ -26,7 +26,7 @@ struct GoldenTests {
     #expect(snapshot.overflows.isEmpty)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func functionSignatureAndBodyGolden() throws {
     let snapshot = try lexSnapshot(input: "func foo() -> Int { return 1 }\n", emitSkipTokens: true)
 
@@ -55,7 +55,7 @@ struct GoldenTests {
     #expect(snapshot.overflows.isEmpty)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func commentThenDeclarationGolden() throws {
     let snapshot = try lexSnapshot(input: "// comment\nlet y = 0\n", emitSkipTokens: true)
 
@@ -76,7 +76,7 @@ struct GoldenTests {
     #expect(snapshot.overflows.isEmpty)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func overlapResolutionGolden() throws {
     let snapshot = try lexSnapshot(input: "===>", emitSkipTokens: false)
 
@@ -89,7 +89,7 @@ struct GoldenTests {
     #expect(snapshot.overflows.isEmpty)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func deterministicAcrossRepeatedRuns() throws {
     let input = "func foo() -> Int { return 1 }\n"
     let first = try lexSnapshot(input: input, emitSkipTokens: true)

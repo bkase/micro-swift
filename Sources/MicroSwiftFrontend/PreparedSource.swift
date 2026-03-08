@@ -73,10 +73,14 @@ public enum SourceLoader {
     let (buffer, hostIndex, pages) = prepareCore(
       fileID: fileID, path: path, bytes: bytes, pagePolicy: pagePolicy)
 
-    let byteArray = bytes.withUnsafeBytes { buf in
-      MLXArray(buf.bindMemory(to: UInt8.self), [bytes.count])
+    let byteArray = Device.withDefaultDevice(.cpu) {
+      bytes.withUnsafeBytes { buf in
+        MLXArray(buf.bindMemory(to: UInt8.self), [bytes.count])
+      }
     }
-    let lineStartArray = MLXArray(hostIndex.lineStartOffsets.map { Int64($0) })
+    let lineStartArray = Device.withDefaultDevice(.cpu) {
+      MLXArray(hostIndex.lineStartOffsets.map { Int64($0) })
+    }
 
     let tape = SourceTape(
       fileID: fileID,

@@ -5,7 +5,7 @@ import Testing
 
 @Suite
 struct OverflowHandlerTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func nonOverflowPageReturnsNilDiagnostic() {
     let page = makePreparedPage(
       bucket: PageBucket(byteCapacity: 4096),
@@ -18,7 +18,7 @@ struct OverflowHandlerTests {
     #expect(diagnostic == nil)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func overflowPageReturnsDiagnostic() {
     let page = makePreparedPage(bucket: nil, validLen: 70_000, baseOffset: 0)
 
@@ -30,7 +30,7 @@ struct OverflowHandlerTests {
     #expect(diagnostic?.maxBucketSize == 65536)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func overflowSpanCoversRegion() {
     let page = makePreparedPage(bucket: nil, validLen: 100, baseOffset: 1_000)
     let fileID = FileID(rawValue: 7)

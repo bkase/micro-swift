@@ -22,7 +22,23 @@ private func withTestDependencies(
     $0.uuid = UUIDClient.test(value: "00000000-0000-0000-0000-000000000000")
     $0.mlxRuntime = MLXRuntimeClient.test(
       result: MLXRuntimeClient.MLXSmokeResult(
-        status: "ok", kernel: "trivial-add", version: "deterministic-mock")
+        status: "ok",
+        runtimeProfile: "fallback-benchmark-warm",
+        artifactHash: "deadbeefcafebabe",
+        fastPathBackendIdentifier: "mlx",
+        fastPathDeviceIdentifier: "mlx-cpu",
+        fastPathPipelineIdentifier: "fastPathPageGraph",
+        fastPathGraphCompileCount: 3,
+        fastPathGraphCacheHitCount: 3,
+        fastPathGraphCacheMissCount: 3,
+        forbiddenMidPipelineHostExtractionCount: 0,
+        runFamilyBackendIdentifier: "metal-test-device",
+        runFamilyClassRunDispatchCount: 0,
+        runFamilyHeadTailDispatchCount: 0,
+        literalWorkloadRowCount: 5,
+        runWorkloadRowCount: 5,
+        prefixedWorkloadRowCount: 3,
+        fixtureIdentifier: "mlx-smoke-proof-literal-run-prefixed-v1")
     )
     extraDeps(&$0)
   } operation: {

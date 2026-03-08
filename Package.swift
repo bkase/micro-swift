@@ -34,6 +34,7 @@ let package = Package(
       dependencies: [
         "MicroSwiftLexerGen",
         "MicroSwiftFrontend",
+        .product(name: "MLX", package: "mlx-swift"),
       ]
     ),
     .target(
@@ -52,17 +53,16 @@ let package = Package(
         .product(name: "CustomDump", package: "swift-custom-dump"),
         .target(name: "MicroSwiftSpec"),
         .target(name: "MicroSwiftLexerGen"),
-        .target(name: "MicroSwiftFrontend"),
         .target(name: "MicroSwiftTensorCore"),
-        .product(name: "MLX", package: "mlx-swift"),
       ]
     ),
     .executableTarget(
       name: "MicroSwiftBenchRunner",
       dependencies: [
-        "MicroSwiftTensorCore",
         "MicroSwiftLexerGen",
+        "MicroSwiftTensorCore",
         "MicroSwiftFrontend",
+        .product(name: "MLX", package: "mlx-swift"),
       ]
     ),
     .testTarget(

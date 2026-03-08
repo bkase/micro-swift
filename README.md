@@ -4,28 +4,22 @@ MicroSwift is a tensor-based lexer that runs entirely on Apple's [MLX](https://g
 
 ## Performance
 
-Benchmarked on Apple Silicon (xcodebuild Release, M3 Max):
+Benchmarked on Apple Silicon (xcodebuild Release, M3 Max). MLX compiled graph, warm path (5 warmup + 50 measured iterations):
 
 ```
-=== MicroSwift Lexer Benchmark ===
-
-small (1.1 KB):
-  cold  (1 iter)     1.4 MB/s     524 Ktok/s      0.8 ms
-  warm (10+10)       2.5 MB/s     918 Ktok/s      4.4 ms
-
-medium (310 KB):
-  cold  (1 iter)     8.4 MB/s   2,703 Ktok/s     37.0 ms
-  warm (10+10)      10.0 MB/s   3,242 Ktok/s    308.5 ms
-
-large (3.9 MB):
-  cold  (1 iter)    11.0 MB/s   1,101 Ktok/s    363.4 ms
-  warm (10+10)       9.6 MB/s     961 Ktok/s      4.2 s
-
-error-heavy (180 KB):
-  error (5 iter)     9.5 MB/s                     89.4 ms
+Input         CPU (v0)       GPU (MLX)      Speedup
+----------------------------------------------------
+247 B         198 KB/s       204 KB/s       1.03x
+494 B         311 KB/s       387 KB/s       1.24x
+988 B         874 KB/s       770 KB/s       0.88x
+2.4 KB        1.57 MB/s      1.92 MB/s      1.22x
+4.9 KB        2.86 MB/s      3.73 MB/s      1.31x
+9.8 KB        5.41 MB/s      7.68 MB/s      1.42x
+24 KB         20.8 MB/s      18.7 MB/s      0.90x
+49 KB         21.1 MB/s      33.0 MB/s      1.57x
 ```
 
-Steady-state throughput on medium-to-large files is **~10 MB/s / ~3,000 Ktok/s**. The "cold" numbers include MLX graph compilation; "warm" reuses compiled graphs.
+GPU throughput scales with page size — at 49 KB pages the MLX path hits **33 MB/s**, 1.57x faster than the CPU baseline. Graph compilation is amortized across pages of the same bucket size.
 
 Run the benchmark yourself:
 

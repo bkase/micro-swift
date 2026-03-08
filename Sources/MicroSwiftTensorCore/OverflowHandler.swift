@@ -19,10 +19,13 @@ public enum OverflowHandler {
     page: PreparedPage,
     fileID: FileID
   ) -> Span {
-    Span(
+    let start = ByteOffset(rawValue: page.baseOffset)
+    let end = ByteOffset(rawValue: page.baseOffset + Int64(page.validLen))
+    return try! Span.validated(
       fileID: fileID,
-      start: ByteOffset(rawValue: page.baseOffset),
-      end: ByteOffset(rawValue: page.baseOffset + Int64(page.validLen))
+      start: start,
+      end: end,
+      byteCount: end.rawValue
     )
   }
 }

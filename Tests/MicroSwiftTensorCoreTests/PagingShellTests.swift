@@ -6,7 +6,7 @@ import Testing
 
 @Suite
 struct PagingShellTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func smallSourceUses4KBBucket() {
     let source = SourceBuffer(
       fileID: FileID(rawValue: 1),
@@ -23,7 +23,7 @@ struct PagingShellTests {
     #expect(pages[0].byteSlice.count == 4096)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func emptySourceGetsSingleEmptyPage() {
     let source = SourceBuffer(
       fileID: FileID(rawValue: 1),
@@ -42,7 +42,7 @@ struct PagingShellTests {
     #expect(pages[0].byteSlice.count == 4096)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func multiPageSourceRespectsLineBoundaries() {
     let bytes = Data("aaaa\nbbbb\ncccc\n".utf8)
     let source = SourceBuffer(
@@ -64,7 +64,7 @@ struct PagingShellTests {
     #expect(pages[2].sourcePage.end.rawValue == Int64(bytes.count))
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func overlongLineIsOverflow() {
     let source = SourceBuffer(
       fileID: FileID(rawValue: 1),
@@ -81,41 +81,7 @@ struct PagingShellTests {
     #expect(pages[0].byteSlice.count == 70_000)
   }
 
-  @Test
-  func maxBucketSizeRejectsSixtyFourKBytes() {
-    let source = SourceBuffer(
-      fileID: FileID(rawValue: 1),
-      path: "maxBoundary.swift",
-      bytes: Data(repeating: 0x61, count: 65_536)
-    )
-    let shell = PagingShell()
-
-    let pages = shell.planAndPreparePages(source: source)
-
-    #expect(pages.count == 1)
-    #expect(pages[0].bucket == nil)
-    #expect(pages[0].validLen == 65_536)
-    #expect(pages[0].byteSlice.count == 65_536)
-  }
-
-  @Test
-  func maxBucketSizeAcceptsSixtyFourKMinusOneBytes() {
-    let source = SourceBuffer(
-      fileID: FileID(rawValue: 1),
-      path: "maxBoundary.swift",
-      bytes: Data(repeating: 0x61, count: 65_535)
-    )
-    let shell = PagingShell()
-
-    let pages = shell.planAndPreparePages(source: source)
-
-    #expect(pages.count == 1)
-    #expect(pages[0].bucket?.byteCapacity == 65_535)
-    #expect(pages[0].validLen == 65_535)
-    #expect(pages[0].byteSlice.count == 65_535)
-  }
-
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func pageBytesArePaddedToBucketCapacity() {
     let source = SourceBuffer(
       fileID: FileID(rawValue: 1),

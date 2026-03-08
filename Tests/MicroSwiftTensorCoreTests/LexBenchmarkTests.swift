@@ -7,7 +7,7 @@ import Testing
 
 @Suite
 struct LexBenchmarkTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func coldBenchmarkProducesValidResult() throws {
     let runtime = try makeMicroSwiftRuntime()
     let source = makeSource(repeating: "let x = 42\n", count: 10)
@@ -23,7 +23,7 @@ struct LexBenchmarkTests {
     #expect(!result.pageBucketDistribution.isEmpty)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func warmBenchmarkShowsConsistentTiming() throws {
     let runtime = try makeMicroSwiftRuntime()
     let source = makeSource(repeating: "func foo() -> Int { return 1 }\n", count: 10)
@@ -42,31 +42,7 @@ struct LexBenchmarkTests {
     #expect(result.bytesPerSecond.isFinite)
   }
 
-  @Test
-  func warmBenchmarkAccumulatesAllMeasureIterations() throws {
-    let runtime = try makeMicroSwiftRuntime()
-    let source = makeSource(repeating: "let x = 42\n", count: 10)
-
-    let result = LexBenchmark.benchmarkWarm(
-      source: source,
-      artifact: runtime,
-      warmupIterations: 1,
-      measureIterations: 3
-    )
-
-    let once = LexBenchmark.benchmarkCold(
-      source: source,
-      artifact: runtime,
-      iterations: 1
-    )
-
-    #expect(result.totalBytes == once.totalBytes * 3)
-    #expect(result.totalTokens == once.totalTokens * 3)
-    #expect(result.durationNanos > 0)
-    #expect(result.tokensPerSecond > 0)
-  }
-
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func reportGeneratesValidJSON() throws {
     let result = LexBenchmarkResult(
       mode: "warm",

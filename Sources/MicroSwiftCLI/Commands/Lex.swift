@@ -26,17 +26,17 @@ struct Lex: AsyncParsableCommand {
       bytes: fileData
     )
 
-    let runtime = try buildRuntimeArtifact()
-    let capabilityValidation = CapabilityValidator.validate(runtime)
-    guard capabilityValidation.isValid else {
+    let (runtime, lexerArtifact) = try buildRuntimeArtifact()
+    let capabilityDiagnostics = CapabilityValidator.validate(artifact: lexerArtifact, profile: .v0)
+    guard capabilityDiagnostics.isEmpty else {
       let output = LexFailureOutput(
         status: "artifact-capability-error",
-        diagnostics: capabilityValidation.diagnostics.map {
+        diagnostics: capabilityDiagnostics.map {
           CapabilityDiagnosticOutput(
             ruleID: $0.ruleID,
             ruleName: $0.ruleName,
-            family: $0.family,
-            message: $0.message
+            family: $0.family.rawValue,
+            message: $0.reason.rawValue
           )
         }
       )
@@ -105,21 +105,15 @@ struct Lex: AsyncParsableCommand {
     return hash
   }
 
-  private func buildRuntimeArtifact() throws -> ArtifactRuntime {
-    let options = CompileOptions(
-      maxLocalWindowBytes: 8,
-      enableFallback: true,
-      maxFallbackStatesPerRule: 256
-    )
+  private func buildRuntimeArtifact() throws -> (ArtifactRuntime, LexerArtifact) {
     let declared = microSwiftV0.declare()
     let normalized = DeclaredSpec.normalize(declared)
-    let validated = try NormalizedSpec.validate(normalized, options: options)
+    let validated = try NormalizedSpec.validate(normalized)
     let byteClasses = validated.buildByteClasses()
     let classSets = validated.buildClassSets(using: byteClasses)
     let classified = try validated.classifyRules(
       byteClasses: byteClasses,
-      classSets: classSets,
-      options: options
+      classSets: classSets
     )
     let artifact = try ArtifactSerializer.build(
       classified: classified,
@@ -127,7 +121,7 @@ struct Lex: AsyncParsableCommand {
       classSets: classSets,
       generatorVersion: "micro-swift-cli"
     )
-    return try ArtifactLoader.load(artifact)
+    return (try ArtifactLoader.load(artifact), artifact)
   }
 }
 

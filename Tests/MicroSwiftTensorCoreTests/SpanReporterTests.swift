@@ -5,7 +5,7 @@ import Testing
 
 @Suite
 struct SpanReporterTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func errorSpansAreOffsetByBaseOffset() {
     let spans = [
       ErrorSpan(start: 0, end: 2),
@@ -27,7 +27,7 @@ struct SpanReporterTests {
     #expect(resolved[1].end == ByteOffset(rawValue: 109))
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func emptyErrorSpansReturnEmptyResult() {
     let resolved = SpanReporter.resolveErrorSpans(
       errorSpans: [],

@@ -5,7 +5,7 @@ import Testing
 
 @Suite
 struct LexPageIntegrationTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func lexSimpleInputEndToEnd() throws {
     let runtime = try makeMicroSwiftRuntime()
     let input = "let x = 42\n"
@@ -27,6 +27,29 @@ struct LexPageIntegrationTests {
     #expect(tokens.map(\.startByte) == [0, 4, 6, 8])
     #expect(tokens.map(\.endByte) == [3, 5, 7, 10])
     #expect(result.errorSpans.isEmpty)
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
+  func lexPageRejectsLiteralThatWouldReadPastValidLen() throws {
+    let runtime = try makeMicroSwiftRuntime()
+    let bytes = Array("==".utf8)
+
+    let result = TensorLexer.lexPage(
+      bytes: bytes,
+      validLen: 1,
+      baseOffset: 0,
+      artifact: runtime,
+      options: LexOptions(emitSkipTokens: false)
+    )
+    let tokens = TokenUnpacker.unpack(result: result, baseOffset: 0)
+    let kindByID = Dictionary(
+      uniqueKeysWithValues: runtime.tokenKinds.map { ($0.tokenKindID, $0.name) })
+    let kindNames = tokens.map { kindByID[$0.kind] ?? "<unknown>" }
+
+    #expect(tokens.count == 1)
+    #expect(tokens[0].startByte == 0)
+    #expect(tokens[0].endByte == 1)
+    #expect(kindNames == ["eq"])
   }
 
   private func makeMicroSwiftRuntime() throws -> ArtifactRuntime {

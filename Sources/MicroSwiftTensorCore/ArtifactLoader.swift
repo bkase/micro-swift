@@ -15,18 +15,6 @@ public enum ArtifactLoader {
       throw ArtifactLoaderError.emptyRules
     }
 
-    return ArtifactRuntime(
-      specName: artifact.specName,
-      ruleCount: artifact.rules.count,
-      maxLiteralLength: artifact.runtimeHints.maxLiteralLength,
-      maxBoundedRuleWidth: artifact.runtimeHints.maxBoundedRuleWidth,
-      maxDeterministicLookaheadBytes: artifact.runtimeHints.maxDeterministicLookaheadBytes,
-      byteToClassLUT: artifact.byteToClass,
-      tokenKinds: artifact.tokenKinds,
-      rules: artifact.rules,
-      keywordRemaps: artifact.keywordRemaps,
-      classSets: artifact.classSets,
-      classes: artifact.classes
-    )
+    return try ArtifactRuntime.fromArtifact(artifact)
   }
 }

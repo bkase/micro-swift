@@ -1,10 +1,11 @@
+import MicroSwiftLexerGen
 import Testing
 
 @testable import MicroSwiftTensorCore
 
 @Suite
 struct CandidateVerificationTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func literalDifferentialMatchesBruteForceOnRandomInputs() {
     var rng = LCG(seed: 0xC0FFEE)
 
@@ -23,6 +24,37 @@ struct CandidateVerificationTests {
         literalBytes: literal
       )
       let expected = referenceLiteral(bytes: bytes, validMask: validMask, literal: literal)
+      #expect(actual == expected)
+    }
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
+  func literalCompiledPageDifferentialMatchesBruteForceOnRandomInputs() throws {
+    let runtime = try makeLiteralCandidateRuntime()
+    var rng = LCG(seed: 0xC0DE_C0DE)
+
+    for _ in 0..<220 {
+      let length = rng.int(in: 1...28)
+      let bytes = randomBytes(count: length, rng: &rng)
+      let validLen = rng.int(in: 0...length)
+      let validMask = makeValidMask(count: length, validLen: validLen)
+      let literalLength = rng.int(in: 1...4)
+      let literal = randomBytes(count: literalLength, rng: &rng)
+
+      let compiledPage = CompiledPageInput(
+        bytes: bytes,
+        validLen: Int32(validLen),
+        baseOffset: 0,
+        bucket: PageBucket(byteCapacity: Int32(length)),
+        artifact: runtime
+      )
+      let actualTensor = LiteralExecution.evaluateLiteral(
+        compiledPage: compiledPage,
+        literalBytes: literal
+      )
+      let actual = actualTensor.asArray(UInt16.self)
+      let expected = referenceLiteral(bytes: bytes, validMask: validMask, literal: literal)
+
       #expect(actual == expected)
     }
   }
@@ -59,7 +91,40 @@ struct CandidateVerificationTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
+  func classRunDifferentialVariesClassSetTablesAndMinLength() {
+    var rng = LCG(seed: 0x44CC11)
+
+    for _ in 0..<220 {
+      let runtime = randomClassRuntime(rng: &rng)
+      let count = rng.int(in: 1...48)
+      let maxClassID = max(0, runtime.numByteClasses - 1)
+      let classIDs = (0..<count).map { _ in UInt8(rng.int(in: 0...maxClassID)) }
+      let validLen = rng.int(in: 0...count)
+      let validMask = makeValidMask(count: count, validLen: validLen)
+      let bodySetID = UInt16(rng.int(in: 0...max(0, runtime.numClassSets - 1)))
+      let minLength = UInt16(rng.int(in: 1...8))
+
+      let actual = ClassRunExecution.evaluateClassRun(
+        classIDs: classIDs,
+        validMask: validMask,
+        bodyClassSetID: bodySetID,
+        minLength: minLength,
+        classSetRuntime: runtime
+      )
+      let expected = referenceClassRun(
+        classIDs: classIDs,
+        validMask: validMask,
+        bodySetID: bodySetID,
+        minLength: minLength,
+        runtime: runtime
+      )
+
+      #expect(actual == expected)
+    }
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
   func headTailDifferentialMatchesBruteForceOnRandomInputs() {
     var rng = LCG(seed: 0xBEEF)
     let runtime = makeClassRuntime()
@@ -91,7 +156,40 @@ struct CandidateVerificationTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
+  func headTailDifferentialVariesClassSetTables() {
+    var rng = LCG(seed: 0x50EE77)
+
+    for _ in 0..<220 {
+      let runtime = randomClassRuntime(rng: &rng)
+      let count = rng.int(in: 1...48)
+      let maxClassID = max(0, runtime.numByteClasses - 1)
+      let classIDs = (0..<count).map { _ in UInt8(rng.int(in: 0...maxClassID)) }
+      let validLen = rng.int(in: 0...count)
+      let validMask = makeValidMask(count: count, validLen: validLen)
+      let headSetID = UInt16(rng.int(in: 0...max(0, runtime.numClassSets - 1)))
+      let tailSetID = UInt16(rng.int(in: 0...max(0, runtime.numClassSets - 1)))
+
+      let actual = HeadTailExecution.evaluateHeadTail(
+        classIDs: classIDs,
+        validMask: validMask,
+        headClassSetID: headSetID,
+        tailClassSetID: tailSetID,
+        classSetRuntime: runtime
+      )
+      let expected = referenceHeadTail(
+        classIDs: classIDs,
+        validMask: validMask,
+        headSetID: headSetID,
+        tailSetID: tailSetID,
+        runtime: runtime
+      )
+
+      #expect(actual == expected)
+    }
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
   func prefixedDifferentialMatchesBruteForceOnRandomInputs() {
     var rng = LCG(seed: 0xFACE)
     let runtime = makePrefixedRuntime()
@@ -147,7 +245,32 @@ struct CandidateVerificationTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
+  func prefixedDoesNotMatchWhenPrefixWouldReadIntoInvalidTail() {
+    let runtime = makePrefixedRuntime()
+    let bytes = Array("/".utf8) + [UInt8(ascii: "/"), UInt8(ascii: "a")]
+    let validMask = [true, false, false]
+    let classIDs = classifyPrefixed(bytes)
+    let stopMask = zip(classIDs, validMask).map { classID, valid in
+      valid && runtime.contains(setID: 1, classID: classID)
+    }
+    let nextStop = NextStopHelper.computeNextStop(stopMask: stopMask, validLen: 1)
+
+    let actual = PrefixedExecution.evaluatePrefixed(
+      bytes: bytes,
+      classIDs: classIDs,
+      validMask: validMask,
+      prefix: Array("//".utf8),
+      bodyClassSetID: 0,
+      stopClassSetID: 1,
+      classSetRuntime: runtime,
+      nextStop: nextStop
+    )
+
+    #expect(actual == [0, 0, 0])
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
   func selectedRowsAreStrictlyIncreasingAndNonOverlapping() {
     var rng = LCG(seed: 0x1234_5678)
 
@@ -183,7 +306,7 @@ struct CandidateVerificationTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func everyValidByteIsCoveredByTokenOrErrorRun() {
     var rng = LCG(seed: 0x4455_6677)
 
@@ -222,7 +345,7 @@ struct CandidateVerificationTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func keywordRemapDoesNotChangeSelectedTokenSpan() {
     var rng = LCG(seed: 0x0DDF00D)
 
@@ -246,7 +369,7 @@ struct CandidateVerificationTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func overlapFixtureTripleEqualsWithDoubleAndSingle() {
     let selection = selectLiteralFixture(
       input: "===",
@@ -264,7 +387,7 @@ struct CandidateVerificationTests {
     #expect(selection.errors.isEmpty)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func overlapFixtureTripleEqualsArrow() {
     let selection = selectLiteralFixture(
       input: "===>",
@@ -283,7 +406,7 @@ struct CandidateVerificationTests {
     #expect(selection.errors.isEmpty)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func overlapFixtureDashRunArrow() {
     let selection = selectLiteralFixture(
       input: "---->",
@@ -302,7 +425,7 @@ struct CandidateVerificationTests {
     #expect(selection.errors == [ErrorSpan(start: 4, end: 5)])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func overlapFixtureSlashDoubleEquals() {
     let selection = selectLiteralFixture(
       input: "/==",
@@ -321,7 +444,7 @@ struct CandidateVerificationTests {
     #expect(selection.errors.isEmpty)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func overlapFixtureSlashFlood() {
     let selection = selectLiteralFixture(
       input: "////x",
@@ -342,7 +465,7 @@ struct CandidateVerificationTests {
     #expect(selection.errors.isEmpty)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func longerLowPriorityCandidateInsideAcceptedTokenIsRejected() {
     let selection = selectLiteralFixture(
       input: "aaaaX",
@@ -361,7 +484,7 @@ struct CandidateVerificationTests {
     #expect(selection.errors.isEmpty)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func laterValidTokenSurvivesAfterInternalRejectedCandidate() {
     let selection = selectLiteralFixture(
       input: "abcbcY",
@@ -466,6 +589,27 @@ private func makePrefixedRuntime() -> ClassSetRuntime {
   let body = [true, true, true, true, true, false, true]
   let stop = [false, false, false, false, false, true, false]
   return ClassSetRuntime(mask: [body, stop], numClassSets: 2, numByteClasses: 7)
+}
+
+private func randomClassRuntime(rng: inout LCG) -> ClassSetRuntime {
+  let numClassSets = rng.int(in: 1...4)
+  let numByteClasses = rng.int(in: 1...8)
+  var mask: [[Bool]] = []
+  mask.reserveCapacity(numClassSets)
+
+  for _ in 0..<numClassSets {
+    var row = Array(repeating: false, count: numByteClasses)
+    for classIndex in 0..<numByteClasses {
+      row[classIndex] = rng.bool()
+    }
+    mask.append(row)
+  }
+
+  return ClassSetRuntime(
+    mask: mask,
+    numClassSets: numClassSets,
+    numByteClasses: numByteClasses
+  )
 }
 
 private func classifyPrefixed(_ bytes: [UInt8]) -> [UInt8] {
@@ -770,4 +914,20 @@ private func selectLiteralFixture(
 
   let winners = WinnerReduction.reduce(candidates: candidates, pageSize: bytes.count)
   return modelSelect(winners: winners, validMask: validMask)
+}
+
+private func makeLiteralCandidateRuntime() throws -> ArtifactRuntime {
+  let declared = microSwiftV0.declare()
+  let normalized = DeclaredSpec.normalize(declared)
+  let validated = try NormalizedSpec.validate(normalized)
+  let byteClasses = validated.buildByteClasses()
+  let classSets = validated.buildClassSets(using: byteClasses)
+  let classified = try validated.classifyRules(byteClasses: byteClasses, classSets: classSets)
+  let artifact = try ArtifactSerializer.build(
+    classified: classified,
+    byteClasses: byteClasses,
+    classSets: classSets,
+    generatorVersion: "test"
+  )
+  return try ArtifactLoader.load(artifact)
 }

@@ -8,7 +8,7 @@ public struct PagingShell: Sendable {
 
   public init(
     pagePolicy: PagePolicy = PagePolicy(targetBytes: 32768),
-    maxBucketSize: Int32 = PageBucket.maxSupportedByteCapacity,
+    maxBucketSize: Int32 = 65536,
     buckets: [PageBucket] = PageBucket.standardBuckets
   ) {
     precondition(maxBucketSize > 0, "PagingShell.maxBucketSize must be > 0")
@@ -38,7 +38,12 @@ public struct PagingShell: Sendable {
       let bucket = buckets.first { validLen <= $0.byteCapacity }
       let byteSlice: [UInt8]
       if let bucket {
-        byteSlice = rawSlice + [UInt8](repeating: 0, count: Int(bucket.byteCapacity - validLen))
+        byteSlice =
+          rawSlice
+          + [UInt8](
+            repeating: PageBucket.neutralPaddingByte,
+            count: Int(bucket.byteCapacity - validLen)
+          )
       } else {
         byteSlice = rawSlice
       }

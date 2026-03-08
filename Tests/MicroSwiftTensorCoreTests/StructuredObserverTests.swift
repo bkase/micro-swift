@@ -6,7 +6,7 @@ import Testing
 
 @Suite
 struct StructuredObserverTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func observeCountsTokensErrorsAndOverflows() {
     let source = SourceBuffer(
       fileID: FileID(rawValue: 42),
@@ -45,7 +45,7 @@ struct StructuredObserverTests {
     #expect(observation.overflowCount == 1)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func observeComputesPageBucketDistribution() {
     let source = SourceBuffer(
       fileID: FileID(rawValue: 7),

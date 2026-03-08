@@ -1,158 +1,104 @@
+import MicroSwiftTensorCore
 import Testing
-
-@testable import MicroSwiftTensorCore
 
 @Suite
 struct WinnerReductionTests {
-  @Test
-  func singleRuleYieldsThatRuleAtMatchingPositions() {
-    let candidate = WinnerReduction.RuleCandidate(
-      ruleID: 7,
-      tokenKindID: 17,
-      priorityRank: 2,
-      mode: 1,
-      candLen: [0, 3, 1, 0]
-    )
-
-    let winners = WinnerReduction.reduce(candidates: [candidate], pageSize: 4)
-
-    expectWinner(winners[0], len: 0, priorityRank: .max, ruleID: .max, tokenKindID: 0, mode: 0)
-    expectWinner(winners[1], len: 3, priorityRank: 2, ruleID: 7, tokenKindID: 17, mode: 1)
-    expectWinner(winners[2], len: 1, priorityRank: 2, ruleID: 7, tokenKindID: 17, mode: 1)
-    expectWinner(winners[3], len: 0, priorityRank: .max, ruleID: .max, tokenKindID: 0, mode: 0)
-  }
-
-  @Test
-  func longerCandidateWins() {
-    let short = WinnerReduction.RuleCandidate(
-      ruleID: 1,
-      tokenKindID: 10,
-      priorityRank: 0,
-      mode: 0,
-      candLen: [2, 1, 0]
-    )
-    let long = WinnerReduction.RuleCandidate(
-      ruleID: 2,
-      tokenKindID: 20,
-      priorityRank: 3,
-      mode: 0,
-      candLen: [3, 4, 0]
-    )
-
-    let winners = WinnerReduction.reduce(candidates: [short, long], pageSize: 3)
-
-    expectWinner(winners[0], len: 3, priorityRank: 3, ruleID: 2, tokenKindID: 20, mode: 0)
-    expectWinner(winners[1], len: 4, priorityRank: 3, ruleID: 2, tokenKindID: 20, mode: 0)
-    expectWinner(winners[2], len: 0, priorityRank: .max, ruleID: .max, tokenKindID: 0, mode: 0)
-  }
-
-  @Test
-  func smallerPriorityWinsWhenLengthsTie() {
-    let highPriorityRank = WinnerReduction.RuleCandidate(
-      ruleID: 3,
-      tokenKindID: 30,
-      priorityRank: 5,
-      mode: 0,
-      candLen: [4]
-    )
-    let lowPriorityRank = WinnerReduction.RuleCandidate(
-      ruleID: 4,
-      tokenKindID: 40,
-      priorityRank: 1,
-      mode: 0,
-      candLen: [4]
-    )
-
-    let winners = WinnerReduction.reduce(
-      candidates: [highPriorityRank, lowPriorityRank], pageSize: 1)
-
-    expectWinner(winners[0], len: 4, priorityRank: 1, ruleID: 4, tokenKindID: 40, mode: 0)
-  }
-
-  @Test
-  func hierarchicalReductionAcrossMultipleRules() {
-    let r1 = WinnerReduction.RuleCandidate(
-      ruleID: 8,
-      tokenKindID: 80,
-      priorityRank: 3,
-      mode: 0,
-      candLen: [2, 0, 1, 0]
-    )
-    let r2 = WinnerReduction.RuleCandidate(
-      ruleID: 6,
-      tokenKindID: 60,
-      priorityRank: 3,
-      mode: 0,
-      candLen: [2, 4, 0, 0]
-    )
-    let r3 = WinnerReduction.RuleCandidate(
-      ruleID: 5,
-      tokenKindID: 50,
-      priorityRank: 2,
-      mode: 1,
-      candLen: [2, 4, 3, 0]
-    )
-    let r4 = WinnerReduction.RuleCandidate(
-      ruleID: 4,
-      tokenKindID: 40,
-      priorityRank: 2,
-      mode: 2,
-      candLen: [2, 1, 5, 0]
-    )
-
-    let winners = WinnerReduction.reduce(candidates: [r1, r2, r3, r4], pageSize: 4)
-
-    // Position 0: all len=2, priority tie between r3/r4, smaller ruleID (4) wins.
-    expectWinner(winners[0], len: 2, priorityRank: 2, ruleID: 4, tokenKindID: 40, mode: 2)
-    // Position 1: longest len=4 from r2/r3, smaller priorityRank from r3 wins.
-    expectWinner(winners[1], len: 4, priorityRank: 2, ruleID: 5, tokenKindID: 50, mode: 1)
-    // Position 2: longest len=5 from r4 wins.
-    expectWinner(winners[2], len: 5, priorityRank: 2, ruleID: 4, tokenKindID: 40, mode: 2)
-    // Position 3: no candidates.
-    expectWinner(winners[3], len: 0, priorityRank: .max, ruleID: .max, tokenKindID: 0, mode: 0)
-  }
-
-  @Test
-  func emptyCandidatesProduceEmptyWinners() {
-    let winners = WinnerReduction.reduce(candidates: [], pageSize: 3)
-
-    expectWinner(winners[0], len: 0, priorityRank: .max, ruleID: .max, tokenKindID: 0, mode: 0)
-    expectWinner(winners[1], len: 0, priorityRank: .max, ruleID: .max, tokenKindID: 0, mode: 0)
-    expectWinner(winners[2], len: 0, priorityRank: .max, ruleID: .max, tokenKindID: 0, mode: 0)
-  }
-
-  @Test
-  func pairwiseMergeChoosesBetterElement() {
-    let a: [WinnerTuple] = [
-      WinnerTuple(len: 2, priorityRank: 2, ruleID: 5, tokenKindID: 50, mode: 0),
-      WinnerTuple(len: 4, priorityRank: 7, ruleID: 9, tokenKindID: 90, mode: 0),
-      .empty,
+  @Test(.enabled(if: requiresMLXEval))
+  func reduceAcrossLiteralRunAndFallbackBuckets() {
+    let literalBucket = [
+      winner(position: 0, len: 2, priorityRank: 3, ruleID: 20),
+      winner(position: 1, len: 1, priorityRank: 2, ruleID: 30),
     ]
-    let b: [WinnerTuple] = [
-      WinnerTuple(len: 3, priorityRank: 9, ruleID: 1, tokenKindID: 10, mode: 1),
-      WinnerTuple(len: 4, priorityRank: 1, ruleID: 10, tokenKindID: 100, mode: 1),
-      WinnerTuple(len: 1, priorityRank: 0, ruleID: 2, tokenKindID: 20, mode: 2),
+    let runBucket = [
+      winner(position: 0, len: 3, priorityRank: 9, ruleID: 40),
+      winner(position: 1, len: 1, priorityRank: 1, ruleID: 25),
+    ]
+    let fallbackBucket = [
+      winner(position: 0, len: 3, priorityRank: 1, ruleID: 50),
+      winner(position: 1, len: 1, priorityRank: 1, ruleID: 21),
+      winner(position: 2, len: 4, priorityRank: 0, ruleID: 60),
     ]
 
-    let merged = WinnerReduction.pairwiseMerge(a, b)
+    let reduced = reduceBucketWinners(
+      buckets: [literalBucket, runBucket, fallbackBucket]
+    )
 
-    expectWinner(merged[0], len: 3, priorityRank: 9, ruleID: 1, tokenKindID: 10, mode: 1)
-    expectWinner(merged[1], len: 4, priorityRank: 1, ruleID: 10, tokenKindID: 100, mode: 1)
-    expectWinner(merged[2], len: 1, priorityRank: 0, ruleID: 2, tokenKindID: 20, mode: 2)
+    #expect(reduced.count == 3)
+    #expect(reduced[0] == winner(position: 0, len: 3, priorityRank: 1, ruleID: 50))
+    #expect(reduced[1] == winner(position: 1, len: 1, priorityRank: 1, ruleID: 21))
+    #expect(reduced[2] == winner(position: 2, len: 4, priorityRank: 0, ruleID: 60))
   }
 
-  private func expectWinner(
-    _ winner: WinnerTuple,
+  @Test(.enabled(if: requiresMLXEval))
+  func integrateFallbackIntoFastWinners() {
+    let fastWinners = [
+      winner(position: 0, len: 2, priorityRank: 0, ruleID: 10),
+      winner(position: 1, len: 1, priorityRank: 5, ruleID: 11),
+      winner(position: 2, len: 0, priorityRank: 0, ruleID: 0),
+      winner(position: 3, len: 2, priorityRank: 2, ruleID: 99),
+    ]
+
+    let fallbackResult = FallbackPageResult(
+      fallbackLen: [1, 3, 1, 2],
+      fallbackPriorityRank: [0, 1, 0, 1],
+      fallbackRuleID: [70, 71, 72, 50],
+      fallbackTokenKindID: [7, 7, 7, 7],
+      fallbackMode: [0, 0, 0, 1]
+    )
+
+    let integrated = integrateWithFallback(
+      fastWinners: fastWinners,
+      fallbackResult: fallbackResult,
+      pageWidth: 4
+    )
+
+    #expect(integrated.count == 4)
+    #expect(integrated[0] == winner(position: 0, len: 2, priorityRank: 0, ruleID: 10))
+    #expect(
+      integrated[1]
+        == winner(
+          position: 1,
+          len: 3,
+          priorityRank: 1,
+          ruleID: 71,
+          tokenKindID: 7
+        ))
+    #expect(
+      integrated[2]
+        == winner(
+          position: 2,
+          len: 1,
+          priorityRank: 0,
+          ruleID: 72,
+          tokenKindID: 7
+        ))
+    #expect(
+      integrated[3]
+        == winner(
+          position: 3,
+          len: 2,
+          priorityRank: 1,
+          ruleID: 50,
+          tokenKindID: 7,
+          mode: 1
+        ))
+  }
+
+  private func winner(
+    position: Int,
     len: UInt16,
     priorityRank: UInt16,
     ruleID: UInt16,
-    tokenKindID: UInt16,
-    mode: UInt8
-  ) {
-    #expect(winner.len == len)
-    #expect(winner.priorityRank == priorityRank)
-    #expect(winner.ruleID == ruleID)
-    #expect(winner.tokenKindID == tokenKindID)
-    #expect(winner.mode == mode)
+    tokenKindID: UInt16 = 1,
+    mode: UInt8 = 0
+  ) -> CandidateWinner {
+    CandidateWinner(
+      position: position,
+      len: len,
+      priorityRank: priorityRank,
+      ruleID: ruleID,
+      tokenKindID: tokenKindID,
+      mode: mode
+    )
   }
 }

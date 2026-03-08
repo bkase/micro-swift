@@ -4,7 +4,7 @@ import Testing
 
 @Suite
 struct TokenTapeTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func assembleSinglePage() {
     let result = PageLexResult(
       packedRows: [
@@ -30,7 +30,7 @@ struct TokenTapeTests {
     #expect(tape.overflows.isEmpty)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func assembleMultiplePagesAdjustsOffsets() {
     let page0 = PageLexResult(
       packedRows: [
@@ -76,7 +76,7 @@ struct TokenTapeTests {
     #expect(tape.overflows == [overflow])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func assembleEmptyPages() {
     let tape = TokenTape.assemble(pageResults: [], overflows: [])
 

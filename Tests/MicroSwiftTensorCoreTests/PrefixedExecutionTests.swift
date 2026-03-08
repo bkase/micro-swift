@@ -1,3 +1,4 @@
+import MLX
 import Testing
 
 @testable import MicroSwiftTensorCore
@@ -7,7 +8,7 @@ struct PrefixedExecutionTests {
   private let bodySetID: UInt16 = 0
   private let stopSetID: UInt16 = 1
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func lineCommentStopsBeforeNewline() {
     let bytes = Array("// hello\n".utf8)
     let validMask = Array(repeating: true, count: bytes.count)
@@ -34,7 +35,7 @@ struct PrefixedExecutionTests {
     #expect(lengths.dropFirst().allSatisfy { $0 == 0 })
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func lineCommentAtEndConsumesToValidRegionEnd() {
     let bytes = Array("// hi".utf8)
     let validMask = Array(repeating: true, count: bytes.count)
@@ -60,7 +61,7 @@ struct PrefixedExecutionTests {
     #expect(lengths[0] == 5)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func noPrefixMatchProducesAllZeros() {
     let bytes = Array("abc\n".utf8)
     let validMask = Array(repeating: true, count: bytes.count)
@@ -86,7 +87,7 @@ struct PrefixedExecutionTests {
     #expect(lengths.allSatisfy { $0 == 0 })
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func multipleLineCommentsAreEvaluatedIndependently() {
     let bytes = Array("//a\nx//bc\n".utf8)
     let validMask = Array(repeating: true, count: bytes.count)
@@ -113,7 +114,7 @@ struct PrefixedExecutionTests {
     #expect(lengths[5] == 4)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func prefixWithoutBodyReturnsPrefixLength() {
     let bytes = Array("//\n".utf8)
     let validMask = Array(repeating: true, count: bytes.count)
@@ -164,5 +165,124 @@ struct PrefixedExecutionTests {
       if byte == UInt8(ascii: " ") { return 3 }
       return 1
     }
+  }
+
+  // MARK: - MLX differential tests
+
+  @Test(.enabled(if: requiresMLXEval))
+  func mlxMatchesHostForLineComment() {
+    assertMLXMatchesHost(
+      text: "// hello\n",
+      prefix: Array("//".utf8),
+      bodySetID: bodySetID,
+      stopSetID: stopSetID
+    )
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
+  func mlxMatchesHostForCommentAtEnd() {
+    assertMLXMatchesHost(
+      text: "// hi",
+      prefix: Array("//".utf8),
+      bodySetID: bodySetID,
+      stopSetID: stopSetID
+    )
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
+  func mlxMatchesHostForNoMatch() {
+    assertMLXMatchesHost(
+      text: "abc\n",
+      prefix: Array("//".utf8),
+      bodySetID: bodySetID,
+      stopSetID: stopSetID
+    )
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
+  func mlxMatchesHostForMultipleComments() {
+    assertMLXMatchesHost(
+      text: "//a\nx//bc\n",
+      prefix: Array("//".utf8),
+      bodySetID: bodySetID,
+      stopSetID: stopSetID
+    )
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
+  func mlxMatchesHostForPrefixWithoutBody() {
+    assertMLXMatchesHost(
+      text: "//\n",
+      prefix: Array("//".utf8),
+      bodySetID: bodySetID,
+      stopSetID: stopSetID
+    )
+  }
+
+  private func assertMLXMatchesHost(
+    text: String,
+    prefix: [UInt8],
+    bodySetID: UInt16,
+    stopSetID: UInt16?
+  ) {
+    let bytes = Array(text.utf8)
+    let validMask = Array(repeating: true, count: bytes.count)
+    let classIDs = classify(bytes)
+    let runtime = makeRuntime()
+    let nextStop = makeNextStop(
+      classIDs: classIDs,
+      validMask: validMask,
+      runtime: runtime
+    )
+
+    let hostResult = PrefixedExecution.evaluatePrefixed(
+      bytes: bytes,
+      classIDs: classIDs,
+      validMask: validMask,
+      prefix: prefix,
+      bodyClassSetID: bodySetID,
+      stopClassSetID: stopSetID,
+      classSetRuntime: runtime,
+      nextStop: nextStop
+    )
+
+    let pageLen = bytes.count
+    let byteTensor = MLXArray(bytes, [pageLen]).asType(.uint8)
+    let classIDTensor = MLXArray(classIDs.map { UInt16($0) }, [pageLen]).asType(.uint16)
+    let validMaskTensor = MLXArray(validMask, [pageLen]).asType(.bool)
+
+    // Precompute nextInvalidTensor
+    let indices = MLXArray(Int32(0)..<Int32(pageLen), [pageLen])
+    let sentinelFill = MLXArray(Array(repeating: Int32(pageLen), count: pageLen), [pageLen])
+    let invalidIndices = which(.!validMaskTensor, indices, sentinelFill)
+    let nextInvalidTensor = cummin(invalidIndices, axis: 0, reverse: true)
+
+    // Precompute nextStopTensor
+    let nextStopTensor: MLXArray?
+    if let stopSetID {
+      let stopMember = MembershipKernels.membershipMaskTensor(
+        classIDTensor: classIDTensor,
+        setID: stopSetID,
+        classSetRuntime: runtime
+      )
+      let isStop = stopMember .&& validMaskTensor
+      let stopIndices = which(isStop, indices, sentinelFill)
+      nextStopTensor = cummin(stopIndices, axis: 0, reverse: true)
+    } else {
+      nextStopTensor = nil
+    }
+
+    let mlxResult = PrefixedExecution.evaluatePrefixedMLX(
+      byteTensor: byteTensor,
+      classIDTensor: classIDTensor,
+      validMaskTensor: validMaskTensor,
+      prefix: prefix,
+      bodyClassSetID: bodySetID,
+      classSetRuntime: runtime,
+      nextInvalidTensor: nextInvalidTensor,
+      nextStopTensor: nextStopTensor
+    )
+    let mlxHost = mlxResult.asType(.uint16).asArray(UInt16.self)
+    #expect(mlxHost == hostResult)
   }
 }

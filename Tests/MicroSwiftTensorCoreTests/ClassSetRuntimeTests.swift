@@ -6,7 +6,7 @@ import Testing
 
 @Suite
 struct ClassSetRuntimeTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func buildsDenseMaskAndAnswersMembership() throws {
     let classSets = try decodeClassSets(
       """
@@ -36,17 +36,17 @@ struct ClassSetRuntimeTests {
     #expect(runtime.contains(setID: 1, classID: 1))
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func emptyClassSetsProduceEmptyMask() {
     let runtime = ClassSetRuntime.build(classSets: [], classes: [])
 
     #expect(runtime.numClassSets == 0)
     #expect(runtime.numByteClasses == 0)
-    #expect(runtime.mask.isEmpty)
+    #expect(runtime.hostMaskBytes().isEmpty)
     #expect(!runtime.contains(setID: 0, classID: 0))
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func supportsBoundaryClassIDAtUpperEdge() throws {
     let classSets = try decodeClassSets(
       """

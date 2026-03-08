@@ -4,7 +4,7 @@ import Testing
 
 @Suite
 struct NextStopHelperTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func nextStopFindsCorrectPositions() {
     let stopMask = [false, false, true, false, true, false]
 
@@ -13,7 +13,7 @@ struct NextStopHelperTests {
     #expect(nextStop == [2, 2, 2, 4, 4, 6])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func noStopReturnsValidLen() {
     let stopMask = [false, false, false, false]
 

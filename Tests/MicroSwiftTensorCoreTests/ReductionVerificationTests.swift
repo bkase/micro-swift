@@ -4,7 +4,7 @@ import Testing
 
 @Suite
 struct ReductionVerificationTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func winnerReductionIsDeterministicForSameInputs() {
     var rng = LCG(seed: 0xDEAD_BEEF)
 
@@ -22,7 +22,7 @@ struct ReductionVerificationTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func comparatorTransitivityHoldsOnRandomTuples() {
     var rng = LCG(seed: 0xABCDEF)
 
@@ -47,7 +47,7 @@ struct ReductionVerificationTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func treeReductionMatchesSequentialReduction() {
     var rng = LCG(seed: 0x00C0_FFEE)
 

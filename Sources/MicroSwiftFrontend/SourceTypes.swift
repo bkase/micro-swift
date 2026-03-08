@@ -53,12 +53,6 @@ public struct Span: Hashable, Sendable {
   public let start: ByteOffset
   public let end: ByteOffset
 
-  public init(fileID: FileID, start: ByteOffset, end: ByteOffset) {
-    self.fileID = fileID
-    self.start = start
-    self.end = end
-  }
-
   public static func validated(
     fileID: FileID,
     start: ByteOffset,

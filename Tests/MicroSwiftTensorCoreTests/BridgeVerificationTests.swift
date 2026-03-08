@@ -5,15 +5,16 @@ import Testing
 
 @Suite
 struct BridgeVerificationTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func byteToClassBridgeMapsAsciiDigitsToSingleDigitClass() throws {
     let runtime = try makeMicroSwiftRuntime()
     let digitBytes = asciiRange("0", "9")
+    let byteToClassLUT = runtime.hostByteToClassLUT()
 
-    let digitClassID = try #require(runtime.byteToClassLUT[safe: Int(digitBytes[0])])
+    let digitClassID = UInt8(truncatingIfNeeded: byteToClassLUT[Int(digitBytes[0])])
 
     for byte in digitBytes {
-      #expect(runtime.byteToClassLUT[Int(byte)] == digitClassID)
+      #expect(UInt8(truncatingIfNeeded: byteToClassLUT[Int(byte)]) == digitClassID)
     }
 
     let digitClassDecl = try #require(runtime.classes.first { $0.classID == digitClassID })
@@ -22,41 +23,49 @@ struct BridgeVerificationTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func classSetMembershipIncludesDigitsAndIdentifierStartLetters() throws {
     let runtime = try makeMicroSwiftRuntime()
+    let byteToClassLUT = runtime.hostByteToClassLUT()
 
     let digitSetID = try classSetID(for: ByteSet.asciiDigit, runtime: runtime)
     let identStartSetID = try classSetID(for: ByteSet.asciiIdentStart, runtime: runtime)
 
-    let digitClassIDs = Set(asciiRange("0", "9").map { runtime.byteToClassLUT[Int($0)] })
+    let digitClassIDs = Set(
+      asciiRange("0", "9").map { UInt8(truncatingIfNeeded: byteToClassLUT[Int($0)]) })
     for classID in digitClassIDs {
       #expect(runtime.classSetRuntime.contains(setID: digitSetID, classID: classID))
     }
 
     let letterClassIDs = Set(
-      (asciiRange("A", "Z") + asciiRange("a", "z")).map { runtime.byteToClassLUT[Int($0)] })
+      (asciiRange("A", "Z") + asciiRange("a", "z")).map {
+        UInt8(truncatingIfNeeded: byteToClassLUT[Int($0)])
+      })
     for classID in letterClassIDs {
       #expect(runtime.classSetRuntime.contains(setID: identStartSetID, classID: classID))
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func classificationIsDeterministicForSameBytesAndArtifact() throws {
     let runtime = try makeMicroSwiftRuntime()
     let sample = Array("let x1 = foo42 + 9\\n".utf8) + Array(UInt8.min...UInt8.max)
+    let byteToClassLUT = runtime.hostByteToClassLUT()
 
-    let first = ByteClassifier.classify(bytes: sample, byteToClassLUT: runtime.byteToClassLUT)
-    let second = ByteClassifier.classify(bytes: sample, byteToClassLUT: runtime.byteToClassLUT)
+    let first = ByteClassifier.classify(bytes: sample, byteToClassLUT: byteToClassLUT)
+    let second = ByteClassifier.classify(bytes: sample, byteToClassLUT: byteToClassLUT)
 
     #expect(first == second)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func allByteValuesMapToDeclaredClass() throws {
     let runtime = try makeMicroSwiftRuntime()
     let allBytes = Array(UInt8.min...UInt8.max)
-    let classIDs = ByteClassifier.classify(bytes: allBytes, byteToClassLUT: runtime.byteToClassLUT)
+    let classIDs = ByteClassifier.classify(
+      bytes: allBytes,
+      byteToClassLUT: runtime.hostByteToClassLUT()
+    )
     let declaredClassIDs = Set(runtime.classes.map(\.classID))
 
     #expect(classIDs.count == 256)
@@ -65,11 +74,14 @@ struct BridgeVerificationTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func classSetMembershipIsConsistentForAllBytes() throws {
     let runtime = try makeMicroSwiftRuntime()
     let allBytes = Array(UInt8.min...UInt8.max)
-    let classIDs = ByteClassifier.classify(bytes: allBytes, byteToClassLUT: runtime.byteToClassLUT)
+    let classIDs = ByteClassifier.classify(
+      bytes: allBytes,
+      byteToClassLUT: runtime.hostByteToClassLUT()
+    )
 
     let bytesByClassID = Dictionary(
       uniqueKeysWithValues: runtime.classes.map { ($0.classID, Set($0.bytes)) })
@@ -95,19 +107,20 @@ struct BridgeVerificationTests {
     }
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func boundaryBytesAndEmptyInputClassification() throws {
     let runtime = try makeMicroSwiftRuntime()
+    let byteToClassLUT = runtime.hostByteToClassLUT()
 
-    let zeroClass = ByteClassifier.classify(bytes: [0x00], byteToClassLUT: runtime.byteToClassLUT)
+    let zeroClass = ByteClassifier.classify(bytes: [0x00], byteToClassLUT: byteToClassLUT)
     #expect(zeroClass.count == 1)
     #expect(runtime.classes.contains { $0.classID == zeroClass[0] })
 
-    let ffClass = ByteClassifier.classify(bytes: [0xFF], byteToClassLUT: runtime.byteToClassLUT)
+    let ffClass = ByteClassifier.classify(bytes: [0xFF], byteToClassLUT: byteToClassLUT)
     #expect(ffClass.count == 1)
     #expect(runtime.classes.contains { $0.classID == ffClass[0] })
 
-    let empty = ByteClassifier.classify(bytes: [], byteToClassLUT: runtime.byteToClassLUT)
+    let empty = ByteClassifier.classify(bytes: [], byteToClassLUT: byteToClassLUT)
     #expect(empty.isEmpty)
   }
 
@@ -130,7 +143,8 @@ struct BridgeVerificationTests {
   }
 
   private func classSetID(for byteSet: ByteSet, runtime: ArtifactRuntime) throws -> UInt16 {
-    let projected = Set(byteSet.members.map { runtime.byteToClassLUT[Int($0)] })
+    let byteToClassLUT = runtime.hostByteToClassLUT()
+    let projected = Set(byteSet.members.map { UInt8(truncatingIfNeeded: byteToClassLUT[Int($0)]) })
     let set = try #require(runtime.classSets.first { Set($0.classes) == projected })
     return set.classSetID.rawValue
   }
@@ -139,12 +153,5 @@ struct BridgeVerificationTests {
     let lower = UInt8(String(start).utf8.first!)
     let upper = UInt8(String(end).utf8.first!)
     return Array(lower...upper)
-  }
-}
-
-extension Array {
-  fileprivate subscript(safe index: Int) -> Element? {
-    guard indices.contains(index) else { return nil }
-    return self[index]
   }
 }

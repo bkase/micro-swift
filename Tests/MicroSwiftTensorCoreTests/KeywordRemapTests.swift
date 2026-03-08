@@ -6,7 +6,7 @@ import Testing
 
 @Suite
 struct KeywordRemapTests {
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func funcIdentifierRemappedToFuncKeywordKind() {
     let tokens: [GreedySelector.SelectedToken] = [
       .init(startPos: 0, length: 4, ruleID: 7, tokenKindID: 100, mode: 0)
@@ -24,7 +24,7 @@ struct KeywordRemapTests {
       ])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func letIdentifierRemappedToLetKeywordKind() {
     let tokens: [GreedySelector.SelectedToken] = [
       .init(startPos: 0, length: 3, ruleID: 7, tokenKindID: 100, mode: 0)
@@ -42,7 +42,7 @@ struct KeywordRemapTests {
       ])
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func nonKeywordIdentifierUnchanged() {
     let tokens: [GreedySelector.SelectedToken] = [
       .init(startPos: 0, length: 3, ruleID: 7, tokenKindID: 100, mode: 0)
@@ -57,7 +57,7 @@ struct KeywordRemapTests {
     #expect(remapped == tokens)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func tokenFromWrongRuleNotCheckedAgainstRemapTable() {
     let tokens: [GreedySelector.SelectedToken] = [
       .init(startPos: 0, length: 4, ruleID: 8, tokenKindID: 100, mode: 0)
@@ -72,7 +72,7 @@ struct KeywordRemapTests {
     #expect(remapped == tokens)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func tokenLongerThanMaxKeywordLengthNotChecked() {
     let tokens: [GreedySelector.SelectedToken] = [
       .init(startPos: 0, length: 8, ruleID: 7, tokenKindID: 100, mode: 0)
@@ -89,7 +89,7 @@ struct KeywordRemapTests {
     #expect(remapped == tokens)
   }
 
-  @Test
+  @Test(.enabled(if: requiresMLXEval))
   func multipleRemapTablesAppliedInArtifactOrder() {
     let tokens: [GreedySelector.SelectedToken] = [
       .init(startPos: 0, length: 4, ruleID: 7, tokenKindID: 100, mode: 0)
