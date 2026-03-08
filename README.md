@@ -9,17 +9,17 @@ Benchmarked on Apple Silicon (xcodebuild Release, M3 Max). MLX compiled graph, w
 ```
 Input         CPU (v0)       GPU (MLX)      Speedup
 ----------------------------------------------------
-247 B         198 KB/s       204 KB/s       1.03x
-494 B         311 KB/s       387 KB/s       1.24x
-988 B         874 KB/s       770 KB/s       0.88x
-2.4 KB        1.57 MB/s      1.92 MB/s      1.22x
-4.9 KB        2.86 MB/s      3.73 MB/s      1.31x
-9.8 KB        5.41 MB/s      7.68 MB/s      1.42x
-24 KB         20.8 MB/s      18.7 MB/s      0.90x
-49 KB         21.1 MB/s      33.0 MB/s      1.57x
+247 B         196.72 KB/s    2.53 MB/s      12.85x
+494 B         433.86 KB/s    5.41 MB/s      12.47x
+988 B         960.00 KB/s    11.19 MB/s     11.65x
+2 KB          1.57 MB/s      26.78 MB/s     17.04x
+4 KB          4.37 MB/s      50.12 MB/s     11.48x
+9 KB          8.68 MB/s      93.22 MB/s     10.74x
+24 KB         18.55 MB/s     239.75 MB/s    12.92x
+49 KB         20.86 MB/s     461.22 MB/s    22.11x
 ```
 
-GPU throughput scales with page size — at 49 KB pages the MLX path hits **33 MB/s**, 1.57x faster than the CPU baseline. Graph compilation is amortized across pages of the same bucket size.
+GPU throughput scales with page size — at 49 KB pages the MLX path hits **461.22 MB/s**, 22.11x faster than the CPU baseline. Even the 9 KB case clears **93.22 MB/s** on the warm path. Graph compilation is amortized across pages of the same bucket size.
 
 Run the benchmark yourself:
 
