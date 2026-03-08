@@ -173,7 +173,8 @@ private theorem scalarGenerateCandidates_length (rule : RuleSpec)
   | headTail =>
     simp [scalarGenerateCandidates, CandidateGen.scalarHeadTailEval]; omega
   | prefixed =>
-    simp [scalarGenerateCandidates, CandidateGen.scalarPrefixedEval]
+    simp only [scalarGenerateCandidates, CandidateGen.scalarPrefixedEval]
+    split <;> simp
 
 -- Helper: candidatesToWinners preserves length
 private theorem candidatesToWinners_length (candLens : List Nat) (rule : RuleSpec) :
