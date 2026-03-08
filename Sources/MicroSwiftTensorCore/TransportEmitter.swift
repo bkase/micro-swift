@@ -1,8 +1,25 @@
+import Foundation
 import MLX
 import MicroSwiftLexerGen
 
+public enum TransportHostMaterializationBoundary: Sendable {
+  case unknownMask
+  case packedRows
+}
+
+public struct TransportHostMaterializationCounts: Sendable, Equatable {
+  public let unknownMask: Int
+  public let packedRows: Int
+
+  public init(unknownMask: Int, packedRows: Int) {
+    self.unknownMask = unknownMask
+    self.packedRows = packedRows
+  }
+}
+
 public enum TransportEmitter {
   private static let skipMode: UInt8 = 1
+  private static let hostMaterializationCounter = TransportHostMaterializationCounter()
 
   /// Build the final PageLexResult from selected tokens after all phases.
   ///
@@ -106,6 +123,7 @@ public enum TransportEmitter {
     )
     let validMask = arange(pageSize, dtype: .int32) .< Int32(boundedValidLen)
     let unknownMask = validMask .&& .!(coveredMask)
+    recordHostMaterialization(.unknownMask)
     let errorSpans = CoverageMask.errorSpans(
       unknown: unknownMask.asType(.bool).asArray(Bool.self)
     )
@@ -128,6 +146,7 @@ public enum TransportEmitter {
     // Zero out non-kept positions
     let packed = which(keepMask, combined, zeros([pageSize], dtype: .uint64))
 
+    recordHostMaterialization(.packedRows)
     let packedHost = packed.asArray(UInt64.self)
     var packedRows = Array(repeating: UInt64.zero, count: capacity)
     var emitted = 0
@@ -142,6 +161,17 @@ public enum TransportEmitter {
       rowCount: Int32(emitted),
       errorSpans: errorSpans,
       overflowDiagnostic: nil
+    )
+  }
+
+  public static func resetHostMaterializationCounts() {
+    hostMaterializationCounter.reset()
+  }
+
+  public static func hostMaterializationCounts() -> TransportHostMaterializationCounts {
+    TransportHostMaterializationCounts(
+      unknownMask: hostMaterializationCounter.count(for: .unknownMask),
+      packedRows: hostMaterializationCounter.count(for: .packedRows)
     )
   }
 
@@ -216,5 +246,33 @@ public enum TransportEmitter {
     let covered = maxEndSoFar .> positions
 
     return covered .&& validMask
+  }
+
+  private static func recordHostMaterialization(_ boundary: TransportHostMaterializationBoundary) {
+    hostMaterializationCounter.record(boundary)
+  }
+}
+
+private final class TransportHostMaterializationCounter: @unchecked Sendable {
+  private let lock = NSLock()
+  private var counts: [TransportHostMaterializationBoundary: Int] = [:]
+
+  func reset() {
+    lock.lock()
+    counts.removeAll(keepingCapacity: true)
+    lock.unlock()
+  }
+
+  func record(_ boundary: TransportHostMaterializationBoundary) {
+    lock.lock()
+    counts[boundary, default: 0] += 1
+    lock.unlock()
+  }
+
+  func count(for boundary: TransportHostMaterializationBoundary) -> Int {
+    lock.lock()
+    let value = counts[boundary] ?? 0
+    lock.unlock()
+    return value
   }
 }

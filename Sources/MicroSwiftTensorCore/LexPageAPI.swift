@@ -2,6 +2,32 @@ import Foundation
 import MLX
 import MicroSwiftLexerGen
 
+public struct DeviceLexResult: @unchecked Sendable {
+  public let selectedTokenTensors: GreedySelector.SelectedTokenTensors
+  public let byteTensor: MLXArray
+  public let validLen: Int32
+  public let maxRowCapacity: Int32
+  public let rowCountTensor: MLXArray
+
+  public init(
+    selectedTokenTensors: GreedySelector.SelectedTokenTensors,
+    byteTensor: MLXArray,
+    validLen: Int32,
+    maxRowCapacity: Int32,
+    rowCountTensor: MLXArray
+  ) {
+    self.selectedTokenTensors = selectedTokenTensors
+    self.byteTensor = byteTensor.asType(.uint8)
+    self.validLen = validLen
+    self.maxRowCapacity = maxRowCapacity
+    self.rowCountTensor = rowCountTensor.asType(.int32)
+  }
+
+  public func hostRowCount() -> Int32 {
+    rowCountTensor.asType(.int32).asArray(Int32.self).first ?? 0
+  }
+}
+
 public enum TensorLexer {
   private static let fastPathCacheEventPrefix = "fast-path-graph-cache"
   private static let fastPathDefaultDeviceID = "mlx-cpu"
@@ -57,14 +83,39 @@ public enum TensorLexer {
     artifact: ArtifactRuntime,
     options: LexOptions
   ) -> PageLexResult {
+    let deviceResult = lexPageDevice(
+      compiledPage: compiledPage,
+      artifact: artifact,
+      options: options
+    )
+    return materialize(
+      deviceResult: deviceResult,
+      remapTables: [],
+      options: options
+    )
+  }
+
+  public static func lexPageDevice(
+    compiledPage: CompiledPageInput,
+    artifact: ArtifactRuntime,
+    options: LexOptions
+  ) -> DeviceLexResult {
     _ = compiledPage.baseOffset
     let boundedValidLen = max(0, min(Int(compiledPage.validLen), compiledPage.byteCapacity))
     guard boundedValidLen > 0 else {
-      return PageLexResult(
-        packedRows: [],
-        rowCount: 0,
-        errorSpans: [],
-        overflowDiagnostic: nil
+      return DeviceLexResult(
+        selectedTokenTensors: GreedySelector.SelectedTokenTensors(
+          startPos: zeros([compiledPage.byteCapacity], dtype: .int32),
+          length: zeros([compiledPage.byteCapacity], dtype: .uint16),
+          ruleID: zeros([compiledPage.byteCapacity], dtype: .uint16),
+          tokenKindID: zeros([compiledPage.byteCapacity], dtype: .uint16),
+          mode: zeros([compiledPage.byteCapacity], dtype: .uint8),
+          selectedMask: zeros([compiledPage.byteCapacity], dtype: .bool)
+        ),
+        byteTensor: compiledPage.byteTensor ?? zeros([compiledPage.byteCapacity], dtype: .uint8),
+        validLen: 0,
+        maxRowCapacity: 0,
+        rowCountTensor: zeros([1], dtype: .int32)
       )
     }
 
@@ -104,13 +155,33 @@ public enum TensorLexer {
       classIDTensor: classIDTensor,
       validMaskTensor: validMaskTensor
     )
-    return TransportEmitter.emit(
+    let keepMask =
+      options.emitSkipTokens
+      ? selectedTensors.selectedMask
+      : selectedTensors.selectedMask .&& (selectedTensors.mode .!= UInt8(1))
+    let rowCountTensor = sum(keepMask.asType(.int32)).asType(.int32)
+
+    return DeviceLexResult(
       selectedTokenTensors: selectedTensors,
       byteTensor: byteTensor,
       validLen: Int32(boundedValidLen),
-      remapTables: [],
+      maxRowCapacity: Int32(boundedValidLen),
+      rowCountTensor: rowCountTensor
+    )
+  }
+
+  public static func materialize(
+    deviceResult: DeviceLexResult,
+    remapTables: [KeywordRemapTable],
+    options: LexOptions
+  ) -> PageLexResult {
+    TransportEmitter.emit(
+      selectedTokenTensors: deviceResult.selectedTokenTensors,
+      byteTensor: deviceResult.byteTensor,
+      validLen: deviceResult.validLen,
+      remapTables: remapTables,
       options: options,
-      maxRowCapacity: Int32(boundedValidLen)
+      maxRowCapacity: deviceResult.maxRowCapacity
     )
   }
 
