@@ -64,6 +64,32 @@ struct ReductionVerificationTests {
       }
     }
   }
+
+  @Test(.enabled(if: requiresMLXEval))
+  func gpuReductionMatchesCpuReductionIncludingTieBreaks() {
+    var rng = LCG(seed: 0xBAD5_EED)
+
+    for _ in 0..<96 {
+      let pageSize = rng.int(in: 1...32)
+      var candidates = makeRandomCandidates(pageSize: pageSize, rng: &rng)
+      candidates.append(contentsOf: tieBreakCandidates(pageSize: pageSize))
+      let batch = WinnerReduction.makeRuleTensorBatch(candidates: candidates, pageSize: pageSize)
+
+      let cpu = WinnerReduction.hostWinners(
+        from: WinnerReduction.reduce(batch: batch, pageSize: pageSize),
+        pageSize: pageSize
+      )
+      let gpu = WinnerReduction.hostWinners(
+        from: WinnerReduction.reduceGPU(batch: batch, pageSize: pageSize),
+        pageSize: pageSize
+      )
+
+      #expect(cpu.count == gpu.count)
+      for i in 0..<cpu.count {
+        #expect(equalWinners(cpu[i], gpu[i]))
+      }
+    }
+  }
 }
 
 private struct LCG {
@@ -173,4 +199,43 @@ private func equalWinners(_ lhs: WinnerTuple, _ rhs: WinnerTuple) -> Bool {
     && lhs.ruleID == rhs.ruleID
     && lhs.tokenKindID == rhs.tokenKindID
     && lhs.mode == rhs.mode
+}
+
+private func tieBreakCandidates(pageSize: Int) -> [WinnerReduction.RuleCandidate] {
+  guard pageSize > 0 else { return [] }
+
+  var first = Array(repeating: UInt16(0), count: pageSize)
+  var second = Array(repeating: UInt16(0), count: pageSize)
+  var third = Array(repeating: UInt16(0), count: pageSize)
+  first[0] = 3
+  second[0] = 3
+  third[0] = 4
+  if pageSize > 1 {
+    first[1] = 2
+    second[1] = 2
+  }
+
+  return [
+    WinnerReduction.RuleCandidate(
+      ruleID: 40,
+      tokenKindID: 4,
+      priorityRank: 4,
+      mode: 0,
+      candLen: first
+    ),
+    WinnerReduction.RuleCandidate(
+      ruleID: 12,
+      tokenKindID: 9,
+      priorityRank: 2,
+      mode: 1,
+      candLen: second
+    ),
+    WinnerReduction.RuleCandidate(
+      ruleID: 18,
+      tokenKindID: 5,
+      priorityRank: 7,
+      mode: 0,
+      candLen: third
+    ),
+  ]
 }

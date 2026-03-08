@@ -120,11 +120,13 @@ public enum TensorLexer {
     }
 
     let pageSize = compiledPage.byteCapacity
+    let reductionBackend = fastPathReductionBackend(options: options)
 
     let cacheKey = makeFastPathCacheKey(
       compiledPage: compiledPage,
       artifact: artifact,
-      options: options
+      options: options,
+      reductionBackend: reductionBackend
     )
     let traceID = "fast-path-\(UUID().uuidString)"
 
@@ -134,7 +136,8 @@ public enum TensorLexer {
         try makeFastPathCacheEntry(
           pageSize: pageSize,
           artifact: artifact,
-          options: options
+          options: options,
+          reductionBackend: reductionBackend
         )
       }
     } catch {
@@ -188,7 +191,8 @@ public enum TensorLexer {
   private static func makeFastPathCacheKey(
     compiledPage: CompiledPageInput,
     artifact: ArtifactRuntime,
-    options: LexOptions
+    options: LexOptions,
+    reductionBackend: FastPathCompiledGraph.ReductionBackend
   ) -> KernelCacheKey {
     KernelCacheKey(
       deviceID: fastPathDefaultDeviceID,
@@ -197,15 +201,17 @@ public enum TensorLexer {
       inputDType:
         "\(compiledPage.byteTensorDType)-\(compiledPage.classIDTensorDType)-\(compiledPage.validMaskTensorDType)",
       runtimeProfile: options.runtimeProfile.rawValue,
-      layoutSignature: "fast-path-candidate-batch-v1"
+      layoutSignature: "fast-path-candidate-batch-v1-\(reductionBackend.rawValue)"
     )
   }
 
   private static func makeFastPathCacheEntry(
     pageSize: Int,
     artifact: ArtifactRuntime,
-    options: LexOptions
+    options: LexOptions,
+    reductionBackend: FastPathCompiledGraph.ReductionBackend
   ) throws -> KernelCacheEntry {
+    _ = options
     let classCount = Set(artifact.hostByteToClassLUT()).count
     let metadata = KernelCacheRuntimeMetadata(
       backend: "mlx",
@@ -218,10 +224,20 @@ public enum TensorLexer {
     )
 
     return KernelCacheEntry(
-      fastPathGraph: FastPathCompiledGraph(pageSize: pageSize, artifact: artifact),
+      fastPathGraph: FastPathCompiledGraph(
+        pageSize: pageSize,
+        artifact: artifact,
+        reductionBackend: reductionBackend
+      ),
       runtimeMetadata: metadata,
       createdAt: Date()
     )
+  }
+
+  private static func fastPathReductionBackend(
+    options: LexOptions
+  ) -> FastPathCompiledGraph.ReductionBackend {
+    options.useGPUReduction ? .gpu : .cpu
   }
 
   private static func modeByte(_ mode: RuleMode) -> UInt8 {

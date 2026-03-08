@@ -22,12 +22,23 @@ public struct FastPathGraphMetrics: Codable, Sendable, Equatable {
 }
 
 public struct FastPathCompiledGraph: Sendable {
+  public enum ReductionBackend: String, Sendable, Equatable {
+    case cpu = "cpu-reduction"
+    case gpu = "gpu-reduction"
+  }
+
   private let pageSize: Int
+  private let reductionBackend: ReductionBackend
   private let candidateAndSelectGraph: @Sendable ([MLXArray]) -> [MLXArray]
 
-  public init(pageSize: Int, artifact: ArtifactRuntime) {
+  public init(
+    pageSize: Int,
+    artifact: ArtifactRuntime,
+    reductionBackend: ReductionBackend = .cpu
+  ) {
     precondition(pageSize >= 0, "pageSize must be non-negative")
     self.pageSize = pageSize
+    self.reductionBackend = reductionBackend
 
     let buckets = RuleBuckets.build(from: artifact.rules)
     let classSetRuntime = artifact.classSetRuntime
@@ -90,6 +101,7 @@ public struct FastPathCompiledGraph: Sendable {
     let capturedHeadTailRules = headTailRules
     let capturedPrefixedRules = prefixedRules
     let capturedRemapTables = remapTables
+    let capturedReductionBackend = reductionBackend
     let rawGraph: @Sendable ([MLXArray]) -> [MLXArray] = { tensors in
       Self.candidateAndSelectGraph(
         tensors: tensors, pageSize: pageSize,
@@ -97,7 +109,8 @@ public struct FastPathCompiledGraph: Sendable {
         headTailRules: capturedHeadTailRules, prefixedRules: capturedPrefixedRules,
         fallbackRules: capturedFallbackRules,
         classSetRuntime: classSetRuntime,
-        remapTables: capturedRemapTables
+        remapTables: capturedRemapTables,
+        reductionBackend: capturedReductionBackend
       )
     }
     self.candidateAndSelectGraph = compile(rawGraph)
@@ -123,6 +136,10 @@ public struct FastPathCompiledGraph: Sendable {
       mode: outputs[4],
       selectedMask: outputs[5]
     )
+  }
+
+  public var reductionBackendIdentifier: String {
+    reductionBackend.rawValue
   }
 
   private struct LiteralRuleInfo: Sendable {
@@ -180,7 +197,8 @@ public struct FastPathCompiledGraph: Sendable {
     prefixedRules: [PrefixedRuleInfo],
     fallbackRules: [FallbackRuleMLXInfo],
     classSetRuntime: ClassSetRuntime,
-    remapTables: [KeywordRemapTable]
+    remapTables: [KeywordRemapTable],
+    reductionBackend: ReductionBackend
   ) -> [MLXArray] {
     precondition(tensors.count == 3, "compiled fast-path graph expects 3 inputs")
 
@@ -302,7 +320,10 @@ public struct FastPathCompiledGraph: Sendable {
     )
 
     // Reduce fast-path winners
-    let fastWinners = WinnerReduction.reduce(batch: batch, pageSize: pageSize)
+    let fastWinners =
+      reductionBackend == .gpu
+      ? WinnerReduction.reduceGPU(batch: batch, pageSize: pageSize)
+      : WinnerReduction.reduce(batch: batch, pageSize: pageSize)
 
     // Evaluate fallback DFA rules using MLX gather ops
     let fallbackWinners = evaluateFallbackMLX(

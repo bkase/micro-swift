@@ -141,6 +141,49 @@ struct LexPageIntegrationTests {
   }
 
   @Test(.enabled(if: requiresMLXEval))
+  func gpuReductionToggleChangesFastPathGraphBackendWithoutChangingTokens() throws {
+    let runtime = try makeMicroSwiftRuntime()
+    let input = "let answer = fibonacci(n: 10)\n"
+    let bytes = Array(input.utf8)
+    let bucket =
+      PageBucket.bucket(for: Int32(bytes.count))
+      ?? PageBucket(byteCapacity: Int32(max(bytes.count, 1)))
+    let compiledPage = CompiledPageInput(
+      bytes: bytes,
+      validLen: Int32(bytes.count),
+      baseOffset: 0,
+      bucket: bucket,
+      artifact: runtime
+    )
+
+    TensorLexer.resetFastPathGraphCache()
+
+    let cpuResult = TensorLexer.lexPage(
+      compiledPage: compiledPage,
+      artifact: runtime,
+      options: LexOptions(
+        emitSkipTokens: false, runtimeProfile: .v1Fallback, useGPUReduction: false)
+    )
+    let gpuResult = TensorLexer.lexPage(
+      compiledPage: compiledPage,
+      artifact: runtime,
+      options: LexOptions(emitSkipTokens: false, runtimeProfile: .v1Fallback, useGPUReduction: true)
+    )
+
+    #expect(cpuResult == gpuResult)
+
+    let metrics = TensorLexer.fastPathGraphMetrics()
+    let storeEvents = metrics.cacheEvents.filter { $0.event == "fast-path-graph-cache-store" }
+    #expect(storeEvents.count == 2)
+    #expect(
+      Set(storeEvents.map(\.layoutSignature))
+        == Set([
+          "fast-path-candidate-batch-v1-cpu-reduction",
+          "fast-path-candidate-batch-v1-gpu-reduction",
+        ]))
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
   func endToEndLexPageStillMaterializesDiagnosticsForUnknownBytes() throws {
     let runtime = try makeMicroSwiftRuntime()
     let bytes = Array("@".utf8)
