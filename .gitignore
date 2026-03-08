@@ -26,3 +26,5 @@ Thumbs.db
 *.xcresult
 
 .claude/worktrees
+
+LeanProofs/extract_theorems

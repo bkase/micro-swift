@@ -21,7 +21,7 @@ Input         CPU (v0)       GPU (MLX)      Speedup
 49 KB         20.86 MB/s     461.22 MB/s    22.11x
 ```
 
-GPU throughput scales with page size — at 49 KB pages the MLX path hits **461.22 MB/s**, 22.11x faster than the CPU baseline. Even the 9 KB case clears **93.22 MB/s** on the warm path. Graph compilation is amortized across pages of the same bucket size.
+GPU throughput scales with page size — at 49 KB pages the MLX path hits **461.22 MB/s**, 22.11x faster than the CPU baseline. Graph compilation is amortized across pages of the same bucket size.
 
 Run the benchmark yourself:
 
@@ -37,15 +37,15 @@ The lexer is **artifact-driven**: a compile-time step (`MicroSwiftLexerGen`) pro
 
 At a high level, each page flows through these phases:
 
-| Phase | What it does |
-|-------|-------------|
-| **A. Byte classification** | Map each byte to a class ID via lookup table |
-| **B. Candidate generation** | Per-rule candidate lengths for four families: literal, classRun, headTail, prefixed |
-| **C. Winner reduction** | Pick the best candidate at each position: longest match, then smaller priority rank, then smaller rule ID |
-| **D. Greedy selection** | Select non-overlapping tokens left-to-right |
-| **E. Keyword remap** | Reclassify selected identifiers as keywords when they match the keyword table |
-| **F. Coverage mask** | Mark covered bytes and derive unknown/error spans |
-| **G. Transport emission** | Pack kept tokens into compact rows, optionally filtering skip-mode tokens |
+| Phase                       | What it does                                                                                              |
+| --------------------------- | --------------------------------------------------------------------------------------------------------- |
+| **A. Byte classification**  | Map each byte to a class ID via lookup table                                                              |
+| **B. Candidate generation** | Per-rule candidate lengths for four families: literal, classRun, headTail, prefixed                       |
+| **C. Winner reduction**     | Pick the best candidate at each position: longest match, then smaller priority rank, then smaller rule ID |
+| **D. Greedy selection**     | Select non-overlapping tokens left-to-right                                                               |
+| **E. Keyword remap**        | Reclassify selected identifiers as keywords when they match the keyword table                             |
+| **F. Coverage mask**        | Mark covered bytes and derive unknown/error spans                                                         |
+| **G. Transport emission**   | Pack kept tokens into compact rows, optionally filtering skip-mode tokens                                 |
 
 ## Runtime today
 
@@ -59,66 +59,73 @@ The runtime is centered on an MLX-compiled page graph in `MicroSwiftTensorCore/F
 
 ## Lean 4 formal verification
 
-The `LeanProofs/` directory contains a Lean 4 + Mathlib v4.24.0 formalization of the page-local lexer pipeline. Each proof module introduces a scalar reference function and a vector-style model, then proves equivalence for that phase or sub-phase.
+The `LeanProofs/` directory contains a Lean 4 + Mathlib v4.24.0 formalization (~6,000 lines) of the page-local lexer pipeline. Each proof module defines a **scalar reference function** and a **vector-style model**, then proves they produce the same output. The scalar models mirror the loop-based logic in the Swift runtime; the vector models mirror the MLX tensor operations.
 
-The current top-level theorem is `pipeline_equiv` in `Pipeline.lean`. It proves equivalence between the Lean scalar pipeline and the Lean vectorized pipeline under explicit preconditions, but its scope is narrower than "the full Swift lexer from raw bytes":
+The capstone theorem is `pipeline_equiv` in `Pipeline.lean`. It composes the phase-level equivalences into an end-to-end statement: the vectorized pipeline equals the scalar pipeline for reduction → selection → keyword remap → coverage emission. It assumes `classIDs` are already provided, so byte classification is outside the theorem boundary.
 
-- It assumes `classIDs` are already provided, so byte classification is outside the theorem.
-- Its candidate-generation stage currently reuses the scalar generator in the capstone pipeline while the remaining candidate-generation proofs are being finished.
-- The remaining proof gaps are concentrated in head-tail/prefixed candidate generation and keyword remap preconditions.
+### Swift ↔ Lean correspondence
+
+The diagram below shows how each pipeline phase maps between Swift and Lean. Phases marked **proven** have no `sorry`; phases marked with a sorry count still have proof gaps.
+
+```
+               Swift runtime                          Lean formalization
+               ─────────────                          ──────────────────
+
+  bytes ──→ [A] Byte classification                   (not modeled)
+             │  ByteClasses, classID tables
+             ▼
+           [B] Candidate generation                   CandidateGen.lean
+             │  LiteralExecution.swift        ←──→    literal_eval_equiv     ✓ proven
+             │  ClassRunExecution.swift        ←──→    classrun_eval_equiv    ✓ proven
+             │  HeadTailExecution.swift        ←──→    headtail_eval_equiv   ✓ proven
+             │  PrefixedExecution.swift        ←──→    prefixed_semantic      1 sorry
+             ▼                                        RunLenHelpers.lean      ✓ (shared lemmas)
+           [C] Winner reduction                       Reduction.lean
+             │  WinnerReduction.swift          ←──→    reduction_equiv        ✓ proven
+             ▼
+           [·] Fallback merge                         FallbackIntegration.lean
+             │  WinnerReduction                ←──→    merge_equiv            ✓ proven
+             │   .integrateWithFallback
+             ▼
+           [D] Greedy selection                       Selection.lean
+             │  GreedySelector.swift           ←──→    selection_equiv        ✓ proven
+             ▼
+           [E] Keyword remap                          KeywordRemap.lean
+             │  KeywordRemap.swift             ←──→    remap_equiv            1 sorry
+             ▼
+           [F/G] Coverage + emission                  Emission.lean
+             │  CoverageMask.swift             ←──→    coverage_equiv         ✓ proven
+             │  TransportEmitter.swift
+             ▼
+           tokens + errorSpans                        Pipeline.lean
+                                                       pipeline_equiv         2 sorry's
+                                                       (remap preconditions)
+```
+
+The correspondence is "same semantics at a useful abstraction boundary", not "theorem over the exact Swift AST". Key differences between the Lean models and shipped Swift:
+
+- **Selection**: Lean proves a fixed-point/cummax algorithm; Swift uses successor links and pointer jumping. Same greedy semantics, different vectorization strategy.
+- **Prefixed**: The Lean model covers the `stopSetID = none` case; the Swift runtime also supports stop-aware prefixed rules.
+- **Fallback merge**: Proved in Lean, but the current fast-path graph wires in zero fallback rules, so this code path is not exercised yet.
 
 ### Proof status
 
-| Module | Phase | Status |
-|--------|-------|--------|
-| `Reduction.lean` | Winner reduction | Fully proven |
-| `Selection.lean` | Greedy selection model | Fully proven |
-| `Emission.lean` | Coverage mask + error spans | Fully proven |
-| `FallbackIntegration.lean` | Fallback merge | Fully proven |
-| `CandidateGen.lean` | Literal, classRun (proven); headTail, prefixed | 2 sorry's |
-| `KeywordRemap.lean` | Keyword remap | 1 sorry |
-| `Pipeline.lean` | Full composition | 2 sorry's (preconditions for remap) |
+| Module                     | Swift counterpart                                   | Status           | What it proves                                                                                                                                             |
+| -------------------------- | --------------------------------------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RunLenHelpers.lean`       | _(shared by CandidateGen)_                          | **Fully proven** | `foldr_break_eq`, `vec_runLength_at` — vectorized run-length equals recursive scalar                                                                       |
+| `CandidateGen.lean`        | `Literal/ClassRun/HeadTail/PrefixedExecution.swift` | **1 sorry**      | Literal, classRun, headTail equivalences proven. Prefixed (`prefixed_semantic`) still open — needs prefix mask + cumminRev body/invalid boundary alignment |
+| `Reduction.lean`           | `WinnerReduction.swift`                             | **Fully proven** | `isBetter` lexicographic comparison; tree fold = linear fold over candidates                                                                               |
+| `FallbackIntegration.lean` | `WinnerReduction.integrateWithFallback`             | **Fully proven** | Vectorized merge of fast-path + fallback DFA results                                                                                                       |
+| `Selection.lean`           | `GreedySelector.swift`                              | **Fully proven** | Fixed-point convergence; `extractSelected_pairs` preserves start/length                                                                                    |
+| `KeywordRemap.lean`        | `KeywordRemap.swift`                                | **1 sorry**      | `scalarRemap_preserves_pairs` proven; full `remap_equiv` (vectorized byte matching) still open                                                             |
+| `Emission.lean`            | `CoverageMask.swift`, `TransportEmitter.swift`      | **Fully proven** | Delta-array + prefix-sum coverage = pointwise "is this byte covered?"                                                                                      |
+| `Pipeline.lean`            | `FastPathGraph.swift`, `LexPageAPI.swift`           | **2 sorry's**    | Composes all phases; two preconditions assumed (`h_bounds`, `h_valid_bytes` — semantic properties that candidates are bounded by page size)                |
 
-**5 `sorry` occurrences remain** across the current formalization. The core combinatorial machinery — run-length equivalence (`foldr_break_eq`, `vec_runLength_at`), reduction tie-breaking, selection correctness, and coverage bridging — is proven. The remaining gaps are:
+**4 `sorry` occurrences remain.** Five of the eight proof modules are fully proven, covering reduction, fallback merge, selection, coverage/emission, and the run-length helper library. The remaining gaps:
 
-- `CandidateGen.lean`: head-tail equivalence
-- `CandidateGen.lean`: prefixed equivalence
-- `KeywordRemap.lean`: remap equivalence
-- `Pipeline.lean`: two proof obligations passed into remap equivalence
-
-One additional caveat: the prefixed proof currently covers the `stopSetID = none` case, while the Swift runtime supports stop-aware prefixed rules.
-
-### How the proofs work at a glance
-
-Each proof module defines a **scalar reference function** and a **vector-style model** and shows they agree on all inputs in that model:
-
-- **Reduction**: `isBetter` lexicographic comparison is reflexive/transitive; tree fold equals linear fold.
-- **Selection**: The Lean model proves a fixed-point/cummax selection algorithm equivalent to the scalar greedy scan.
-- **CandidateGen / classRun**: `cumminRev`-based vectorized run length equals `runLenFrom` (recursive scalar). Core lemma: `foldr_break_eq` — a foldr over break positions equals `i + runLenFrom i`.
-- **Emission**: `buildCoverageMask` via delta-array + prefix-sum equals pointwise "is this byte covered?" check.
-
-## Swift ↔ Lean correspondence
-
-The Lean files are intentionally named after the Swift runtime phases, but the correspondence is "same semantics at a useful abstraction boundary", not "theorem over the exact production code AST":
-
-| Lean module | Main Swift counterpart | Notes |
-|------------|------------------------|-------|
-| `CandidateGen.lean` | `LiteralExecution.swift`, `ClassRunExecution.swift`, `HeadTailExecution.swift`, `PrefixedExecution.swift` | Lean models the four candidate families. Literal and class-run are proved; head-tail and prefixed still have proof gaps. |
-| `Reduction.lean` | `WinnerReduction.swift` | Matches the shipped tie-break order exactly: longer length, then smaller priority rank, then smaller rule ID. |
-| `Selection.lean` | `GreedySelector.swift` | Same semantic target, different current vector algorithm: Lean models fixed-point/cummax selection, while Swift uses successor links and pointer jumping. |
-| `KeywordRemap.lean` | `KeywordRemap.swift`, `TransportEmitter.applyKeywordRemap` | Lean models both sparse scalar remap and page-aligned vector remap. One proof gap remains. |
-| `Emission.lean` | `CoverageMask.swift`, `TransportEmitter.swift` | Covers coverage, unknown-byte detection, and error-span construction. |
-| `FallbackIntegration.lean` | `WinnerReduction.integrateWithFallback`, `FastPathGraph.mergeFastAndFallback` | The merge logic is proved, although the main fast-path graph currently wires in zero fallback rules. |
-| `Pipeline.lean` | `LexPageAPI.swift`, `FastPathGraph.swift`, `TransportEmitter.swift` | Capstone composition theorem over the Lean models, not a proof of the exact shipping end-to-end Swift entry point. |
-
-## Current caveats
-
-- The README should be read as "MLX-centered fast path", not "every byte of the runtime is MLX".
-- The Lean capstone theorem does not currently prove byte classification.
-- The Lean selection proof targets the same greedy semantics as Swift, but not the exact successor-link/pointer-jumping algorithm currently shipped.
-- The Lean prefixed proof currently covers the no-stop-boundary case only.
-- The compiled fast-path graph includes keyword remap, but the public `materialize` call passes empty remap tables because the selected token kinds have already been remapped inside the graph.
-- The current fast-path graph allocates no fallback rules, so the proved fallback merge logic is present but not meaningfully exercised in that path yet.
+1. **`prefixed_semantic`** (CandidateGen) — the most complex candidate family, requiring prefix mask + cumminRev body boundary + shiftLeft lookup equivalence
+2. **`remap_equiv`** (KeywordRemap) — vectorized vs. scalar byte matching through shifted tensors
+3. **`h_bounds` + `h_valid_bytes`** (Pipeline) — preconditions asserting candidate lengths stay within page bounds; these are semantic properties that are hard to derive from the pipeline structure alone
 
 Build the proofs:
 
