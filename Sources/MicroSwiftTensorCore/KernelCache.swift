@@ -114,23 +114,17 @@ public final class KernelCache: @unchecked Sendable {
   private var entries: [KernelCacheKey: KernelCacheEntry] = [:]
   private let lock = NSLock()
   private let eventPrefix: String
-  private let logSink: @Sendable (String) -> Void
-  private let jsonEncoder: JSONEncoder
+  private let logSink: @Sendable (KernelCacheLog) -> Void
 
   public init(
     eventPrefix: String = "fallback-kernel-cache",
-    logSink: @escaping @Sendable (String) -> Void = { _ in }
+    logSink: @escaping @Sendable (KernelCacheLog) -> Void = { _ in }
   ) {
     self.eventPrefix = eventPrefix
     self.logSink = logSink
-
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys]
-    self.jsonEncoder = encoder
   }
 
-  public func lookup(key: KernelCacheKey, traceID: String = UUID().uuidString) -> KernelCacheEntry?
-  {
+  public func lookup(key: KernelCacheKey, traceID: String = "cache-trace") -> KernelCacheEntry? {
     lock.lock()
     defer { lock.unlock() }
 
@@ -166,7 +160,7 @@ public final class KernelCache: @unchecked Sendable {
   }
 
   public func store(
-    key: KernelCacheKey, entry: KernelCacheEntry, traceID: String = UUID().uuidString
+    key: KernelCacheKey, entry: KernelCacheEntry, traceID: String = "cache-trace"
   ) {
     lock.lock()
     defer { lock.unlock() }
@@ -188,7 +182,7 @@ public final class KernelCache: @unchecked Sendable {
 
   public func getOrCreate(
     key: KernelCacheKey,
-    traceID: String = UUID().uuidString,
+    traceID: String = "cache-trace",
     create: () throws -> KernelCacheEntry
   ) throws -> KernelCacheEntry {
     lock.lock()
@@ -261,12 +255,7 @@ public final class KernelCache: @unchecked Sendable {
   }
 
   private func emitLocked(_ record: KernelCacheLog) {
-    guard let data = try? jsonEncoder.encode(record),
-      let json = String(data: data, encoding: .utf8)
-    else {
-      return
-    }
-    logSink(json)
+    logSink(record)
   }
 
   public func clear() {

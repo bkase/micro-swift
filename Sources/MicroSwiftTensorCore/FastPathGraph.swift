@@ -527,11 +527,11 @@ private func mergeFastAndFallback(
 
 final class KernelCacheLogSink: @unchecked Sendable {
   private let lock = NSLock()
-  private var records: [String] = []
+  private var records: [KernelCacheLog] = []
 
-  func record(_ message: String) {
+  func record(_ record: KernelCacheLog) {
     lock.lock()
-    records.append(message)
+    records.append(record)
     lock.unlock()
   }
 
@@ -545,8 +545,6 @@ final class KernelCacheLogSink: @unchecked Sendable {
     lock.lock()
     let snapshot = records
     lock.unlock()
-
-    let decoder = JSONDecoder()
-    return snapshot.compactMap { try? decoder.decode(KernelCacheLog.self, from: Data($0.utf8)) }
+    return snapshot
   }
 }

@@ -29,6 +29,7 @@ public struct DeviceLexResult: @unchecked Sendable {
 }
 
 public enum TensorLexer {
+  private static let fastPathCacheTraceID = "fast-path-cache"
   private static let fastPathCacheEventPrefix = "fast-path-graph-cache"
   private static let fastPathCacheLogSink = KernelCacheLogSink()
   private static let fastPathKernelCache = KernelCache(
@@ -141,11 +142,12 @@ public enum TensorLexer {
       deviceID: deviceID,
       reductionBackend: reductionBackend
     )
-    let traceID = "fast-path-\(UUID().uuidString)"
-
     let cacheEntry: KernelCacheEntry
     do {
-      cacheEntry = try fastPathKernelCache.getOrCreate(key: cacheKey, traceID: traceID) {
+      cacheEntry = try fastPathKernelCache.getOrCreate(
+        key: cacheKey,
+        traceID: fastPathCacheTraceID
+      ) {
         try makeFastPathCacheEntry(
           pageSize: pageSize,
           artifact: artifact,

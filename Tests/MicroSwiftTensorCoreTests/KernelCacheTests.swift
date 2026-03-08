@@ -37,7 +37,7 @@ struct KernelCacheTests {
     let records = sink.snapshot()
     #expect(records.count == 3)
 
-    let miss = try decode(records[0])
+    let miss = records[0]
     #expect(miss.traceID == "trace-miss")
     #expect(miss.event == "fallback-kernel-cache-miss")
     #expect(miss.artifactHash == key.artifactHash)
@@ -49,12 +49,12 @@ struct KernelCacheTests {
     #expect(miss.runtimeMetadata == nil)
     #expect(miss.failureReason == nil)
 
-    let store = try decode(records[1])
+    let store = records[1]
     #expect(store.traceID == "trace-store")
     #expect(store.event == "fallback-kernel-cache-store")
     #expect(store.runtimeMetadata == metadata)
 
-    let hit = try decode(records[2])
+    let hit = records[2]
     #expect(hit.traceID == "trace-hit")
     #expect(hit.event == "fallback-kernel-cache-hit")
     #expect(hit.runtimeMetadata == metadata)
@@ -116,7 +116,7 @@ struct KernelCacheTests {
     let records = sink.snapshot()
     #expect(records.count == 2)
 
-    let miss = try decode(records[0])
+    let miss = records[0]
     #expect(miss.traceID == "trace-failure")
     #expect(miss.event == "fallback-kernel-cache-miss")
     #expect(miss.artifactHash == key.artifactHash)
@@ -128,7 +128,7 @@ struct KernelCacheTests {
     #expect(miss.runtimeMetadata == nil)
     #expect(miss.failureReason == nil)
 
-    let failure = try decode(records[1])
+    let failure = records[1]
     #expect(failure.traceID == "trace-failure")
     #expect(failure.event == "fallback-kernel-cache-create-failure")
     #expect(failure.artifactHash == key.artifactHash)
@@ -222,25 +222,20 @@ struct KernelCacheTests {
 
 private final class LogSink: @unchecked Sendable {
   private let lock = NSLock()
-  private var records: [String] = []
+  private var records: [KernelCacheLog] = []
 
-  func record(_ message: String) {
+  func record(_ record: KernelCacheLog) {
     lock.lock()
-    records.append(message)
+    records.append(record)
     lock.unlock()
   }
 
-  func snapshot() -> [String] {
+  func snapshot() -> [KernelCacheLog] {
     lock.lock()
     let copy = records
     lock.unlock()
     return copy
   }
-}
-
-private func decode(_ raw: String) throws -> KernelCacheLog {
-  let decoder = JSONDecoder()
-  return try decoder.decode(KernelCacheLog.self, from: Data(raw.utf8))
 }
 
 private func makeKey(pageBucket: Int, inputDType: String) -> KernelCacheKey {
