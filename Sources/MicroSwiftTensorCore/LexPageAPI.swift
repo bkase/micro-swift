@@ -30,12 +30,12 @@ public struct DeviceLexResult: @unchecked Sendable {
 
 public enum TensorLexer {
   private static let fastPathCacheEventPrefix = "fast-path-graph-cache"
-  private static let fastPathDefaultDeviceID = "mlx-cpu"
   private static let fastPathCacheLogSink = KernelCacheLogSink()
   private static let fastPathKernelCache = KernelCache(
     eventPrefix: fastPathCacheEventPrefix,
     logSink: fastPathCacheLogSink.record
   )
+  private static let fastPathDeviceIDProviderBox = FastPathDeviceIDProviderBox()
 
   public static func resetFastPathGraphCache() {
     fastPathKernelCache.clear()
@@ -53,6 +53,17 @@ public enum TensorLexer {
       cacheMisses: cacheMisses,
       cacheEvents: events
     )
+  }
+
+  static func withFastPathDeviceIDProvider<R>(
+    _ provider: @escaping @Sendable () -> String,
+    _ body: () throws -> R
+  ) rethrows -> R {
+    let previous = fastPathDeviceIDProviderBox.swap(provider)
+    defer {
+      _ = fastPathDeviceIDProviderBox.swap(previous)
+    }
+    return try body()
   }
 
   public static func lexPage(
@@ -120,12 +131,14 @@ public enum TensorLexer {
     }
 
     let pageSize = compiledPage.byteCapacity
+    let deviceID = currentFastPathDeviceID()
     let reductionBackend = fastPathReductionBackend(options: options)
 
     let cacheKey = makeFastPathCacheKey(
       compiledPage: compiledPage,
       artifact: artifact,
       options: options,
+      deviceID: deviceID,
       reductionBackend: reductionBackend
     )
     let traceID = "fast-path-\(UUID().uuidString)"
@@ -137,6 +150,7 @@ public enum TensorLexer {
           pageSize: pageSize,
           artifact: artifact,
           options: options,
+          deviceID: deviceID,
           reductionBackend: reductionBackend
         )
       }
@@ -192,10 +206,11 @@ public enum TensorLexer {
     compiledPage: CompiledPageInput,
     artifact: ArtifactRuntime,
     options: LexOptions,
+    deviceID: String,
     reductionBackend: FastPathCompiledGraph.ReductionBackend
   ) -> KernelCacheKey {
     KernelCacheKey(
-      deviceID: fastPathDefaultDeviceID,
+      deviceID: deviceID,
       artifactHash: artifact.artifactHash,
       pageBucket: compiledPage.byteCapacity,
       inputDType:
@@ -209,13 +224,14 @@ public enum TensorLexer {
     pageSize: Int,
     artifact: ArtifactRuntime,
     options: LexOptions,
+    deviceID: String,
     reductionBackend: FastPathCompiledGraph.ReductionBackend
   ) throws -> KernelCacheEntry {
     _ = options
     let classCount = Set(artifact.hostByteToClassLUT()).count
     let metadata = KernelCacheRuntimeMetadata(
       backend: "mlx",
-      deviceID: fastPathDefaultDeviceID,
+      deviceID: deviceID,
       pipelineFunction: "fastPathPageGraph",
       constantTableByteCount: 0,
       fallbackRuleCount: 0,
@@ -238,6 +254,15 @@ public enum TensorLexer {
     options: LexOptions
   ) -> FastPathCompiledGraph.ReductionBackend {
     options.useGPUReduction ? .gpu : .cpu
+  }
+
+  private static func currentFastPathDeviceID() -> String {
+    fastPathDeviceIDProviderBox.current()()
+  }
+
+  private static func fastPathDeviceIdentifier(for device: Device) -> String {
+    let trimmed = device.description.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? "mlx-\(device.deviceType?.rawValue ?? "unknown")" : trimmed
   }
 
   private static func modeByte(_ mode: RuleMode) -> UInt8 {
@@ -561,6 +586,30 @@ public enum TensorLexer {
       tokenKindIDByRule: mlxStackRows(tokenRows, pageSize: pageSize, dtype: .uint16),
       modeByRule: mlxStackRows(modeRows, pageSize: pageSize, dtype: .uint8)
     )
+  }
+}
+
+private final class FastPathDeviceIDProviderBox: @unchecked Sendable {
+  private let lock = NSLock()
+  private var provider: @Sendable () -> String = {
+    let device = Device.defaultDevice()
+    let trimmed = device.description.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? "mlx-\(device.deviceType?.rawValue ?? "unknown")" : trimmed
+  }
+
+  func current() -> @Sendable () -> String {
+    lock.lock()
+    let current = provider
+    lock.unlock()
+    return current
+  }
+
+  func swap(_ newProvider: @escaping @Sendable () -> String) -> (@Sendable () -> String) {
+    lock.lock()
+    let previous = provider
+    provider = newProvider
+    lock.unlock()
+    return previous
   }
 }
 

@@ -1,4 +1,5 @@
 import Foundation
+import MLX
 import Testing
 
 @testable import MicroSwiftLexerGen
@@ -170,7 +171,52 @@ struct KernelCacheTests {
     let store = try #require(
       metrics.cacheEvents.first { $0.event == "fast-path-graph-cache-store" })
     #expect(store.pageBucket == 4096)
+    #expect(store.deviceID == Device.defaultDevice().description)
     #expect(store.runtimeMetadata?.pipelineFunction == "fastPathPageGraph")
+  }
+
+  @Test(.enabled(if: requiresMLXEval))
+  func fastPathCompiledGraphCacheSeparatesDeviceNamespaces() throws {
+    TensorLexer.resetFastPathGraphCache()
+    let runtime = try makeLiteralRuntime()
+    let bytes = Array("if x".utf8)
+    let options = LexOptions(runtimeProfile: .v0)
+
+    TensorLexer.withFastPathDeviceIDProvider(
+      { "mlx-test-cpu" },
+      {
+        _ = TensorLexer.lexPage(
+          bytes: bytes,
+          validLen: Int32(bytes.count),
+          baseOffset: 0,
+          artifact: runtime,
+          options: options
+        )
+      }
+    )
+    TensorLexer.withFastPathDeviceIDProvider(
+      { "mlx-test-gpu" },
+      {
+        _ = TensorLexer.lexPage(
+          bytes: bytes,
+          validLen: Int32(bytes.count),
+          baseOffset: 0,
+          artifact: runtime,
+          options: options
+        )
+      }
+    )
+
+    let metrics = TensorLexer.fastPathGraphMetrics()
+    let storeEvents = metrics.cacheEvents.filter { $0.event == "fast-path-graph-cache-store" }
+    #expect(storeEvents.count == 2)
+    #expect(Set(storeEvents.map(\.deviceID)) == Set(["mlx-test-cpu", "mlx-test-gpu"]))
+    #expect(
+      Set(storeEvents.compactMap(\.runtimeMetadata?.deviceID))
+        == Set([
+          "mlx-test-cpu",
+          "mlx-test-gpu",
+        ]))
   }
 }
 
