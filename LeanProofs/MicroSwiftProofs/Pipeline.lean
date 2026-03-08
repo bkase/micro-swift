@@ -206,7 +206,9 @@ theorem pipeline_equiv (bytes : List Nat) (classIDs : List Nat) (validMask : Lis
     (h_len2 : bytes.length = classIDs.length)
     (h_valid : validLen ≤ bytes.length)
     (h_fb : fallbackWinners.length = bytes.length)
-    (h_rules_ne : rules ≠ []) :
+    (h_rules_ne : rules ≠ [])
+    (h_well_formed : ∀ table ∈ remapTables, ∀ entry ∈ table.entries,
+      entry.lexeme.length ≤ table.maxKeywordLength) :
     vectorizedPipeline bytes classIDs validMask validLen rules fallbackWinners remapTables
       emitSkipTokens membership =
     scalarPipeline bytes classIDs validMask validLen rules fallbackWinners remapTables
@@ -265,6 +267,7 @@ theorem pipeline_equiv (bytes : List Nat) (classIDs : List Nat) (validMask : Lis
     h_sel_len (by omega) (by omega)
     (by sorry) -- h_bounds
     (by sorry) -- h_valid_bytes
+    h_well_formed
   rw [show Selection.extractSelected merged selectedMask =
       Selection.scalarSelect merged validLen from h_select] at h_remap
   -- Split into components

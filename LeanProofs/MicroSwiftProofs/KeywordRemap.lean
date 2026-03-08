@@ -219,7 +219,9 @@ theorem remap_equiv (merged : List Reduction.Winner) (selectedMask : List Bool)
       t.startPos + t.length ≤ bytes.length)
     (h_valid_bytes : ∀ t ∈ Selection.extractSelected merged selectedMask,
       ∀ offset, offset < t.length →
-        (match validMask[t.startPos + offset]? with | some true => true | _ => false) = true) :
+        (match validMask[t.startPos + offset]? with | some true => true | _ => false) = true)
+    (h_well_formed : ∀ table ∈ tables, ∀ entry ∈ table.entries,
+      entry.lexeme.length ≤ table.maxKeywordLength) :
     let selected := Selection.extractSelected merged selectedMask
     let tokenKindIDs := merged.map (·.tokenKindID)
     let ruleIDs := merged.map (·.ruleID)
